@@ -1,0 +1,91 @@
+; ============================================================================
+;  EKframePnP.inf  -  versione 2.1
+;
+;  Driver Plug and Play per la scheda Kodak/Gretag IMAQ
+;  PCI\VEN_11B2&DEV_0008 (SUBSYS_908010B5) - Windows 7 x86 (32 bit).
+;
+;  Il servizio si chiama EKFrame come quello originale, cosi' gli script che
+;  controllano "il servizio EKFrame gira" continuano a funzionare; il file e'
+;  EKframePnP.sys, per non confonderlo con il driver del 2000.
+;
+;  Non firmato: su Windows 7 a 32 bit e' sufficiente accettare l'avviso
+;  "Impossibile verificare l'autore del software del driver".
+; ============================================================================
+
+[Version]
+Signature   = "$WINDOWS NT$"
+Class       = MiniLabAdapter
+ClassGuid   = {533245A7-2867-11d5-BE3E-00902731AC5D}
+Provider    = %ProviderName%
+DriverVer   = 10/25/2026,2.1.0.0
+
+[ClassInstall32]
+AddReg = ClassAddReg
+
+[ClassAddReg]
+HKR,,,,%ClassName%
+HKR,,Icon,,"-21"
+
+[SourceDisksNames]
+1 = %DiskName%,,,""
+
+[SourceDisksFiles]
+EKframePnP.sys = 1,,
+
+[DestinationDirs]
+DefaultDestDir    = 12
+EKframe_CopyFiles = 12
+
+[EKframe_CopyFiles]
+EKframePnP.sys
+
+[Manufacturer]
+%ManufacturerName% = Kodak_Models, NTx86
+
+[Kodak_Models.NTx86]
+%EKframe.DeviceDesc% = EKframe_Install, PCI\VEN_11B2&DEV_0008&SUBSYS_908010B5
+%EKframe.DeviceDesc% = EKframe_Install, PCI\VEN_11B2&DEV_0008
+
+[EKframe_Install.NTx86]
+CopyFiles = EKframe_CopyFiles
+AddReg    = EKframe_Device_AddReg
+
+;
+; PnPCapabilities = 24: toglie "Consenti al computer di spegnere il
+; dispositivo per risparmiare energia". Il driver non sa riportare la scheda
+; in stato dopo una sospensione.
+;
+[EKframe_Device_AddReg]
+HKR,,PnPCapabilities,0x00010001,24
+
+;
+; Permessi del dispositivo. Il driver originale, caricato su Windows 7, aveva
+; i permessi predefiniti (lettura per tutti, scrittura solo amministratori):
+; qui lettura e scrittura sono concesse a tutti gli utenti della macchina,
+; cosi' il software dello scanner funziona anche senza "Esegui come
+; amministratore".
+;
+[EKframe_Install.NTx86.HW]
+AddReg = EKframe_Security_AddReg
+
+[EKframe_Security_AddReg]
+HKR,,Security,,"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGWGX;;;WD)"
+
+[EKframe_Install.NTx86.Services]
+AddService = EKFrame, 0x00000002, EKframe_Service
+
+[EKframe_Service]
+DisplayName    = %EKframe.SvcDesc%
+ServiceType    = 1
+StartType      = 3
+ErrorControl   = 1
+ServiceBinary  = %12%\EKframePnP.sys
+LoadOrderGroup = Extended Base
+
+[Strings]
+ProviderName       = "MASTERFLEX D1008"
+ManufacturerName   = "Eastman Kodak"
+ClassName          = "MiniLab adapters"
+DiskName           = "Driver Kodak IMAQ"
+EKframe.DeviceDesc = "IAQ Adapter for Kodak film scanners (EKframePnP)"
+EKframe.SvcDesc    = "Kodak EK Image Acquisition (EKframePnP 2.1)"

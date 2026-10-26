@@ -1,0 +1,9 @@
+# Build con WDK 7.1.0: "x86 Free Build Environment" per Windows 7, poi  build -cZ
+# (il .sys pronto e' gia' nella cartella: ricompilare serve solo se si cambia il codice)
+TARGETNAME=EKframePnP
+TARGETTYPE=DRIVER
+TARGETPATH=obj
+MSC_WARNING_LEVEL=/W3
+C_DEFINES=$(C_DEFINES) -DNTDDI_VERSION=0x06010000
+TARGETLIBS=$(DDK_LIB_PATH)\ntoskrnl.lib $(DDK_LIB_PATH)\hal.lib
+SOURCES=driver.c pnp.c ioctl.c hw.c arcnet.c dma.c

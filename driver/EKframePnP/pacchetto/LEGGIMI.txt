@@ -1,0 +1,63 @@
+EKframePnP 2.1 - driver Plug and Play per la scheda Kodak IMAQ
+PCI\VEN_11B2&DEV_0008, Windows 7 a 32 bit
+=====================================================================
+
+GIA' COMPILATO. Non serve WDK ne' Visual Studio.
+
+PRIMA DI TUTTO: IL VECCHIO DRIVER VA TOLTO
+  Su Windows 7 il vecchio ekframe.sys parte all'accensione, crea
+  \\.\EKFrameDev, fallisce e lascia il dispositivo "zombie" senza
+  gestori. Sintomi: ScanDiag "NO scanner detected", SDK che non apre lo
+  scanner, ektest "errore 1", e la scheda con Codice 31 in Gestione
+  dispositivi (il nome e' occupato e il driver nuovo non puo' partire).
+  INSTALLA.bat se ne accorge e lancia rimuovi-driver-vecchio.bat; dopo
+  serve un RIAVVIO e poi di nuovo INSTALLA.bat.
+
+INSTALLAZIONE (sulla macchina dove EKframe.sys originale non va)
+  1. Copia questa cartella sul PC (non lanciare da dentro lo zip).
+  2. Clic destro su INSTALLA.bat -> Esegui come amministratore.
+     Windows avvisa "Impossibile verificare l'autore": scegli
+     "Installa il software del driver comunque". Su Win7 x86 basta.
+  3. Lancia da un prompt in questa cartella:
+         ektest           driver, risorse, registri, identita' PCI
+         ektest arcnet    canale comandi verso lo scanner (scanner acceso)
+         ektest dma       ciclo aggancio/avvio/arresto/rilascio del DMA
+  4. Prova vera: DMLCmdTransfer 1, poi il software filmscan.
+
+NON installarlo sulla macchina di produzione dove EKframe.sys originale
+funziona: li' resta l'originale.
+
+NON usare ektest mentre il software dello scanner e' aperto: alla
+chiusura dell'handle il driver spegne la parte logica della scheda,
+esattamente come faceva l'originale.
+
+COSA FA
+  Stessa interfaccia dell'originale (\\.\EKFrameDev, stessi 13 IOCTL,
+  stessi ReadFile/WriteFile), con risorse dal Plug and Play invece di
+  HalGetBusData/HalAssignSlotResources (il motivo per cui l'originale
+  non si installa piu').
+  La scheda e': bridge PLX PCI 9080 + FPGA Kodak + controller ARCNET
+  SMC COM20020 (canale comandi verso la testa, nodi 0x55 -> 0xAA) +
+  DMA scatter/gather a due canali per i pixel.
+
+VERIFICA (cartella verifica\)
+  Il codice macchina originale e' stato eseguito in un emulatore x86 e
+  confrontato con questo driver contro lo stesso modello simulato
+  dell'hardware:
+    ARCNET  105 scenari su 105 identici, accesso per accesso ai registri
+    DMA       7 scenari su   7 identici (catena di descrittori, avvio)
+  Differenze VOLUTE rispetto all'originale, tutte correzioni di difetti:
+    - accesso ai registri fuori finestra (lettura a cavallo del limite)
+    - ReadFile senza controllo della dimensione del buffer
+    - DMA lasciato attivo su pagine sbloccate alla chiusura dell'handle
+    - troncamento nell'ultimo descrittore: l'originale lasciava la
+      lunghezza sbagliata e toglieva il fine catena
+    - annullamento di WriteFile che bloccava la coda per sempre
+    - handle evento referenziato senza controlli di tipo e permessi
+    - anello messaggi sovrascritto quando pieno
+
+CONTROLLI DEL BINARIO
+  Solo istruzioni Pentium di base (niente SSE/MMX/cmov), sole API del
+  kernel NT presenti in Windows 7, checksum PE valido.
+
+Se qualcosa non va: mandami l'output completo di "ektest".

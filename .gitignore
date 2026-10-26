@@ -1,0 +1,51 @@
+# ---------------------------------------------------------------------------
+#  File proprietari Kodak / Gretag: NON vanno mai nel repository.
+#  Si tengono in locale per le verifiche, nelle cartelle qui sotto.
+# ---------------------------------------------------------------------------
+originale/
+**/verifica/originale/
+APP ORIGINALE/
+EKframe.sys
+ekframe.sys
+scn_dll.dll
+*.wrp
+*.rbf
+
+# ---------------------------------------------------------------------------
+#  Prodotti della compilazione del driver (il pacchetto collaudato sta in
+#  driver/EKframePnP/pacchetto/ ed e' tracciato apposta)
+# ---------------------------------------------------------------------------
+driver/*/sorgenti/*.o
+driver/*/sorgenti/*.sys
+driver/*/sorgenti/*.exe
+driver/*/verifica/*.so
+
+# ---------------------------------------------------------------------------
+#  Dati delle macchine: log, grezzi, diagnosi. Possono contenere nomi di
+#  clienti e percorsi locali. (I dati del ponte stanno in C:\MasterflexD\ponte,
+#  fuori dal repository: la cartella software/ponte/ e' invece codice.)
+# ---------------------------------------------------------------------------
+SDKCacheDir/
+*.log
+ektest-esito.txt
+diagnosi-*.txt
+*.npz
+*.sqlite
+*.db
+
+# ---------------------------------------------------------------------------
+#  Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+pacchetti/*.whl
+
+# ---------------------------------------------------------------------------
+#  Sistema
+# ---------------------------------------------------------------------------
+Thumbs.db
+desktop.ini
+.DS_Store
+*.zip

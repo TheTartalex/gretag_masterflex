@@ -1,0 +1,31 @@
+# Fine riga normalizzate nel repository (LF), convertite all'estrazione dove
+# serve. I file che girano su Windows 7 escono sempre con CRLF: cmd.exe con
+# le righe LF sbaglia le etichette di goto/call, e il Blocco note di Win7 non
+# va a capo.
+* text=auto
+
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+*.inf  text eol=crlf
+*.ini  text eol=crlf
+*.reg  text eol=crlf
+*.txt  text eol=crlf
+
+*.sh   text eol=lf
+*.py   text eol=lf
+*.c    text eol=lf
+*.h    text eol=lf
+*.md   text eol=lf
+
+# Binari: mai toccati
+*.sys  binary
+*.exe  binary
+*.dll  binary
+*.pyd  binary
+*.whl  binary
+*.zip  binary
+*.pdf  binary
+*.png  binary
+*.jpg  binary
+*.tif  binary
+*.npz  binary
