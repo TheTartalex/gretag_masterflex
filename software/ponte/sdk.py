@@ -86,6 +86,22 @@ class ImageResolution(object):
                   3: (264, 175), 4: (132, 88)}
 
 
+def finestra_grezza(risoluzione):
+    """(larghezza, altezza) in pixel a piena risoluzione del fotogramma
+    intero, arrotondate a multipli di 2^risoluzione: scan_raw riduce
+    contando i pixel e dividendo per 4^risoluzione, e con lati non multipli
+    il buffer non tornerebbe con le dimensioni."""
+    passo = 1 << risoluzione
+    w, h = ImageResolution.DIMENSIONI[ImageResolution.PIENA]
+    return w - w % passo, h - h % passo
+
+
+# Dimensioni delle immagini di scan_raw per risoluzione: diverse da quelle di
+# capture() (DIMENSIONI) per la 1, 3 e 4, che non sono meta' esatte.
+DIMENSIONI_GREZZE = dict(
+    (r, tuple(x >> r for x in finestra_grezza(r))) for r in range(5))
+
+
 class ColorChannel(object):
     """N_CHANNELS nell'SDK vale 3: il percorso dati principale e' R, G, B.
 
@@ -425,6 +441,8 @@ class Scanner(object):
         self._cb_evento = CALLBACK_EVENTO(self._su_evento)
         self.eventi = []          # (ora, numero) degli eventi asincroni
         self.stato_sdk = None     # dagli eventi EV_STATE_CHANGE; None = non noto
+        self.formato = FilmFormat.F135   # quello che l'SDK sceglie all'apertura
+        self._offset = {}         # offset XY per formato, letti una volta
         if apri_subito:
             self.apri()
 
@@ -592,6 +610,26 @@ class Scanner(object):
 
     def scegli_formato(self, formato=FilmFormat.F135):
         self._verifica(self._m["scegli_formato"](self._obj, formato), "scelta formato")
+        self.formato = formato
+
+    def origine_finestra(self):
+        """Angolo in alto a sinistra del fotogramma sul CCD, per il formato
+        scelto: e' l'offset XY tarato in fabbrica (gretag_get_xy_offset).
+
+        Il programma originale scansiona il 135 da [47,76] a [2146,1475]
+        (log dell'SDK della riserva, 26/10/2026): 2100x1400 a partire
+        dall'offset del 135, che e' 47, 76 anche in Scanner_Customer.ini.
+        """
+        if self.formato not in self._offset:
+            try:
+                self._offset[self.formato] = self.offset_xy(self.formato)
+            except ErroreScanner as exc:
+                self._log("offset XY del formato %s non letto (%s): uso 0, 0"
+                          % (self.formato, exc))
+                return 0, 0
+            self._log("offset XY del formato %s: %s, %s"
+                      % ((self.formato,) + self._offset[self.formato]))
+        return self._offset[self.formato]
 
     def tipo_gate(self):
         v = ctypes.c_int(-1)
@@ -658,26 +696,46 @@ class Scanner(object):
 
     def scansiona_canale(self, canale=ColorChannel.G, esposizione=1.0,
                          risoluzione=ImageResolution.PIENA,
-                         x0=0, y0=0, larghezza=0, altezza=0):
+                         x0=None, y0=None, larghezza=0, altezza=0):
         """Una lettura grezza di un canale: il cuore di tutto.
 
         Ritorna i campioni a 16 bit cosi' come escono dall'ADC, senza nessuna
         correzione: e' esattamente cio' che il nostro software vuole, e cio'
         che il programma originale buttava via riducendo a 600x400.
 
-        ExposureTime viaggia per valore (392 byte sullo stack), quindi la
-        chiamata si costruisce a mano invece di passare dalla tabella.
+        x0, y0, larghezza, altezza sono in pixel a PIENA risoluzione sul
+        CCD; x0, y0 = None vuol dire l'offset XY del formato (come fa il
+        programma originale), larghezza e altezza 0 = tutto il fotogramma. Il risultato e' ridotto di 2^risoluzione per
+        lato. ExposureTime viaggia per valore (392 byte sullo stack), quindi
+        la chiamata si costruisce a mano invece di passare dalla tabella.
         """
-        w, h = ImageResolution.DIMENSIONI[risoluzione]
-        if not larghezza:
-            larghezza = w
-        if not altezza:
-            altezza = h
+        piena_w, piena_h = finestra_grezza(risoluzione)
+        larghezza = larghezza or piena_w
+        altezza = altezza or piena_h
+        if x0 is None or y0 is None:
+            ox, oy = self.origine_finestra()
+            x0 = ox if x0 is None else x0
+            y0 = oy if y0 is None else y0
+        passo = 1 << risoluzione
+        larghezza -= larghezza % passo
+        altezza -= altezza % passo
+        w, h = larghezza >> risoluzione, altezza >> risoluzione
 
-        buffer_img = (ctypes.c_uint16 * (larghezza * altezza))()
+        buffer_img = (ctypes.c_uint16 * (w * h))()
         exp = self.esposizione_default(esposizione)
 
-        # firma: (ushort*, int canale, ExposureTime valore, bool, int x4, int res, int)
+        # firma: (ushort*, int canale, ExposureTime valore, bool,
+        #         int col_inizio, int col_fine, int riga_inizio, int riga_fine,
+        #         ImageResolution, int)
+        # I quattro interi NON sono x, y, larghezza, altezza: scan_raw
+        # (scnr_ifc, 0x18078940) conta i pixel come (b-a+1)*(d-c+1), poi
+        # divide per 4^risoluzione, e al firmware (0x18069F50) manda il
+        # rettangolo (a, c, b, d), estremi compresi. Fino al 26/10/2026 si
+        # passava (0, 0, 2100, 1400): conteggio negativo, e il firmware della
+        # testa rispondeva ERR_FW_ERR_NO 1 ("set resolution failed, ErrNo =
+        # 1" nel log dell'SDK, che stampava "[0,2100] to [0,1400]"). Il
+        # programma originale passa colonne 47-2146 e righe 76-1475: a-b sono
+        # le colonne, c-d le righe.
         class _Exp(ctypes.Structure):
             _fields_ = [("dati", ctypes.c_ubyte * SIZEOF_EXPOSURE_TIME)]
 
@@ -689,10 +747,14 @@ class Scanner(object):
         chiama = proto(_crea_trampolino(self._scan_raw_addr))
         valore = _Exp.from_buffer_copy(bytes(exp))
 
+        a, b = x0, x0 + larghezza - 1
+        c, d = y0, y0 + altezza - 1
+        self._log("scan_raw canale %s, colonne %d-%d, righe %d-%d, risoluzione %d"
+                  % (canale, a, b, c, d, risoluzione))
         err = chiama(self._obj, buffer_img, canale, valore, True,
-                     x0, y0, larghezza, altezza, risoluzione, 0)
+                     a, b, c, d, risoluzione, 0)
         self._verifica(err, "scansione canale %s" % canale)
-        return bytes(memoryview(buffer_img).cast("B")), larghezza, altezza
+        return bytes(memoryview(buffer_img).cast("B")), w, h
 
     def salva_parametri_flash(self, percorso):
         """Copia il Parameter Flash della macchina in un file.

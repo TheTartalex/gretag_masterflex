@@ -46,9 +46,11 @@ from filmscan.hal import PonteSdkBackend, ScannerError
 QUI = os.path.dirname(os.path.abspath(__file__))
 PONTE = r"C:\MasterflexD\ponte"
 
-# Dimensioni attese per ImageResolution 0..4 sullo scanner di tipo 3
-DIMENSIONI = {0: (2100, 1400), 1: (1052, 700), 2: (524, 350),
-              3: (264, 175), 4: (132, 88)}
+# Dimensioni attese delle letture grezze (scan_raw) per ImageResolution 0..4:
+# il fotogramma di 2100x1400 ridotto di 2^r per lato (ponte/sdk.py,
+# DIMENSIONI_GREZZE). Non sono quelle di capture(): 1052x700, 524x350...
+DIMENSIONI = {0: (2100, 1400), 1: (1050, 700), 2: (525, 350),
+              3: (262, 175), 4: (131, 87)}
 # Pixel per mm sul 135 a piena risoluzione: 2100 pixel per 36 mm,
 # cioe' i 1569 dpi dell'SDK (vedi config.py).
 PX_PER_MM_PIENA = 1569 / 25.4

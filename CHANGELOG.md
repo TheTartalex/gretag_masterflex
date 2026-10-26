@@ -39,6 +39,15 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-10-26 — finestra di scan_raw
+
+- `ponte/sdk.py`: `scan_raw` riceve colonne e righe inizio–fine a partire
+  dall'offset XY del formato, come il programma originale (`[47,76] to
+  [2146,1475]` per il 135). Prima riceveva `x, y, larghezza, altezza`, e il
+  firmware rifiutava con l'errore 1.
+- Dimensioni delle letture grezze per risoluzione: 2100x1400, 1050x700,
+  525x350, 262x175, 131x87 (simulatore e collaudo allineati).
+
 ### 2026-10-26 — stato dell'SDK
 
 - `ponte/sdk.py`: nomi dei codici `ScnError` letti in `scn_dll.dll`; stato

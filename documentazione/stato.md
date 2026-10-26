@@ -18,7 +18,7 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
 |---|---|---|
 | Driver **EKframePnP 2.1** | [`driver/EKframePnP/`](../driver/EKframePnP/) | **funziona sulla riserva**: la scheda si avvia e il software la riconosce |
 | Software **filmscan** | [`software/`](../software/) | nel repository dal 26/10, con le correzioni e il menu unico `MASTERFLEX.bat`; **da provare sulla riserva** |
-| Carrello **Capri** (COM5) | [carrello-capri.md](hardware/carrello-capri.md) | firmware **1.13** dal 2/8/2025, deve essere **1.15** ([decisione 0006](decisioni/0006-firmware-carrello-1.15.md)) |
+| Carrello **Capri** (COM5) | [carrello-capri.md](hardware/carrello-capri.md) | firmware **1.15** dal 26/10/2026 sulla riserva ([decisione 0006](decisioni/0006-firmware-carrello-1.15.md)) |
 
 ## Fatto il 26 ottobre
 
@@ -86,6 +86,23 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
   Che anche `ERR_CANCEL_DETECTED` venga dallo stato 10 è da confermare
   rifacendo il collaudo a scanner pronto.
 
+- **Diagnosi completa delle 17:35** sulla riserva:
+  - **il programma originale acquisisce immagini con EKframePnP**: alle
+    17:03 il log dell'SDK mostra decine di `xfer: image complete ... ok=1`
+    in RGB 2100x1400. Driver, DMA e testa di scansione funzionano;
+  - **il carrello è tornato alla 1.15** (backup delle 16:59), con l'ini che
+    ora la chiede;
+  - l'agente aspetta lo scanner pronto (39 s);
+  - `scan_raw` falliva per colpa nostra: passavamo `x, y, larghezza,
+    altezza`, mentre l'SDK vuole colonne inizio–fine e righe inizio–fine,
+    a partire dall'offset XY del formato. L'originale usa `[47,76] to
+    [2146,1475]`, noi mandavamo `[0,2100] to [0,1400]`, e il firmware
+    rispondeva "set resolution failed, ErrNo = 1". Corretto
+    ([api-sdk.md §7](software-originale/api-sdk.md#7-errori-e-stati-dellsdk));
+  - `regola` (`frame_detect_fine_adjust`) a percorso vuoto risponde
+    `ERR_ILLEGAL_IN_THIS_STATE`. È normale: tutti i `frame_detect_*` sono
+    vietati nello stato 0 e servono con la pellicola caricata.
+
 ## Problemi aperti, in ordine di priorità
 
 1. **Motori delle guide all'avvio.** Le guide sono i motori 3 e 4 del
@@ -128,8 +145,10 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
 - [x] `scn_dll.dll`, `PhxScanner.exe`, i proxy COM e `PhxTextDB.mdb`
       (arrivati il 26/10, fuori dal repository): codici decifrati
 
-- [ ] **i file del firmware 1.15 del carrello** (master e slave `.a37`,
-      compilati il 28/11/2002): sulla produzione, in `AutomaticUpdate\`
+- [x] i file del firmware 1.15 del carrello: installati sulla riserva il
+      26/10. Mancano le impronte in `manutenzione.py`: lo slave risulta
+      "non riconosciuto" (servono i due `.a37`, che restano fuori dal
+      repository)
 - [ ] l'esito del selftest di servizio, del collaudo colori e della diagnosi
       (`MASTERFLEX.bat` voci 4, 6, 13) sulla riserva
 - [ ] una foto delle immagini difettose, se lo sono ancora

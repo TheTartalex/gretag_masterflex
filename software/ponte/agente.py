@@ -169,8 +169,9 @@ class AgenteSimulato(object):
     def scansiona_canale(self, canale=1, esposizione=1.0, risoluzione=0,
                          x0=0, y0=0, larghezza=0, altezza=0):
         import random
-        dim = {0: (2100, 1400), 1: (1052, 700), 2: (524, 350),
-               3: (264, 175), 4: (132, 88)}[risoluzione]
+        # come sdk.DIMENSIONI_GREZZE
+        dim = {0: (2100, 1400), 1: (1050, 700), 2: (525, 350),
+               3: (262, 175), 4: (131, 87)}[risoluzione]
         w, h = larghezza or dim[0], altezza or dim[1]
         rnd = random.Random(canale * 7 + risoluzione)
         # il segnale segue l'esposizione fino alla saturazione, come un CCD

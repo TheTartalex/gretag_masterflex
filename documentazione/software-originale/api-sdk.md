@@ -308,3 +308,26 @@ di `DMLScanner`:
 Non usa mai `DMLScannerAdv::scan_raw`, che usiamo noi: la sequenza di
 `PhxScanner` è il riferimento per capire cosa va fatto prima di
 un'acquisizione.
+
+**`scan_raw`, i quattro interi.** Firma: `scan_raw(ushort*, ColorChannel,
+ExposureTime, bool, int a, int b, int c, int d, ImageResolution, int)`.
+
+- `a`–`b` sono le colonne e `c`–`d` le righe, estremi compresi, in pixel a
+  piena risoluzione sul CCD;
+- l'SDK conta `(b−a+1)·(d−c+1)` pixel e li divide per `4^risoluzione`
+  (`scnr_ifc`, `0x18078940`);
+- al firmware manda il rettangolo `(a, c, b, d)` (`0x18069F50`).
+
+Il programma originale, per il 135, usa colonne 47–2146 e righe 76–1475,
+cioè 2100x1400 a partire dall'offset XY del formato (47, 76). Nel log
+dell'SDK compare come `set resolution: bin=0 scalar=3 [47,76] to
+[2146,1475]`. Valori sbagliati danno `ERR_SW_SCANNER_IFC` +
+`ERR_FW_ERR_NO 1` + `ERR_GENERAL_FW` ("set resolution failed, ErrNo = 1").
+
+Canale (`ColorChannel`): 0–3 sono un piano solo (maschere 1, 2, 4, 8: il 3 è
+il quarto piano, l'IR); 4 vale tre piani (maschera 7), 5 quattro piani
+(0xF).
+
+Nello stato 0 sono vietati i comandi `0x0D`, `0x14`, `0x1C` e `0x1D`.
+`0x1D` è quello di tutti i `frame_detect_*`, compresa la regolazione fine:
+servono con la pellicola caricata.
