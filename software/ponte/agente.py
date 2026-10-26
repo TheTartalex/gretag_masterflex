@@ -263,7 +263,11 @@ class Agente(object):
                 esito = "errore %s" % e
             except Exception as e:
                 esito = "errore %s" % e
-                self.log(traceback.format_exc())
+                # Gli errori dell'SDK (ErroreScanner, con i codici) sono gia'
+                # completi nella riga di esito: il traceback serve solo per
+                # gli errori nostri.
+                if not hasattr(e, "codici"):
+                    self.log(traceback.format_exc())
             ack = os.path.join(self.condivisa, "ack", token)
             with open(ack + ".tmp", "w") as f:
                 f.write(esito.strip())
@@ -289,15 +293,27 @@ class Agente(object):
             return "vivo"
 
         if comando == "stato":
-            return json.dumps({
-                "tipo_scanner": self.s.tipo_scanner(),
-                "id": self.s.id_scanner(),
-                "gate": self.s.tipo_gate(),
+            # Ogni voce per conto suo: sulla riserva get_gate_type risponde
+            # con due errori (codici 4 e 3, 26/10/2026), e prima questo
+            # faceva fallire tutto lo stato, anche le voci che funzionano.
+            stato = {
                 "simulato": isinstance(self.s, AgenteSimulato),
                 "motori": self.motori,
                 "max_passi": self.max_passi,
                 "apertura": self.apertura,
-            })
+            }
+            errori = {}
+            for voce, leggi in (("tipo_scanner", self.s.tipo_scanner),
+                                ("id", self.s.id_scanner),
+                                ("gate", self.s.tipo_gate)):
+                try:
+                    stato[voce] = leggi()
+                except Exception as e:
+                    stato[voce] = None
+                    errori[voce] = str(e)
+            if errori:
+                stato["errori"] = errori
+            return json.dumps(stato)
 
         if testa in MOVIMENTI and not self.motori:
             raise ValueError("motori bloccati (--senza-motori): '%s' rifiutato"

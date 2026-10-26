@@ -39,6 +39,14 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-10-26 — dopo la prima prova dell'agente sulla riserva
+
+- `ponte/agente.py`: lo "stato" legge ogni voce per conto suo (sulla
+  riserva fallisce solo il tipo di gate); gli errori dell'SDK si scrivono su
+  una riga, senza traceback.
+- `collaudo_scanner.py`: riporta le voci dello stato non lette.
+- `manutenzione.py diagnosi`: 200 righe del log dell'SDK invece di 60.
+
 ### 2026-10-26 — dopo la prima diagnosi dalla riserva
 
 - `manutenzione.py`: `collaudo_scanner.py` e `ektest.exe` nella lista

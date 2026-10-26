@@ -590,7 +590,7 @@ def cmd_diagnosi(argv):
         sdk_log = os.path.join(SCANNER, "SDKCacheDir", "log_0000.txt")
         if os.path.exists(sdk_log):
             print("  --- log dell'SDK (ultime righe)")
-            print(_coda(sdk_log, 60))
+            print(_coda(sdk_log, 200))
 
         titolo("Ultimi collaudi")
         coll = os.path.join(QUI, "collaudi")

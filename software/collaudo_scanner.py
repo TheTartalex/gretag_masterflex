@@ -110,6 +110,8 @@ def collega(ponte, risoluzione=0, ir=False, r=print):
          ", SIMULAZIONE" if info.get("simulato") else ""))
     if info.get("simulato"):
         r("  (agente simulato: i numeri servono solo a provare il collaudo)")
+    for voce, errore in sorted((info.get("errori") or {}).items()):
+        r("  ATTENZIONE, stato '%s' non letto: %s" % (voce, errore))
     return b
 
 

@@ -70,6 +70,19 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
   cartella del ponte e gli ultimi collaudi; lo zip porta `ektest.exe`;
   `prepara.sh` controlla la lista.
 
+- **Prima prova dell'agente sulla riserva** (17:11, motori attivi, nessun
+  movimento comandato):
+  - lo scanner si apre e risponde a `ping`;
+  - `get_gate_type` risponde con due errori dell'SDK: codice 4 `(0, 0)` e
+    codice 3 `(10, 0)`;
+  - la scansione di un canale (`scan_raw`, R, risoluzione 0, esposizione 1)
+    dà il **codice 33** `(0, 0)`;
+  - 14 s dopo arriva un errore asincrono, codice **203** `(0, 10)`.
+
+  Il significato dei codici (enum `ScnError`) va letto in `scn_dll.dll`:
+  chiesti la DLL e il log dell'SDK di quella sessione. Intanto lo "stato"
+  dell'agente non fallisce più per intero se fallisce solo il tipo di gate.
+
 ## Problemi aperti, in ordine di priorità
 
 1. **Motori delle guide all'avvio.** Le guide sono i motori 3 e 4 del
@@ -108,6 +121,10 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
    il collaudo dello scanner, voci 2 e 3.
 
 ## Materiale chiesto e non ancora arrivato
+
+- [ ] `C:\MasterflexD\Scanner\Bin\scn_dll.dll` (resta fuori dal repository)
+      e `SDKCacheDir\log_0000.txt` della prova delle 17:11, per i codici
+      4, 3, 33 e 203
 
 - [ ] **i file del firmware 1.15 del carrello** (master e slave `.a37`,
       compilati il 28/11/2002): sulla produzione, in `AutomaticUpdate\`
