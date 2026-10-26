@@ -967,6 +967,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .prov .s{position:absolute;right:3px;top:3px;width:7px;height:7px;border-radius:50%}
 .prov .s.ok{background:var(--ok)} .prov .s.avviso{background:var(--avviso)}
 .prov .s.errore{background:var(--male)}
+.prov .s.vuoto{background:var(--dim)}
 
 /* --- la barra dei comandi principali: sempre visibile, tasti grandi --- */
 .comandi{flex:0 0 auto;display:flex;gap:8px;align-items:center;
@@ -1514,7 +1515,7 @@ function caricaStriscia(){
       im.src=url('/api/provino.jpg?id='+x.id); im.alt='';
       var n=document.createElement('div'); n.className='n'; n.textContent=x.numero;
       var st=document.createElement('div');
-      st.className='s '+(x.stato==='ok'?(x.avvisi?'avviso':'ok'):'errore');
+      st.className='s '+(x.stato==='ok'?(x.avvisi?'avviso':'ok'):(x.stato==='vuoto'?'vuoto':'errore'));
       d1.appendChild(im); d1.appendChild(n); d1.appendChild(st);
       d1.onclick=function(){
         provSel=x.id; caricaStriscia();

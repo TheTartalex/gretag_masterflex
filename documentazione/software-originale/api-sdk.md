@@ -357,3 +357,14 @@ al carrello: il verso lo decide il flag 5 del carrello, *Eject to Back*
 toccare il flash, filmscan va avanti a fotogrammi finché il carrello non
 rifiuta (`ponte/sdk.py`, `espelli_retro`). Quale errore dia l'SDK a
 pellicola uscita va ancora visto sulla macchina.
+
+**Fine striscia.** Dopo l'ultimo fotogramma `gretag_NextFrame` risponde
+`ERR_MOVE` (31): visto sulla riserva il 26/10/2026, a 20 fotogrammi.
+
+**Tempo di esposizione.** `ExposureTime` ha, per ogni LED, 12 tempi in
+`double` (`0x60` byte a LED da `+8`; il numero di LED è in `0x180B69C4`).
+`operator*=` li moltiplica tutti. L'SDK li taglia a un massimo per LED
+(`0x180684A0` con `0x1807C710`): 30000 per R, G e B, 5120 per l'IR. Il
+firmware della testa però rifiuta già prima: a x12 rispetto ai valori di
+fabbrica risponde `ERR_SW_SCANNER_IFC` + `ERR_FW_ERR_NO 1` +
+`ERR_GENERAL_FW`, a x1 accetta. Il limite vero non è ancora misurato.

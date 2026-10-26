@@ -41,6 +41,11 @@ class ScannerError(RuntimeError):
     pass
 
 
+class FinePellicola(ScannerError):
+    """Il carrello non trova un altro fotogramma: la striscia e' finita.
+    Non e' un guasto, e chi scansiona un rullo non deve leggerlo come tale."""
+
+
 @dataclass
 class FilmSensors:
     """Lettura dei sensori di presenza pellicola a bordo macchina.
@@ -586,20 +591,36 @@ class PonteSdkBackend(ScannerBackend):
     # flag 5, a 0 sulla riserva). Retro: fotogramma successivo finche' il
     # carrello rifiuta. Vedi ponte/sdk.py, espelli ed espelli_retro.
     supports_eject = True
-    ATTESA_ESPULSIONE_RETRO = 200.0   # l'agente si ferma da solo a 180 s
+    ATTESA_ESPULSIONE_RETRO = 200.0
+    # La fine della striscia la dice il carrello (ERR_MOVE sul fotogramma
+    # successivo): la stima ottica non serve, costa una lettura a fotogramma
+    # e scambierebbe i fotogrammi non esposti per pellicola finita.
+    fine_striscia_dal_carrello = True   # l'agente si ferma da solo a 180 s
 
-    def eject(self, verso: str = "davanti") -> None:
+    def eject(self, verso: str = "davanti") -> Optional[str]:
         if verso == "retro":
-            self._send("espelli_retro", attesa=self.ATTESA_ESPULSIONE_RETRO)
+            risposta = self._send("espelli_retro",
+                                  attesa=self.ATTESA_ESPULSIONE_RETRO)
         else:
-            self._send("espelli", attesa=self.ATTESA_MOVIMENTO)
+            risposta = self._send("espelli", attesa=self.ATTESA_MOVIMENTO)
         self._pos = 0.0
+        # la risposta dell'agente dice dove si e' fermato il carrello: va
+        # nel diario cosi' com'e'
+        return risposta
 
     def prossimo_fotogramma(self, fmt) -> None:
         # gretag_NextFrame, come il programma originale: e' il carrello a
         # cercare il fotogramma. Prima si usava advance_one_frame, che e' dei
         # carrelli Kodak.
-        self._send("prossimo", attesa=self.ATTESA_MOVIMENTO)
+        try:
+            self._send("prossimo", attesa=self.ATTESA_MOVIMENTO)
+        except ScannerError as exc:
+            # Dopo l'ultimo fotogramma il carrello risponde ERR_MOVE (31):
+            # visto sulla riserva il 26/10/2026, alla fine di una striscia
+            # da 20 fotogrammi.
+            if "ERR_MOVE" in str(exc) or "codice 31 " in str(exc):
+                raise FinePellicola(str(exc))
+            raise
         self._pos += fmt.pitch
 
     def fotogramma_precedente(self, fmt) -> None:
@@ -651,13 +672,37 @@ class PonteSdkBackend(ScannerBackend):
 
     # --- acquisizione -----------------------------------------------------
 
+    # Tempo di esposizione massimo, come multiplo di quello di fabbrica.
+    # Non e' documentato: il 26/10/2026 sulla riserva x1 andava e x12 no
+    # (ERR_SW_SCANNER_IFC + ERR_FW_ERR_NO 1 + ERR_GENERAL_FW, codici 46/47/42:
+    # lo rifiuta il firmware della testa, l'SDK da solo taglia a 30000 unita'
+    # per R, G e B, 0x1807C710). Si impara alla prima risposta negativa,
+    # dimezzando, e da li' in poi non si chiede di piu'.
+    max_esposizione: Optional[float] = None
+    ultima_esposizione: Optional[float] = None
+
     def capture_line_block(self, channel: str, lines: int,
                            exposure: float = 1.0) -> np.ndarray:
         if channel not in self.canali_disponibili:
             raise ScannerError("canale %s non disponibile su questa macchina"
                                % channel)
-        nome = self._send("grab_%s_%d_%.3f" % (channel, self.risoluzione, exposure),
-                          attesa=self.ATTESA_ACQUISIZIONE)
+        if self.max_esposizione is not None:
+            exposure = min(exposure, self.max_esposizione)
+        while True:
+            try:
+                nome = self._send("grab_%s_%d_%.3f"
+                                  % (channel, self.risoluzione, exposure),
+                                  attesa=self.ATTESA_ACQUISIZIONE)
+                break
+            except ScannerError as exc:
+                # Solo il rifiuto del firmware (codice 47) e solo sopra x1: a
+                # x1 lo stesso errore vuol dire altro (finestra sbagliata) e
+                # va riportato com'e'.
+                if "codice 47" not in str(exc) or exposure <= 1.0:
+                    raise
+                exposure = max(1.0, exposure / 2.0)
+                self.max_esposizione = exposure
+        self.ultima_esposizione = exposure
         percorso = os.path.join(self.root, "raw", nome)
         scadenza = time.time() + self.timeout
         while time.time() < scadenza and not os.path.exists(percorso):

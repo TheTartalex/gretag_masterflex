@@ -23,10 +23,11 @@ from typing import Callable, Dict, List, Optional
 import numpy as np
 
 from .acquire import (Annullato, Calibration, RawScan, ScanMetadata, film_present,
+                      fotogramma_vuoto,
                       measure_channel_exposure, run_calibration, scan_frame)
 from .compat import check_environment
 from .config import AppConfig, FORMATS, PRESETS
-from .hal import (FilmSensors, OriginaleBackend, ScannerBackend, ScannerError,
+from .hal import (FilmSensors, FinePellicola, OriginaleBackend, ScannerBackend, ScannerError,
                   make_backend)
 from . import colore
 from .invert import PROFILES
@@ -52,6 +53,10 @@ class JobState:
                 "message": self.message, "progress": self.progress,
                 "frame": self.frame, "total": self.total,
                 "errors": self.errors[-10:], "log": self.log[-40:]}
+
+
+class _FotogrammaVuoto(Exception):
+    """Esce dal blocco del fotogramma senza esportare: non e' un errore."""
 
 
 class ScanService:
@@ -299,8 +304,8 @@ class ScanService:
             if getattr(backend, "supports_eject", False):
                 try:
                     self.progress("Espulsione dal %s" % verso, 0.5)
-                    backend.eject(verso)
-                    self.log("Pellicola espulsa dal %s." % verso)
+                    esito = backend.eject(verso)
+                    self.log(esito or ("Pellicola espulsa dal %s." % verso))
                     self.progress("Espulsione completata", 1.0)
                     return
                 except NotImplementedError:
@@ -430,6 +435,7 @@ class ScanService:
 
             self.archivio.rullo_stato(rullo_id, "in_corso")
             fatti = 0
+            vuoti = 0
             # L'esposizione per canale si misura UNA volta per rullo, non a
             # ogni fotogramma: dipende dall'emulsione e dalla lampada, che nel
             # corso di un rullo non cambiano. Misurarla ogni volta farebbe
@@ -438,9 +444,13 @@ class ScanService:
             gains = None
             if preset.auto_exposure and preset.channel_exposure is None:
                 self.progress("Misura esposizione per canale", 0.0)
+                avvisi: List[str] = []
                 gains = measure_channel_exposure(backend, preset.channels,
                                                  self.calib,
-                                                 annulla=self.annullato)
+                                                 annulla=self.annullato,
+                                                 avvisi=avvisi)
+                for a in avvisi:
+                    self.log("Attenzione: " + a)
                 self.log("Esposizioni: " + ", ".join(
                     "%s x%.2f" % (k, v) for k, v in gains.items()))
 
@@ -486,7 +496,8 @@ class ScanService:
                                     "Coda della striscia al sensore d'ingresso: "
                                     "restano %d fotogrammi davanti alla finestra."
                                     % coda)
-                    elif not film_present(backend, self.calib):
+                    elif (not getattr(backend, "fine_striscia_dal_carrello", False)
+                          and not film_present(backend, self.calib)):
                         self.log("Fine della striscia dopo %d fotogrammi." % i)
                         break
 
@@ -510,6 +521,24 @@ class ScanService:
                     raw = scan_frame(backend, self.cfg, preset, fmt, self.calib,
                                      frame_index=i, channel_exposure=gains,
                                      annulla=self.annullato)
+
+                    vuoto, escursione = fotogramma_vuoto(
+                        raw, self.cfg.soglia_fotogramma_vuoto_d)
+                    if vuoto:
+                        # Non esposto (o tutto opaco): niente export, ma il
+                        # grezzo si tiene sempre, cosi' se la soglia ha
+                        # sbagliato il fotogramma si rielabora senza
+                        # rimettere la pellicola. Il numero resta quello
+                        # della striscia, come lo conta il cliente.
+                        raw_path = raw.save(self.cfg.path("raw"), nome)
+                        self.archivio.fotogramma_registra(
+                            rullo_id, i + 1, file_raw=raw_path, stato="vuoto",
+                            avvisi="non esposto: escursione %.2f D" % escursione)
+                        vuoti += 1
+                        self.log("Fotogramma %d vuoto (escursione %.2f D): "
+                                 "saltato, grezzo conservato." % (i + 1, escursione))
+                        raise _FotogrammaVuoto()
+
                     raw_path = ""
                     if self.cfg.keep_raw:
                         raw_path = raw.save(self.cfg.path("raw"), nome)
@@ -540,6 +569,9 @@ class ScanService:
                     for w in res.warnings:
                         self.log("Fotogramma %d: %s" % (i + 1, w))
 
+                except _FotogrammaVuoto:
+                    pass
+
                 except Annullato:
                     # STOP non e' un fotogramma fallito: non si registra come
                     # errore e soprattutto non si passa al successivo.
@@ -557,8 +589,21 @@ class ScanService:
                     self.log("Interrotto dall'operatore dopo il fotogramma %d."
                              % (i + 1))
                     break
+                # Se la macchina ha rifiutato un'esposizione, il backend ha
+                # imparato il suo limite: da qui in poi i fotogrammi si
+                # chiedono gia' entro quello, e il registro lo dice una volta.
+                tetto = getattr(backend, "max_esposizione", None)
+                if gains and tetto and any(v > tetto for v in gains.values()):
+                    gains = dict((k, min(v, tetto)) for k, v in gains.items())
+                    self.log("Esposizione ridotta al limite della macchina "
+                             "(x%.2f): %s" % (tetto, ", ".join(
+                                 "%s x%.2f" % kv for kv in gains.items())))
                 try:
                     backend.prossimo_fotogramma(fmt)
+                except FinePellicola:
+                    self.log("Fine della striscia: il carrello non trova "
+                             "altri fotogrammi dopo il %d." % (i + 1))
+                    break
                 except Exception as exc:                # noqa: BLE001
                     self.log("Avanzamento fallito: %s. Interrompo." % exc)
                     break
@@ -577,8 +622,8 @@ class ScanService:
                 try:
                     if getattr(backend, "supports_eject", False):
                         verso = self.cfg.verso_espulsione_fine_rullo
-                        backend.eject(verso)
-                        self.log("Pellicola espulsa dal %s." % verso)
+                        esito = backend.eject(verso)
+                        self.log(esito or ("Pellicola espulsa dal %s." % verso))
                     else:
                         sens = backend.read_sensors()
                         percorso = 0.0
@@ -603,14 +648,16 @@ class ScanService:
                          % (fatti, "a" if fatti == 1 else "i",
                             "o" if fatti == 1 else "i"))
             elif automatico:
-                self.log("Rullo terminato: %d fotogrammi." % fatti)
-                if fatti >= limite:
+                self.log("Rullo terminato: %d fotogrammi%s." % (
+                    fatti, (", %d vuoti" % vuoti) if vuoti else ""))
+                if fatti + vuoti >= limite:
                     self.log(
                         "Raggiunto il tetto di %d fotogrammi per il formato %s: "
                         "se la striscia continua, scansionare il resto come "
                         "rullo nuovo." % (limite, rullo.formato))
             else:
-                self.log("Rullo terminato: %d fotogrammi su %d." % (fatti, rullo.attesi))
+                self.log("Rullo terminato: %d fotogrammi su %d%s." % (
+                    fatti, rullo.attesi, (", %d vuoti" % vuoti) if vuoti else ""))
 
         self._avvia("rullo", job,
                     total=rullo.attesi or FORMATS[rullo.formato].max_fotogrammi)

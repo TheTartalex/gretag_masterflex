@@ -57,6 +57,13 @@ reintrodurle.
   `sdk_ir_verificato` e' False (`canali_disponibili`).
 - **Lo stato non interroga la macchina.** L'interfaccia lo chiede ogni
   secondo: `status()` risponde con lo stato locale.
+- **L'esposizione ha un tetto che non conosciamo.** A x12 il firmware
+  rifiuta (46/47/42). `PonteSdkBackend` lo impara dimezzando; non togliere
+  quel ciclo e non alzare i limiti di `measure_channel_exposure` senza una
+  prova sulla macchina.
+- **La fine della striscia la dice il carrello** (`ERR_MOVE` →
+  `FinePellicola`). Un fotogramma uniforme non e' fine pellicola: puo'
+  essere non esposto, e ne capitano 3-4 di fila (`fotogramma_vuoto`).
 
 ## Cos'è questo progetto
 

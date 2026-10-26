@@ -39,6 +39,19 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-10-26 — esposizione, fine striscia, fotogrammi vuoti
+
+- `PonteSdkBackend`: al rifiuto del firmware (codice 47) sopra x1
+  l'esposizione si dimezza e il limite si ricorda (`max_esposizione`);
+  `acquire` scrive nei metadati quella usata.
+- `measure_channel_exposure`: misura sotto il 3% della luce → x1 con avviso.
+- `FinePellicola`: `ERR_MOVE` su "fotogramma successivo" chiude il rullo.
+  Con l'SDK niente più `film_present` a ogni fotogramma.
+- `fotogramma_vuoto` (escursione sotto `soglia_fotogramma_vuoto_d`, 0,10 D):
+  fotogramma saltato, stato "vuoto", grezzo conservato.
+- Simulatore dell'agente come la riserva: rifiuta oltre x4, `ERR_MOVE`
+  dopo 8 fotogrammi, due fotogrammi vuoti.
+
 ### 2026-10-26 — fotogrammi ed espulsione
 
 - Comandi `prossimo`/`precedente` (`gretag_NextFrame`/`PreviousFrame`),

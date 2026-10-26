@@ -194,7 +194,8 @@ def measure_channel_exposure(backend: ScannerBackend, channels: List[str],
                              lines: int = 24, target: float = 0.80,
                              limits: Tuple[float, float] = (0.25, 12.0),
                              progress: Progress = None,
-                             annulla=None) -> Dict[str, float]:
+                             annulla=None,
+                             avvisi: Optional[List[str]] = None) -> Dict[str, float]:
     """Misura quanto esporre ciascun canale, con una pre-scansione veloce.
 
     Perche' serve: la maschera arancione del negativo assorbe molto il blu.
@@ -213,6 +214,9 @@ def measure_channel_exposure(backend: ScannerBackend, channels: List[str],
     """
     gains: Dict[str, float] = {}
     lo, hi = limits
+    massimo = getattr(backend, "max_esposizione", None)
+    if massimo:
+        hi = min(hi, massimo)
     channels = [c for c in channels
                 if c in getattr(backend, "canali_disponibili", CHANNELS)]
 
@@ -225,13 +229,56 @@ def measure_channel_exposure(backend: ScannerBackend, channels: List[str],
         backend.lamp(ch, False)
 
         level = float(np.percentile(cal, 99.0))
-        if level < 1e-5:
-            gains[ch] = hi          # canale quasi cieco: esponi il massimo
+        if level < 0.03:
+            # Meno del 3% della luce anche nei punti piu' chiari: la finestra
+            # e' su una zona opaca (la coda iniziale, annerita, o un
+            # fotogramma bruciato), non su un'immagine. Sulla riserva una
+            # misura cosi' dava x12, che la macchina rifiuta. Non si indovina:
+            # si resta a x1 e lo si dice.
+            gains[ch] = 1.0
+            if avvisi is not None:
+                avvisi.append(
+                    "misura dell'esposizione di %s su una zona opaca (%.1f%% "
+                    "della luce): resta x1. Portare un fotogramma in finestra "
+                    "(Fotogramma ›) prima di scansionare." % (ch, level * 100))
             continue
         gains[ch] = float(np.clip(target / level, lo, hi))
 
     _tick(progress, "Esposizioni misurate", 1.0)
     return gains
+
+
+# --------------------------------------------------------------------------
+# Fotogrammi vuoti
+# --------------------------------------------------------------------------
+
+def fotogramma_vuoto(raw: "RawScan", soglia_densita: float = 0.10
+                     ) -> Tuple[bool, float]:
+    """Dice se il fotogramma non porta immagine: non esposto (solo base
+    pellicola) oppure uniformemente opaco.
+
+    In mezzo a una striscia capitano 3-4 fotogrammi non esposti. Non sono la
+    fine della pellicola e non sono un guasto: vanno saltati e annotati, e la
+    scansione prosegue.
+
+    Si guarda l'escursione di densita' (percentile 98 meno percentile 2) sul
+    fotogramma senza il 10% dei bordi, su blocchi 8x8 mediati perche' il
+    rumore del sensore nelle zone scure non passi per contenuto. La sola base
+    ne ha qualche centesimo, una coda annerita meno di 0,1 D; un cielo
+    sfumato sta gia' sopra 0,15 D. Nel dubbio il grezzo si conserva comunque. Si restituisce anche la misura, che va nel registro: se la
+    soglia sbaglia, il numero dice di quanto.
+    """
+    ch = "G" if "G" in raw.planes else next(iter(raw.planes))
+    p = raw.planes[ch][0]
+    h, w = p.shape
+    c = p[h // 10:h - h // 10, w // 10:w - w // 10]
+    hh, ww = (c.shape[0] // 8) * 8, (c.shape[1] // 8) * 8
+    if hh == 0 or ww == 0:
+        return False, float("nan")
+    blocchi = c[:hh, :ww].reshape(hh // 8, 8, ww // 8, 8).mean(axis=(1, 3))
+    d = -np.log10(np.clip(blocchi, 1e-4, None))
+    escursione = float(np.percentile(d, 98) - np.percentile(d, 2))
+    return escursione < soglia_densita, escursione
 
 
 # --------------------------------------------------------------------------
@@ -395,6 +442,11 @@ def scan_frame(backend: ScannerBackend, cfg: AppConfig, preset: ScanPreset,
                 rewind()
                 block = backend.capture_line_block(
                     ch, lines, exposure=exp * gains.get(ch, 1.0))
+                # il backend puo' aver ridotto l'esposizione al limite della
+                # macchina: nei metadati va quella usata davvero
+                usata = getattr(backend, "ultima_esposizione", None)
+                if usata is not None and exp:
+                    scan.meta.channel_exposure[ch] = usata / exp
                 cal = apply_calibration(block, ch, calib)
                 acc = cal if acc is None else acc + cal
             scan.add(ch, (acc / preset.passes_per_channel).astype(np.float32))

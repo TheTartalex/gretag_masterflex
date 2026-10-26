@@ -269,6 +269,9 @@ class AppConfig:
     export_format: str = "tiff16"        # tiff16 | tiff8 | jpeg | png
     jpeg_quality: int = 95
     keep_raw: bool = True                # conservare i grezzi per rielaborazioni future
+    # sotto questa escursione di densita' (D) un fotogramma e' vuoto: non
+    # esposto o tutto opaco. Si salta, si annota e si conserva il grezzo.
+    soglia_fotogramma_vuoto_d: float = 0.10
 
     # --- elaborazione ---
     auto_crop: bool = True

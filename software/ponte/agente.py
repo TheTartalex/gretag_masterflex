@@ -129,6 +129,14 @@ class Registro(object):
                 print("  Controllare i permessi della cartella del ponte.")
 
 
+class ErroreSimulato(RuntimeError):
+    """Come sdk.ErroreScanner: il messaggio e i codici dell'SDK."""
+
+    def __init__(self, messaggio, codici):
+        RuntimeError.__init__(self, messaggio)
+        self.codici = codici
+
+
 class AgenteSimulato(object):
     """Sostituto dello scanner per provare il ponte senza la macchina.
 
@@ -157,15 +165,36 @@ class AgenteSimulato(object):
     def tipo_gate(self): return 0
     def scegli_formato(self, f): pass
     pellicola_inserita = False
-    def arma_carrello(self, modo=1): self.pellicola_inserita = True
+    # Come la riserva il 26/10/2026: oltre un certo tempo di esposizione il
+    # firmware rifiuta (46/47/42), e dopo l'ultimo fotogramma il carrello
+    # risponde ERR_MOVE. Il limite vero non si sa: qui x4. La striscia e'
+    # di 8 fotogrammi.
+    MAX_ESPOSIZIONE = 4.0
+    FOTOGRAMMI_STRISCIA = 8
+    # in mezzo alle strisce capitano fotogrammi non esposti: solo base
+    FOTOGRAMMI_VUOTI = (3, 4)
+    _fotogramma = 0
+
+    def arma_carrello(self, modo=1):
+        self.pellicola_inserita = True
+        self._fotogramma = 0
+
     def alimentazione(self, accesa=True): pass
     def avanza_fotogramma(self, mezzo=False): pass
-    def fotogramma_successivo(self): pass
+
+    def fotogramma_successivo(self):
+        if self._fotogramma + 1 >= self.FOTOGRAMMI_STRISCIA:
+            raise ErroreSimulato(
+                "fotogramma successivo: l'SDK segnala 1 errore: codice 31 "
+                "(0, 0) ERR_MOVE", [(31, 0, 0)])
+        self._fotogramma += 1
     def fotogramma_precedente(self): pass
     def espelli(self): self.pellicola_inserita = False
     def espelli_retro(self):
+        fatti = self.FOTOGRAMMI_STRISCIA - 1 - self._fotogramma
+        self._fotogramma = 0
         self.pellicola_inserita = False
-        return 6, "simulazione: fine pellicola"
+        return fatti, "fotogramma successivo: codice 31 (0, 0) ERR_MOVE"
     def fuoco(self, tipo=1): pass
     def regola_fine(self, passi): pass
     def offset_xy(self, formato=0): return (47, 76)
@@ -179,6 +208,11 @@ class AgenteSimulato(object):
     def scansiona_canale(self, canale=1, esposizione=1.0, risoluzione=0,
                          x0=0, y0=0, larghezza=0, altezza=0, buio=False):
         import random
+        if esposizione > self.MAX_ESPOSIZIONE:
+            raise ErroreSimulato(
+                "scansione canale %d: l'SDK segnala 3 errori: codice 46 (0, 0) "
+                "ERR_SW_SCANNER_IFC, codice 47 (1, 0) ERR_FW_ERR_NO, codice 42 "
+                "(1, 0) ERR_GENERAL_FW" % canale, [(46, 0, 0), (47, 1, 0), (42, 1, 0)])
         # come sdk.DIMENSIONI_GREZZE
         dim = {0: (2100, 1400), 1: (1050, 700), 2: (525, 350),
                3: (262, 175), 4: (131, 87)}[risoluzione]
@@ -191,14 +225,21 @@ class AgenteSimulato(object):
         if buio:
             # come la riserva il 26/10/2026 con il bit del buio acceso
             base = [19.0 + rnd.randint(-2, 2) for x in range(w)]
-        # Bande orizzontali che cambiano a ogni lettura: senza un po' di
-        # "immagine" il rilevamento di fine pellicola vedeva luce uniforme e
-        # chiudeva il rullo simulato dopo il primo fotogramma.
+        # Cosa c'e' in finestra. Senza pellicola luce piena e uniforme (la
+        # calibrazione). Con la pellicola, bande orizzontali che cambiano a
+        # ogni lettura, con mezza densita' abbondante di escursione come una
+        # fotografia; nei fotogrammi non esposti solo la base, uniforme.
         self._letture = getattr(self, "_letture", 0) + 1
         var = random.Random(self._letture)
+        if not self.pellicola_inserita:
+            intervallo = (1.0, 1.0)
+        elif self._fotogramma in self.FOTOGRAMMI_VUOTI:
+            intervallo = (0.45, 0.45)
+        else:
+            intervallo = (0.3, 1.0)
         varianti = []
         for _ in range(8):
-            k = var.uniform(0.75, 1.0)
+            k = var.uniform(*intervallo)
             riga = bytearray()
             for v in base:
                 v = int(v * k)

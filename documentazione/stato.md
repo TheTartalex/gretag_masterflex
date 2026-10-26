@@ -159,6 +159,33 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
   Da vedere sulla macchina: che errore dà l'SDK quando la pellicola è
   uscita dal retro (lo scrive il registro dell'agente).
 
+- **Primo rullo vero, 20 fotogrammi (19:00)**: il trasporto va, G a x1 si
+  legge (2100x1400 in 1,4–2,3 s), ma **ogni R a x12 è rifiutato** dal
+  firmware della testa (46/47/42, come per la finestra sbagliata), quindi
+  nessun fotogramma completo. Il x12 veniva dalla misura dell'esposizione
+  fatta sulla coda iniziale annerita, non su un'immagine. Dopo il
+  ventesimo, `prossimo` risponde **`ERR_MOVE` (31)**: è la fine della
+  striscia. Correzioni:
+  - il ponte impara il limite dell'esposizione: al rifiuto dimezza e
+    riprova, poi non chiede più di così. Nei metadati va l'esposizione
+    usata davvero. L'SDK da solo taglia a 30000 unità per R, G e B
+    (`0x1807C710`); il limite del firmware va misurato, si sa solo che x1
+    va e x12 no;
+  - una misura sotto il 3% della luce non vale: si resta a x1 e lo si dice;
+  - `ERR_MOVE` sul fotogramma successivo chiude il rullo come fine striscia;
+  - con l'SDK la fine striscia la dice il carrello: niente più lettura di
+    prova in G a ogni fotogramma;
+  - **fotogrammi vuoti** (non esposti o tutti opachi, anche 3–4 in mezzo
+    alla striscia): sotto 0,10 D di escursione il fotogramma si salta, si
+    segna "vuoto" nella striscia e il grezzo si conserva comunque.
+
+  Le immagini di quel rullo non si recuperano: il solo G letto stava in
+  memoria, e un fotogramma si salva solo a canali completi.
+
+  Da vedere: dove finisce la pellicola dopo `ERR_MOVE` (l'espulsione dal
+  retro a quel punto risponde subito `ERR_MOVE` anche lei), e come si
+  comporta il carrello sui fotogrammi non esposti.
+
 ## Problemi aperti, in ordine di priorità
 
 1. **Motori delle guide all'avvio.** Le guide sono i motori 3 e 4 del
