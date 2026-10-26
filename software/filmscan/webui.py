@@ -1238,7 +1238,10 @@ details.sez>div{padding-bottom:10px}
     <b>Programma originale</b>: si scansiona da PhxScanner, con
     MASTERFLEX.bat voce 14 (osservatore) aperta; "Scansiona rullo" qui
     raccoglie le immagini nel rullo scelto fino a STOP.</div>
-   <div class="row"><button onclick="connetti()">Connetti</button></div>
+   <div class="row">
+    <button onclick="connetti()">Connetti</button>
+    <button class="sec" onclick="disconnetti()">Disconnetti</button>
+   </div>
    <div id="amb" style="font-size:11px;color:var(--dim);margin-top:10px"></div>
   </section>
   <section class="pannello">
@@ -1313,7 +1316,6 @@ details.sez>div{padding-bottom:10px}
  </div>
 
  <div class="comandi">
-  <button class="sec" onclick="connetti()">Connetti</button>
   <button class="sec" id="tasto_calibra" onclick="calibra()">Calibra</button>
   <button class="sec" onclick="carica()" title="Guide al formato del rullo e carrello pronto a ricevere la pellicola">Carica</button>
   <button class="sec" onclick="fotogramma(1)" title="Il carrello porta in finestra il fotogramma successivo">Fotogramma &rsaquo;</button>
@@ -1663,6 +1665,7 @@ function disegnaCurva(){
 })();
 
 function connetti(){ post('/api/connetti',{driver:val('driver')}).then(mostraStato); }
+function disconnetti(){ post('/api/disconnetti',{}).then(mostraStato); }
 function fotogramma(v){ post('/api/fotogramma',{verso:v,formato:val('formato')}).then(mostraStato); }
 function espelli(v){ post('/api/espelli',{verso:v}).then(esito); }
 function carica(){ post('/api/carica',{formato:val('formato')}).then(esito); }
@@ -2310,6 +2313,9 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if u.path == "/api/connetti":
                 return self._json(s.connetti(d.get("driver")))
+
+            if u.path == "/api/disconnetti":
+                return self._json(s.disconnetti())
 
             if u.path == "/api/calibra":
                 s.calibra()

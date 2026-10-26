@@ -39,6 +39,13 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-10-26 — Disconnetti
+
+- Interfaccia: Connetti tolto dalla barra principale (resta nella scheda
+  Macchina), accanto c'è **Disconnetti** (`ScanService.disconnetti`,
+  `/api/disconnetti`). Rifiuta a lavoro in corso e ferma anche la
+  connessione automatica, che altrimenti si ricollegherebbe da sola.
+
 ### 2026-10-26 — avvio automatico, modi di lavoro, calibrazione giornaliera
 
 - Avvio automatico da un'attività dell'Utilità di pianificazione, da

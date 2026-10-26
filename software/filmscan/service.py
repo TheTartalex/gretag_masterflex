@@ -89,6 +89,9 @@ class ScanService:
         self._stop = threading.Event()
         # mentre la connessione automatica aspetta lo scanner, cosa aspetta
         self.attesa_connessione: Optional[str] = None
+        # Disconnetti ferma anche la connessione automatica: altrimenti si
+        # ricollegherebbe da sola cinque secondi dopo
+        self._ferma_auto = threading.Event()
 
     # ------------------------------------------------------------------
 
@@ -153,7 +156,8 @@ class ScanService:
             ultimo = ""
             self.attesa_connessione = "connessione automatica: attendo lo scanner"
             try:
-                while time.time() < fine and self.backend is None:
+                while (time.time() < fine and self.backend is None
+                       and not self._ferma_auto.is_set()):
                     try:
                         self.connetti()
                         self.log("Connessione automatica riuscita.")
@@ -164,14 +168,33 @@ class ScanService:
                             "connessione automatica: attendo lo scanner (%s)"
                             % ultimo)
                     time.sleep(pausa)
-                if self.backend is None:
+                if self.backend is None and not self._ferma_auto.is_set():
                     self.log("Connessione automatica non riuscita in %.0f "
                              "minuti: %s. Premere Connetti." % (durata / 60, ultimo))
             finally:
                 self.attesa_connessione = None
 
+        self._ferma_auto.clear()
         threading.Thread(target=ciclo, name="connessione-automatica",
                          daemon=True).start()
+
+    def disconnetti(self) -> Dict[str, object]:
+        """Lascia la macchina. Non a lavoro in corso: a meta' di un rullo
+        la pellicola resterebbe in una posizione che nessuno conosce. Con
+        l'SDK l'agente resta acceso e tiene lo scanner: si stacca solo
+        l'interfaccia, e Connetti la riattacca subito."""
+        if self.job.running:
+            raise ScannerError("c'e' un lavoro in corso: aspettare la fine o "
+                               "premere STOP prima di disconnettere")
+        self._ferma_auto.set()
+        backend, self.backend = self.backend, None
+        if backend is not None:
+            try:
+                backend.disconnect()
+            except Exception as exc:                    # noqa: BLE001
+                self.log("Disconnessione: %s" % exc)
+            self.log("Macchina disconnessa.")
+        return self.stato()
 
     def _require(self) -> ScannerBackend:
         if self.backend is None:
