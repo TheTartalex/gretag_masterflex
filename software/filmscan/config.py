@@ -165,8 +165,17 @@ PRESETS: Dict[str, ScanPreset] = {
 @dataclass
 class AppConfig:
     # --- hardware ---
-    driver: str = "mock"                 # "mock" | "bridge" | "sdk" | "native"
-    bridge_path: str = ""                # cartella condivisa se driver == "bridge"/"sdk"
+    driver: str = "mock"                 # "mock" | "sdk"
+    bridge_path: str = ""                # cartella di scambio con l'agente (driver "sdk")
+
+    # --- macchina vera (driver "sdk") ---------------------------------------
+    # Quale ingresso digitale (diag_input) e' quale sensore. Vuoto finche' non
+    # si scopre sulla macchina: allora i sensori risultano non disponibili.
+    sdk_ingressi: Dict[str, int] = field(default_factory=dict)
+    # True solo dopo aver visto che ColorChannel 3 restituisce davvero l'IR.
+    sdk_ir_verificato: bool = False
+    # Regolazione fine massima per comando, in mm. Oltre si usa "avanza".
+    max_regola_mm: float = 3.0
 
     # --- geometria ottica reale ---------------------------------------------
     # RETTIFICATA il 3/9/2026 leggendo le costanti dentro scn_dll.dll, l'SDK

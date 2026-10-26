@@ -127,12 +127,24 @@ class ScanService:
             raise ScannerError("macchina non connessa")
         return self.backend
 
+    def _libera(self) -> ScannerBackend:
+        """La macchina, ma solo se nessun lavoro la sta usando.
+
+        I tasti di movimento dell'interfaccia passavano direttamente al
+        backend, anche a rullo in corso: due comandi di trasporto sulla stessa
+        pellicola, esattamente quello che il lock dei lavori deve impedire.
+        """
+        if self.job.running:
+            raise ScannerError("c'e' un lavoro in corso: aspettare la fine o "
+                               "premere STOP prima di muovere la macchina")
+        return self._require()
+
     def muovi(self, mm: float) -> Dict[str, object]:
-        self._require().advance(float(mm))
+        self._libera().advance(float(mm))
         return self.stato()
 
     def fuoco(self, mm: float) -> Dict[str, object]:
-        self._require().set_focus(float(mm))
+        self._libera().set_focus(float(mm))
         return self.stato()
 
     def ferma(self) -> Dict[str, object]:
@@ -280,7 +292,7 @@ class ScanService:
                 return
 
             percorso = 0.0
-            passo = 10.0
+            passo = min(10.0, getattr(backend, "max_regola_mm", 10.0))
             while percorso < self.cfg.eject_max_mm:
                 if self._stop.is_set():
                     self.log("Espulsione interrotta dall'operatore.")
@@ -316,6 +328,7 @@ class ScanService:
     def anteprima(self, formato: str) -> None:
         def job():
             fmt = FORMATS[formato]
+            self._require().seleziona_formato(formato)
             raw = scan_frame(self._require(), self.cfg, PRESETS["provino"], fmt,
                              self.calib, progress=self.progress,
                              annulla=self.annullato)
@@ -353,6 +366,12 @@ class ScanService:
 
         def job():
             backend = self._require()
+            backend.seleziona_formato(rullo.formato)
+            mancanti = [c for c in preset.channels
+                        if c not in getattr(backend, "canali_disponibili", preset.channels)]
+            if mancanti:
+                self.log("Canali non disponibili su questa macchina, saltati: %s"
+                         % ", ".join(mancanti))
 
             if self.cfg.auto_start:
                 s = backend.read_sensors()
@@ -417,7 +436,7 @@ class ScanService:
                                     "configurato: gli ultimi fotogrammi della "
                                     "striscia potrebbero andare persi. "
                                     "Misurare la distanza sensore-finestra e "
-                                    "annotarla in NOTE-MACCHINA.md.")
+                                    "annotarla in documentazione/hardware/note-macchina.md.")
                                 self.log(self.job.errors[-1])
                                 coda = 0
                             else:
@@ -498,7 +517,7 @@ class ScanService:
                              % (i + 1))
                     break
                 try:
-                    backend.advance(fmt.pitch)
+                    backend.prossimo_fotogramma(fmt)
                 except Exception as exc:                # noqa: BLE001
                     self.log("Avanzamento fallito: %s. Interrompo." % exc)
                     break
@@ -521,10 +540,11 @@ class ScanService:
                     else:
                         sens = backend.read_sensors()
                         percorso = 0.0
+                        passo = min(10.0, getattr(backend, "max_regola_mm", 10.0))
                         while sens.disponibili and sens.uscita and \
                                 percorso < self.cfg.eject_max_mm:
-                            backend.advance(10.0)
-                            percorso += 10.0
+                            backend.advance(passo)
+                            percorso += passo
                             sens = backend.read_sensors()
                         if percorso:
                             self.log("Pellicola espulsa dopo %.0f mm." % percorso)

@@ -1768,6 +1768,7 @@ PAGINA_PIN = _vesti(PAGINA_PIN)
 class Handler(BaseHTTPRequestHandler):
     servizio: ScanService = None            # type: ignore
     token: str = ""
+    impostazioni: Optional[str] = None      # file in cui salvare le scelte
     server_version = "filmscan"
 
     def handle_error(self, request, client_address):
@@ -2193,6 +2194,11 @@ class Handler(BaseHTTPRequestHandler):
                     if modo not in consegne.PULIZIE:
                         return self._json({"errore": "pulizia sconosciuta"}, 400)
                     s.cfg.pulizia = modo
+                if self.impostazioni:
+                    try:
+                        s.cfg.save(self.impostazioni)
+                    except (IOError, OSError) as exc:
+                        s.log("Impostazioni non salvate: %s" % exc)
                 percorso = s.aggiorna_registro()
                 return self._json({"archivio_dir": s.cfg.path("archivio"),
                                    "conservazione_giorni": s.cfg.conservazione_giorni,
@@ -2460,8 +2466,10 @@ def apri_nel_browser(url: str, ritardo: float = 1.2) -> None:
 
 def avvia(host: str = "127.0.0.1", porta: int = 8080,
           cfg: Optional[AppConfig] = None, db: str = "./ordini.db",
-          token: Optional[str] = None, apri: bool = False) -> None:
+          token: Optional[str] = None, apri: bool = False,
+          impostazioni: Optional[str] = None) -> None:
     cfg = cfg or AppConfig()
+    Handler.impostazioni = impostazioni
 
     if host not in ("127.0.0.1", "localhost") and token is None:
         # Otto cifre, non una sequenza di caratteri strani: si detta al

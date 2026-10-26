@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Orchestrazione: dal grezzo al file finale, e scansione automatica del rullo.
+Orchestrazione: dal grezzo al file finale. La scansione del rullo sta in
+service.py (ScanService.scansiona_rullo).
 
 Ordine delle operazioni, che NON e' arbitrario:
 
@@ -21,7 +22,6 @@ dell'inversione, la correzione si applica meglio dopo.
 from __future__ import annotations
 
 import os
-import time
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional
 
@@ -30,9 +30,8 @@ import numpy as np
 from . import colore
 from . import enhance as enh
 from . import framing, invert, irclean, orient, registration
-from .acquire import Calibration, RawScan, scan_frame
-from .config import AppConfig, FilmFormat, ScanPreset, mm_to_px
-from .hal import ScannerBackend
+from .acquire import RawScan
+from .config import mm_to_px
 
 
 Progress = Optional[Callable[[str, float], None]]
@@ -365,75 +364,3 @@ def export_mask(mask: np.ndarray, path: str) -> str:
     from PIL import Image
     Image.fromarray((mask.astype(np.uint8) * 255), mode="L").save(path)
     return path
-
-
-# --------------------------------------------------------------------------
-# Scansione automatica del rullo
-# --------------------------------------------------------------------------
-
-@dataclass
-class BatchOptions:
-    frames: int = 36
-    stop_on_error: bool = False
-    save_raw: bool = True
-    name_template: str = "{roll}_{index:03d}"
-    roll: str = "rullo"
-
-
-def scan_roll(backend: ScannerBackend, cfg: AppConfig, preset: ScanPreset,
-              fmt: FilmFormat, opts: ProcessOptions, batch: BatchOptions,
-              calib: Optional[Calibration] = None,
-              progress: Progress = None,
-              should_stop: Optional[Callable[[], bool]] = None) -> List[str]:
-    """Scansione automatica dell'intero rullo con avanzamento.
-
-    Ogni fotogramma e' indipendente: se uno fallisce si annota e si prosegue,
-    invece di perdere tutto il lavoro. La posizione viene ricalibrata a ogni
-    frame dagli stacchi trovati, per non accumulare errore lungo il rullo.
-    """
-    written: List[str] = []
-    errors: List[str] = []
-
-    for i in range(batch.frames):
-        if should_stop and should_stop():
-            _tick(progress, "Interrotto dall'operatore", i / max(batch.frames, 1))
-            break
-
-        base = i / max(batch.frames, 1)
-        _tick(progress, "Fotogramma %d di %d" % (i + 1, batch.frames), base)
-
-        try:
-            raw = scan_frame(backend, cfg, preset, fmt, calib, frame_index=i)
-            name = batch.name_template.format(roll=batch.roll, index=i + 1)
-
-            if batch.save_raw and cfg.keep_raw:
-                raw.save(cfg.path("raw"), name)
-
-            result = process(raw, opts)
-            ext = {"tiff16": ".tif", "tiff8": ".tif",
-                   "png": ".png", "jpeg": ".jpg"}.get(cfg.export_format, ".tif")
-            out = os.path.join(cfg.path("out"), name + ext)
-            export(result.image, out, cfg.export_format, cfg.jpeg_quality)
-            written.append(out)
-
-            if cfg.export_ir_mask and result.mask is not None:
-                export_mask(result.mask, os.path.join(cfg.path("out"), name + "_mask.png"))
-
-            # avanzamento al fotogramma successivo
-            backend.advance(fmt.pitch)
-
-        except Exception as exc:                       # noqa: BLE001
-            errors.append("frame %d: %s" % (i + 1, exc))
-            if batch.stop_on_error:
-                raise
-            # tenta comunque di avanzare, per non restare bloccati sullo stesso punto
-            try:
-                backend.advance(fmt.pitch)
-            except Exception:                          # noqa: BLE001
-                break
-
-    if errors:
-        _tick(progress, "Completato con %d errori" % len(errors), 1.0)
-    else:
-        _tick(progress, "Rullo completato: %d fotogrammi" % len(written), 1.0)
-    return written

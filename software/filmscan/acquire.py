@@ -106,12 +106,21 @@ def run_calibration(backend: ScannerBackend, channels=CHANNELS,
     L'operatore deve aver tolto la pellicola dal percorso ottico prima di lanciarla.
     Le letture vengono mediate su piu' ripetizioni per abbattere il rumore: questi
     frame vengono sottratti da OGNI scansione futura, quindi devono essere puliti.
+
+    Se il backend non sa spegnere la lampada (l'SDK della macchina vera non lo
+    espone) il dark frame non si puo' leggere: prima si leggeva lo stesso, a
+    lampada accesa, e flat - dark veniva quasi zero. Adesso il dark resta a
+    zero e la calibrazione lo scrive nella nota. Si leggono solo i canali che
+    il backend sa acquisire.
     """
     dark: Dict[str, np.ndarray] = {}
     flat: Dict[str, np.ndarray] = {}
-    total = len(channels) * 2
+    channels = [c for c in channels
+                if c in getattr(backend, "canali_disponibili", CHANNELS)]
+    buio = getattr(backend, "controlla_lampada", True)
+    total = len(channels) * (2 if buio else 1)
 
-    for i, ch in enumerate(channels):
+    for i, ch in enumerate(channels if buio else []):
         _tick(progress, "Dark frame %s" % ch, i / total)
         backend.lamp(ch, False)
         acc = np.zeros(0)
@@ -122,8 +131,9 @@ def run_calibration(backend: ScannerBackend, channels=CHANNELS,
             acc = m if acc.size == 0 else acc + m
         dark[ch] = acc / repeats
 
+    fatti = len(dark)
     for i, ch in enumerate(channels):
-        _tick(progress, "Flat field %s" % ch, (len(channels) + i) / total)
+        _tick(progress, "Flat field %s" % ch, (fatti + i) / total)
         backend.lamp(ch, True)
         acc = np.zeros(0)
         for r in range(repeats):
@@ -131,10 +141,14 @@ def run_calibration(backend: ScannerBackend, channels=CHANNELS,
             block = backend.capture_line_block(ch, lines).astype(np.float64)
             m = block.mean(axis=0)
             acc = m if acc.size == 0 else acc + m
-        flat[ch] = acc / repeats - dark[ch]
+        media = acc / repeats
+        if ch not in dark:
+            dark[ch] = np.zeros_like(media)
+        flat[ch] = media - dark[ch]
 
     _tick(progress, "Calibrazione completata", 1.0)
-    return Calibration(dark, flat, time.time())
+    nota = "" if buio else "senza dark frame: il backend non controlla la lampada"
+    return Calibration(dark, flat, time.time(), nota)
 
 
 def apply_calibration(raw: np.ndarray, channel: str,
@@ -199,6 +213,8 @@ def measure_channel_exposure(backend: ScannerBackend, channels: List[str],
     """
     gains: Dict[str, float] = {}
     lo, hi = limits
+    channels = [c for c in channels
+                if c in getattr(backend, "canali_disponibili", CHANNELS)]
 
     for i, ch in enumerate(channels):
         _tick(progress, "Misura esposizione %s" % ch, i / max(len(channels), 1))
@@ -317,8 +333,14 @@ def scan_frame(backend: ScannerBackend, cfg: AppConfig, preset: ScanPreset,
     lettura). Le esposizioni diverse restano SEPARATE: la loro fusione e' una
     decisione di elaborazione, non di acquisizione.
     """
-    lines = mm_to_px(fmt.frame_w, preset.dpi)
-    channels = preset.channels
+    # La risoluzione vera e' quella della macchina: i preset chiedono 2000 o
+    # 4000 dpi, ma il sensore ne legge cfg.optical_dpi (1569 sul 135). Prima
+    # nei metadati finiva il valore del preset, e il ritaglio automatico
+    # cercava un fotogramma di 5669 pixel dentro un'immagine di 2100.
+    dpi = min(preset.dpi, cfg.optical_dpi)
+    lines = mm_to_px(fmt.frame_w, dpi)
+    disponibili = getattr(backend, "canali_disponibili", CHANNELS)
+    channels = [c for c in preset.channels if c in disponibili]
 
     # esposizione per canale: misurata, oppure quella fissata nel preset
     if channel_exposure is None:
@@ -331,7 +353,7 @@ def scan_frame(backend: ScannerBackend, cfg: AppConfig, preset: ScanPreset,
     st = backend.status()
     meta = ScanMetadata(
         timestamp=time.time(), format_key=fmt.name, preset_name=preset.name,
-        dpi=preset.dpi, bit_depth=preset.bit_depth, channels=channels,
+        dpi=dpi, bit_depth=preset.bit_depth, channels=channels,
         exposures=list(preset.multi_exposure),
         channel_exposure=dict(gains),
         monochrome=preset.monochrome,

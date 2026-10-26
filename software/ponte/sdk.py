@@ -14,8 +14,9 @@ Questo modulo chiama QUELLE funzioni, direttamente, da Python, senza compilare
 niente e senza toccare una riga del software originale.
 
 Firme, nomi e dimensioni non sono indovinati: sono stati ricavati dai simboli
-C++ esportati dal DLL, che nel formato Microsoft contengono la firma completa.
-L'elenco integrale sta in documentazione/API-SDK-ORIGINALE.md.
+C++ esportati dal DLL, che nel formato Microsoft contengono la firma completa,
+e ricontrollati con llvm-undname il 26/10/2026 (tutti coerenti).
+L'elenco integrale sta in documentazione/software-originale/api-sdk.md.
 
 COME FUNZIONA LA CHIAMATA
 -------------------------
@@ -34,8 +35,9 @@ il trampolino ha gia' tolto 'this'.
 
 DA SAPERE PRIMA DI USARLO
 -------------------------
-Gira SOLO sul PC originale: serve Python a 32 bit, scn_dll.dll, il driver
-EKframe attivo e la scheda nel suo slot. Su qualunque altra macchina
+Gira SOLO sul PC della macchina: serve Python a 32 bit, scn_dll.dll, il
+driver della scheda attivo (EKframe.sys originale, oppure EKframePnP sulla
+macchina di riserva: stessa interfaccia) e la scheda nel suo slot. Su qualunque altra macchina
 l'apertura fallisce con "Can't open scanner", che e' esattamente l'errore che
 si legge in Scanner\\SDKCacheDir\\log_0000.txt.
 
@@ -48,6 +50,7 @@ from __future__ import annotations
 import ctypes
 import os
 import struct
+import time
 from ctypes import wintypes
 
 
@@ -120,7 +123,29 @@ DIM_OGGETTO_SCANNER = 256 * 1024
 
 
 class ErroreScanner(RuntimeError):
-    pass
+    """Errore dell'SDK. 'codici' sono le voci lette dall'ErrStat:
+    (ScnError, dettaglio1, dettaglio2) per ciascun errore."""
+
+    def __init__(self, messaggio, codici=()):
+        RuntimeError.__init__(self, messaggio)
+        self.codici = list(codici)
+
+
+# I due callback che il costruttore di DMLScannerAdv accetta. Prima si
+# passava NULL a entrambi: l'SDK non aveva modo di dirci niente mentre
+# lavorava, e quando i motori delle guide sono andati a fine corsa non e'
+# rimasta traccia di cosa la macchina stesse segnalando. Adesso finiscono nel
+# registro dell'agente.
+#   void (__cdecl *)(DMLScanner::ErrStat *)   errore asincrono
+#   void (__cdecl *)(unsigned int)            "Asynchronous Event [%d]"
+CALLBACK_ERRORE = ctypes.CFUNCTYPE(None, ctypes.c_void_p)
+CALLBACK_EVENTO = ctypes.CFUNCTYPE(None, ctypes.c_uint)
+
+# Le due bool in coda al costruttore. Il significato non si legge dai simboli;
+# (True, False) e' quello con cui lo scanner si apre sulla riserva. L'agente
+# permette di provare l'altra combinazione per capire se e' la prima a far
+# partire l'inizializzazione completa della meccanica all'apertura.
+APERTURA = {"completa": (True, False), "leggera": (False, False)}
 
 
 # ---------------------------------------------------------------------------
@@ -288,11 +313,15 @@ class Scanner(object):
             dati = s.scansiona_canale(ColorChannel.G)
     """
 
-    def __init__(self, cartella_scanner=r"C:\MasterflexD\Scanner",
-                 dll=r"C:\MasterflexD\Scanner\Bin\scn_dll.dll",
-                 apri_subito=True):
+    def __init__(self, cartella_scanner=r"C:\MasterflexD\Scanner", dll=None,
+                 apri_subito=True, apertura="completa", log=None):
         if os.name != "nt":
             raise ErroreScanner("l'SDK originale gira solo sul PC della macchina")
+        # Prima il DLL era sempre quello di C:\MasterflexD, anche quando
+        # --scanner indicava un'altra cartella: SDK di un posto, file di
+        # configurazione di un altro.
+        if dll is None:
+            dll = os.path.join(cartella_scanner, "Bin", "scn_dll.dll")
         if not os.path.exists(dll):
             raise ErroreScanner("scn_dll.dll non trovato in %s" % dll)
 
@@ -322,8 +351,14 @@ class Scanner(object):
         self._scan_raw_addr = self._indirizzo("?scan_raw@DMLScannerAdv@@QAEPAVErrStat@DMLScanner@@PAGW4ColorChannel@1@VExposureTime@1@_NHHHHW4ImageResolution@3@H@Z")
 
         self.cartella = cartella_scanner
+        self.apertura = apertura
+        self._log = log or (lambda testo: None)
         self._obj = None
         self._buffer = None
+        # i callback vanno tenuti vivi finche' vive l'oggetto SDK
+        self._cb_errore = CALLBACK_ERRORE(self._su_errore)
+        self._cb_evento = CALLBACK_EVENTO(self._su_evento)
+        self.eventi = []          # (ora, numero) degli eventi asincroni
         if apri_subito:
             self.apri()
 
@@ -339,17 +374,65 @@ class Scanner(object):
         """Stringa larga (const unsigned short*), come vuole l'SDK."""
         return ctypes.c_wchar_p(testo)
 
+    def _leggi_errori(self, err_ptr):
+        """Le voci di un ErrStat: [(ScnError, dettaglio1, dettaglio2), ...].
+
+        get_next_error(ScnError*, int*, int*, bool) le restituisce una alla
+        volta dopo reset_read_index().
+        """
+        voci = []
+        try:
+            n = int(self._m["err_quanti"](err_ptr, False))
+        except Exception:
+            return None
+        try:
+            self._m["err_azzera_lettura"](err_ptr)
+            for _ in range(min(n, 32)):
+                codice = ctypes.c_int(0)
+                a = ctypes.c_int(0)
+                b = ctypes.c_int(0)
+                self._m["err_prossimo"](err_ptr, ctypes.byref(codice),
+                                        ctypes.byref(a), ctypes.byref(b), False)
+                voci.append((codice.value, a.value, b.value))
+        except Exception:
+            # meglio il numero di errori senza dettaglio che nessun messaggio
+            return [(None, None, None)] * n
+        return voci
+
     def _verifica(self, err_ptr, cosa):
-        """ErrStat* nullo = tutto bene. Altrimenti si legge quanti errori porta."""
+        """ErrStat* nullo = tutto bene. Altrimenti si leggono gli errori.
+
+        Prima il messaggio riportava l'indirizzo dell'ErrStat ("ErrStat
+        0x0123abcd"), che non dice niente a nessuno. Adesso riporta i codici
+        ScnError con i due valori di dettaglio, che si possono confrontare con
+        il log dell'SDK (SDKCacheDir\\log_0000.txt).
+        """
         if not err_ptr:
             return
+        voci = self._leggi_errori(err_ptr)
+        if voci is None:
+            raise ErroreScanner("%s: l'SDK segnala un errore illeggibile" % cosa)
+        if not voci:
+            return
+        testo = ", ".join("codice %s (%s, %s)" % v for v in voci)
+        raise ErroreScanner("%s: l'SDK segnala %d error%s: %s"
+                            % (cosa, len(voci), "e" if len(voci) == 1 else "i",
+                               testo), voci)
+
+    def _su_errore(self, err_ptr):
         try:
-            n = self._m["err_quanti"](err_ptr, False)
+            voci = self._leggi_errori(err_ptr) if err_ptr else []
+            self._log("SDK, errore asincrono: %s" % (voci or "senza dettaglio"))
         except Exception:
-            n = -1
-        if n:
-            raise ErroreScanner("%s: l'SDK segnala %s errori (ErrStat %#x)"
-                                % (cosa, n, err_ptr))
+            pass
+
+    def _su_evento(self, numero):
+        try:
+            self.eventi.append((time.time(), int(numero)))
+            del self.eventi[:-200]
+            self._log("SDK, evento asincrono %d" % numero)
+        except Exception:
+            pass
 
     # -- ciclo di vita -----------------------------------------------------
 
@@ -370,9 +453,13 @@ class Scanner(object):
             if not os.path.isdir(c):
                 os.makedirs(c)
 
+        flag1, flag2 = APERTURA[self.apertura]
+        self._log("apertura dell'SDK (%s): %s, %s" % (self.apertura, flag1, flag2))
         self._m["costruttore"](self._obj, ctypes.byref(err),
                                self._w(cal), self._w(ini), self._w(fw),
-                               None, None, True, False)
+                               ctypes.cast(self._cb_errore, ctypes.c_void_p),
+                               ctypes.cast(self._cb_evento, ctypes.c_void_p),
+                               flag1, flag2)
         self._verifica(err.value, "apertura scanner")
         return self
 
@@ -450,7 +537,7 @@ class Scanner(object):
         Quale numero corrisponda a quale sensore va scoperto sulla macchina,
         provandoli uno per uno con il percorso libero e poi con la pellicola
         inserita. E' il modo pulito per compilare la sezione sensori di
-        NOTE-MACCHINA.md.
+        documentazione/hardware/note-macchina.md.
         """
         stato = ctypes.c_bool(False)
         ok = self._m["leggi_ingresso"](self._obj, numero, ctypes.byref(stato), None)

@@ -1,38 +1,36 @@
-# Versioni bloccate per Python 3.8 a 32 bit su Windows 7.
+# Versioni bloccate per Python 3.8 a 32 bit su Windows 7, su CPU senza AVX.
 #
-# Non sono "le ultime che funzionano": sono le ultime che ESISTONO come wheel
-# gia' compilata per cp38-win32. Oltre queste, su PyPI c'e' solo il sorgente,
-# e pip prova a compilarlo: e' li' che nasce l'errore
+# Le impronte (--hash) sono quelle delle wheel cp38-win32 su PyPI, controllate
+# il 26/10/2026: pip installa esattamente questi file o si ferma. Su un PC di
+# sviluppo Linux o a 64 bit le impronte non corrispondono (le wheel sono
+# altre): li' si installano le stesse versioni senza impronte, vedi
+# software/CLAUDE.md.
 #
-#     mesonpy requires at least Python 3.10
+# Il perche' delle versioni:
 #
-# che sembra un problema di versione di Python e invece e' il sistema di
-# compilazione di scipy, che su una macchina senza compilatore non partira'
-# comunque. La cura non e' aggiornare Python - su Windows 7 non si puo' - ma
-# chiedere solo wheel gia' pronte:  pip install --only-binary=:all:
-# Cosi' pip dice subito "non esiste la wheel" invece di tentare di costruirla.
+# numpy 1.22.4   NON la 1.24.4. La 1.24.x per win32 usa istruzioni AVX senza
+#                controllare la CPU: sulla macchina di riserva Python moriva con
+#                c000001d (istruzione non valida). Dalla 1.22.4 in giu' nessuna
+#                istruzione AVX non protetta. Decisione 0003.
+# scipy 1.9.1    la 1.9.2 smette di pubblicare wheel a 32 bit; controllata,
+#                niente AVX. Pretende numpy<1.25.
+# Pillow 10.4.0  ultima con wheel cp38-win32; controllata, niente AVX.
+# tifffile       pura Python, ultima che supporta il 3.8.
+# openpyxl       registro ordini in Excel, pura Python. Senza, esce in CSV.
 #
-# Verificato su PyPI il 3 settembre 2026 - ultima wheel cp38-win32 disponibile:
+# Oltre queste versioni su PyPI c'e' solo il sorgente, e pip prova a
+# compilarlo: e' li' che nasce "mesonpy requires at least Python 3.10". Per
+# questo si installa sempre con --only-binary=:all:.
 
-numpy==1.24.4        # 1.25 e successive non supportano piu' Python 3.8
-scipy==1.9.1         # 1.9.2 e successive non pubblicano piu' wheel a 32 bit
-Pillow==10.4.0       # ultima con wheel cp38-win32
-tifffile==2023.7.10  # pura Python, ultima che supporta il 3.8
-
-# scipy 1.9.1 pretende numpy<1.25: con 1.24.4 i conti tornano.
-#
-# scipy serve per scipy.ndimage (spostamenti sub-pixel, filtri). Tutti i moduli
-# lo importano dentro un try: se manca, il programma parte lo stesso con meno
-# funzioni invece di rifiutarsi di partire.
-
-# Registro degli ordini in formato Excel. Pura Python, nessuna compilazione.
-# Senza, il registro viene scritto in CSV: Excel lo apre lo stesso, con il
-# punto e virgola come separatore.
-openpyxl==3.1.5
-
-# Ripiego per la scrittura TIFF a 16 bit quando tifffile non c'e'. Pura Python.
-# imageio==2.35.1
-
-# Opzionale: legge le scritte sul bordo pellicola per determinare la
-# specchiatura. Senza, la specchiatura si imposta a mano.
-# pytesseract==0.3.10
+numpy==1.22.4 \
+    --hash=sha256:fb7a980c81dd932381f8228a426df8aeb70d59bbcda2af075b627bbc50207cba
+scipy==1.9.1 \
+    --hash=sha256:b97b479f39c7e4aaf807efd0424dec74bbb379108f7d22cf09323086afcd312c
+Pillow==10.4.0 \
+    --hash=sha256:e88d5e6ad0d026fba7bdab8c3f225a69f063f116462c49892b0149e21b6c0a0e
+tifffile==2023.7.10 \
+    --hash=sha256:94dfdec321ace96abbfe872a66cfd824800c099a2db558443453eebc2c11b304
+openpyxl==3.1.5 \
+    --hash=sha256:5282c12b107bffeef825f4617dc029afaf41d0ea60823bbb665ef3079dc79de2
+et_xmlfile==2.0.0 \
+    --hash=sha256:7a91720bc756843502c3b7504c77b8fe44217c85c537d85037f0f536151b2caa

@@ -34,13 +34,25 @@ diagnosi-*.txt
 *.db
 
 # ---------------------------------------------------------------------------
+#  filmscan: quello che il programma crea mentre lavora
+# ---------------------------------------------------------------------------
+software/scansioni/
+software/calibrazione/
+software/out/
+software/backup/
+software/diagnosi/
+software/impostazioni.json
+# Wheel e installer di Python per l'installazione senza rete: si rifanno con
+# MASTERFLEX.bat, voce "prepara pacchetto offline".
+software/pacchetti/
+
+# ---------------------------------------------------------------------------
 #  Python
 # ---------------------------------------------------------------------------
 __pycache__/
 *.py[cod]
 .venv/
 venv/
-pacchetti/*.whl
 
 # ---------------------------------------------------------------------------
 #  Sistema

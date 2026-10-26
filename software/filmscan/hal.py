@@ -7,15 +7,17 @@ programma vede solo l'interfaccia ScannerBackend. Quando avremo la mappa dei
 registri della scheda di acquisizione, si scrive un nuovo backend e non si tocca
 una riga del resto.
 
-Tre implementazioni previste:
+Due implementazioni:
 
-  MockBackend    - genera dati sintetici. Serve a sviluppare e collaudare tutta
-                   la pipeline SENZA la macchina accesa. Da usare subito.
-  BridgeBackend  - il PC d'epoca fa da ponte: esegue l'acquisizione e deposita i
-                   grezzi in una cartella condivisa; noi li leggiamo. E' la strada
-                   piu' rapida per arrivare a scansionare davvero.
-  NativeBackend  - driver nostro che parla direttamente alla scheda. Da scrivere
-                   quando avremo la documentazione. Lo scheletro e' predisposto.
+  MockBackend      - genera dati sintetici. Serve a sviluppare e collaudare
+                     tutta la pipeline SENZA la macchina accesa.
+  PonteSdkBackend  - la macchina vera, attraverso ponte/agente.py e l'SDK
+                     originale (driver "sdk").
+
+BridgeBackend (protocollo in inglese che l'agente non capiva) e lo scheletro
+NativeBackend sono stati tolti a ottobre 2026: il primo era gia' segnato come
+superato, il secondo non serve piu' da quando la scheda ha il suo driver
+nuovo sotto lo stesso SDK (vedi documentazione/decisioni/0002).
 """
 
 from __future__ import annotations
@@ -115,8 +117,30 @@ class ScannerBackend(abc.ABC):
         """
 
     # --- opzionale ---
+    # False = il backend non sa spegnere la lampada. La calibrazione allora non
+    # puo' leggere un dark frame vero e non deve fingere di averlo fatto: con
+    # l'SDK "lampada spenta" e "lampada accesa" davano lo stesso fotogramma,
+    # flat - dark veniva quasi zero e la divisione per il flat rovinava ogni
+    # immagine.
+    controlla_lampada: bool = True
+
+    # Canali che il backend sa acquisire davvero. L'IR sulla macchina vera
+    # passa da Digital ICE e il suo numero di canale nell'SDK non e' verificato.
+    canali_disponibili = CHANNELS
+
     def lamp(self, channel: str, on: bool = True) -> None:
         pass
+
+    def seleziona_formato(self, chiave_formato: str) -> None:
+        """Dice alla macchina che formato c'e' nel carrello. Di serie, niente."""
+
+    def prossimo_fotogramma(self, fmt) -> None:
+        """Porta in finestra il fotogramma successivo.
+
+        Di serie avanza del passo del formato. La macchina vera ha un comando
+        suo, che sa il passo meglio di noi: vedi PonteSdkBackend.
+        """
+        self.advance(fmt.pitch)
 
     def home(self) -> None:
         pass
@@ -177,7 +201,7 @@ class MockBackend(ScannerBackend):
         self.film_present = True
 
         # Geometria simulata del percorso, in mm dal sensore d'ingresso.
-        # I valori reali vanno ricavati dal manuale: vedi NOTE-MACCHINA.md.
+        # I valori reali vanno ricavati dal manuale: vedi documentazione/hardware/note-macchina.md.
         self.sensore_ingresso_mm = 0.0
         self.finestra_mm = 45.0        # sensore ingresso -> finestra di scansione
         self.sensore_uscita_mm = 95.0
@@ -337,165 +361,85 @@ class MockBackend(ScannerBackend):
 
 # --------------------------------------------------------------------------
 
-class BridgeBackend(ScannerBackend):
-    """SUPERATO - tenuto solo per chi avesse un ponte scritto a mano.
-
-    Non e' il ponte verso lo scanner: quello e' PonteSdkBackend, driver "sdk".
-    Questo qui parla un protocollo diverso (comandi in inglese: status,
-    sensors, advance_N) che l'agente non conosce, e sceglierlo per sbaglio
-    riempie la finestra dell'agente di "comando sconosciuto". Per questo non
-    compare piu' nel menu dell'interfaccia.
-
-    Il PC d'epoca acquisisce e scrive i grezzi in una cartella condivisa.
-
-    Protocollo minimo, volutamente stupido, basato su file:
-
-      <bridge>/cmd/     noi scriviamo i comandi   (advance_2.50, focus_0.030, grab_R_1200_1.0)
-      <bridge>/ack/     il ponte conferma
-      <bridge>/raw/     il ponte deposita i .npy o .raw acquisiti
-
-    E' primitivo ma non richiede rete, driver o librerie sul lato antico: basta
-    saper leggere e scrivere file su una share SMB. Da adattare a quello che il
-    PC d'epoca sara' effettivamente in grado di fare.
-    """
-
-    def __init__(self, root: str, sensor_pixels: int = 5600, timeout: float = 60.0):
-        self.root = root
-        self.sensor_pixels = sensor_pixels
-        self.timeout = timeout
-        for sub in ("cmd", "ack", "raw"):
-            os.makedirs(os.path.join(root, sub), exist_ok=True)
-        self._pos = 0.0
-        self._focus = 0.0
-
-    # --- utilita' ---
-    def _send(self, command: str) -> str:
-        token = "%d_%s" % (int(time.time() * 1000), command)
-        with open(os.path.join(self.root, "cmd", token), "w") as f:
-            f.write(command)
-        deadline = time.time() + self.timeout
-        ack = os.path.join(self.root, "ack", token)
-        while time.time() < deadline:
-            if os.path.exists(ack):
-                with open(ack) as f:
-                    return f.read().strip()
-            time.sleep(0.05)
-        raise ScannerError("timeout sul comando: %s" % command)
-
-    # --- interfaccia ---
-    def connect(self) -> None:
-        self._send("ping")
-
-    def disconnect(self) -> None:
-        pass
-
-    def status(self) -> ScannerStatus:
-        try:
-            msg = self._send("status")
-            return ScannerStatus(True, True, self._pos, self._focus, True, msg)
-        except ScannerError as e:
-            return ScannerStatus(False, message=str(e))
-
-    def advance(self, mm: float) -> None:
-        self._send("advance_%.4f" % mm)
-        self._pos += mm
-
-    def set_focus(self, mm: float) -> None:
-        self._send("focus_%.4f" % mm)
-        self._focus = mm
-
-    def read_sensors(self) -> FilmSensors:
-        try:
-            r = self._send("sensors")            # atteso: "1,0" oppure "0,1"
-            a, b = r.split(",")[:2]
-            return FilmSensors(a.strip() == "1", b.strip() == "1", True)
-        except (ScannerError, ValueError):
-            return FilmSensors(disponibili=False)
-
-    supports_eject = True
-
-    def eject(self) -> None:
-        self._send("eject")
-        self._pos = 0.0
-
-    def capture_line_block(self, channel: str, lines: int,
-                           exposure: float = 1.0) -> np.ndarray:
-        name = self._send("grab_%s_%d_%.3f" % (channel, lines, exposure))
-        path = os.path.join(self.root, "raw", name)
-        deadline = time.time() + self.timeout
-        while time.time() < deadline and not os.path.exists(path):
-            time.sleep(0.05)
-        if not os.path.exists(path):
-            raise ScannerError("il ponte non ha prodotto %s" % name)
-        if path.endswith(".npy"):
-            return np.load(path)
-        data = np.fromfile(path, dtype="<u2")
-        return data.reshape(-1, self.sensor_pixels)
-
-
-# --------------------------------------------------------------------------
-
 class PonteSdkBackend(ScannerBackend):
     """La macchina vera, comandata attraverso l'SDK originale.
 
-    E' la strada scelta: della macchina originale teniamo i driver e i comandi
-    - che funzionano, e che nessuno rifara' mai meglio - e buttiamo solo
-    l'interfaccia del 2001 che salvava su floppy.
-
-    Sul PC originale gira `ponte/agente.py`, che carica scn_dll.dll e obbedisce
-    ai comandi che gli lasciamo in una cartella condivisa. Qui c'e' il lato
+    Sul PC della macchina gira `ponte/agente.py`, che carica scn_dll.dll e
+    obbedisce ai comandi che gli lasciamo in una cartella. Qui c'e' il lato
     nostro: stessa interfaccia ScannerBackend di sempre, quindi pipeline,
     ordini ed export non si accorgono di niente.
 
-    Due differenze rispetto al Mock, che vanno sapute e non nascoste:
+    Cose da sapere, e non da nascondere:
 
     1. **L'acquisizione e' per fotogrammi, non per righe.** L'SDK restituisce
-       un'immagine intera alla risoluzione scelta (2100x1400 a piena). Quando
-       la pipeline chiede N righe, questo backend acquisisce il fotogramma e ne
-       restituisce le prime N. Per la calibrazione, che chiede blocchi piccoli,
-       si usa una risoluzione ridotta: e' piu' veloce e serve allo stesso scopo.
+       un'immagine intera (2100x1400 a piena risoluzione). Si acquisisce
+       SEMPRE alla stessa risoluzione: prima i blocchi piccoli della
+       calibrazione si leggevano a 524 pixel e le scansioni a 2100, e dopo
+       ogni calibrazione tutte le scansioni fallivano con "la calibrazione e'
+       larga 524 pixel".
 
-    2. **I sensori non sono ancora mappati.** L'SDK li espone come ingressi
-       digitali numerati (`diag_input`), ma quale numero sia il sensore
-       d'ingresso e quale quello d'uscita si scopre solo sulla macchina,
-       provandoli. Finche' `ingressi` non e' configurato, questo backend
-       dichiara onestamente che i sensori non sono disponibili invece di
-       inventarsi due booleani.
+    2. **Niente controllo della lampada.** L'SDK non la espone: la
+       calibrazione legge solo il flat (vedi controlla_lampada).
+
+    3. **I movimenti grandi passano dai comandi della macchina.** Per il
+       fotogramma successivo si usa "avanza" (advance_one_frame dell'SDK),
+       che conosce il passo del formato. La regolazione fine (regola_N, cioe'
+       frame_detect_fine_adjust) resta per i ritocchi di pochi millimetri:
+       prima filmscan la usava per 38 mm alla volta.
+
+    4. **I sensori non sono ancora mappati** e l'IR non e' verificato: finche'
+       non lo sono, il backend lo dichiara invece di inventare.
     """
-
-    # canale -> risoluzione SDK usata per i blocchi piccoli di calibrazione
-    RIS_PIENA = 0
-    RIS_RIDOTTA = 2
 
     # Un comando alla meccanica risponde in un attimo o non risponde affatto:
     # aspettarlo tre minuti significa solo che il browser molla prima e
     # l'operatore resta a guardare una pagina bloccata. Un'acquisizione invece
     # dura davvero, e li' serve pazienza.
     ATTESA_COMANDO = 15.0
+    ATTESA_MOVIMENTO = 60.0
     ATTESA_ACQUISIZIONE = 180.0
+
+    # FilmFormat dell'SDK: 0 = 135, 1 = APS, 4 = 110 (confermati dai .bat di
+    # servizio originali). Il carrello del D1008 non porta il medio formato.
+    FORMATI_SDK = {"135": 0, "aps": 1, "110": 4}
+
+    controlla_lampada = False
 
     def __init__(self, root: str, timeout: float = ATTESA_ACQUISIZIONE,
                  risoluzione: int = 0, passo_mm: float = 0.01,
-                 ingressi: Optional[Dict[str, int]] = None):
+                 ingressi: Optional[Dict[str, int]] = None, ir: bool = False,
+                 max_regola_mm: float = 3.0):
         self.root = root
         self.timeout = timeout
         self.risoluzione = risoluzione
         self.passo_mm = passo_mm
+        self.max_regola_mm = max_regola_mm
         # esempio, una volta scoperti: {"ingresso": 3, "uscita": 5}
         self.ingressi = ingressi or {}
+        self.canali_disponibili = CHANNELS if ir else ("R", "G", "B")
         for sub in ("cmd", "ack", "raw"):
             os.makedirs(os.path.join(root, sub), exist_ok=True)
         self._pos = 0.0
         self._focus = 0.0
         self._connesso = False
+        self._formato = None
+        self._info = {}
+        self._contatore = 0
 
     # --- protocollo -------------------------------------------------------
 
     def _send(self, comando: str, attesa: Optional[float] = None) -> str:
-        token = "%d_%s" % (int(time.time() * 1000), comando.split("_")[0])
+        # Il contatore evita che due comandi uguali nello stesso millisecondo
+        # (due tablet aperti) finiscano sullo stesso file di risposta.
+        self._contatore += 1
+        token = "%d_%04d_%s" % (int(time.time() * 1000), self._contatore % 10000,
+                                comando.split("_")[0])
         percorso = os.path.join(self.root, "cmd", token)
-        with open(percorso, "w") as f:
+        # Scrittura in due tempi: l'agente vede il comando solo quando e'
+        # completo. Prima poteva leggerlo ancora vuoto.
+        with open(percorso + ".tmp", "w") as f:
             f.write(comando)
+        os.replace(percorso + ".tmp", percorso)
         ack = os.path.join(self.root, "ack", token)
         scadenza = time.time() + (attesa if attesa is not None
                                   else self.ATTESA_COMANDO)
@@ -538,45 +482,90 @@ class PonteSdkBackend(ScannerBackend):
             raise ScannerError(
                 "l'agente dello scanner non risponde su %s.\n"
                 "Aprire la finestra 'Agente scanner': se non c'e', avviarla con "
-                "avvia.bat; se si e' chiusa subito, l'SDK non ha trovato la "
+                "MASTERFLEX.bat; se si e' chiusa subito, l'SDK non ha trovato la "
                 "scheda (vedi Scanner\\SDKCacheDir\\log_0000.txt)." % self.root)
+        import json
+        try:
+            self._info = json.loads(self._send("stato"))
+        except (ScannerError, ValueError):
+            self._info = {}
         self._connesso = True
 
     def disconnect(self) -> None:
         self._connesso = False
 
     def status(self) -> ScannerStatus:
-        try:
-            msg = self._send("stato")
-            return ScannerStatus(True, True, self._pos, self._focus, True, msg)
-        except ScannerError as e:
-            return ScannerStatus(False, message=str(e))
+        """Stato locale, senza disturbare la macchina.
+
+        L'interfaccia chiede lo stato ogni secondo. Prima ogni richiesta
+        diventava un comando "stato" all'agente, cioe' tre chiamate all'SDK al
+        secondo, in coda anche dietro a un'acquisizione di tre minuti: la
+        pagina restava appesa e dava la macchina per scollegata a meta' rullo.
+        """
+        if not self._connesso:
+            return ScannerStatus(False, message="non connesso")
+        parti = []
+        if self._info.get("simulato"):
+            parti.append("SIMULAZIONE: l'agente non sta comandando la macchina")
+        if self._info.get("motori") is False:
+            parti.append("motori bloccati")
+        if self._info.get("id"):
+            parti.append("scanner %s" % self._info["id"])
+        return ScannerStatus(True, True, self._pos, self._focus, True,
+                             " - ".join(parti) or "connesso")
 
     # --- movimento --------------------------------------------------------
 
-    def advance(self, mm: float) -> None:
-        """Avanza in millimetri, convertiti in passi motore da 0,01 mm.
+    def seleziona_formato(self, chiave_formato: str) -> None:
+        famiglia = chiave_formato.split("-")[0]
+        if famiglia not in self.FORMATI_SDK:
+            raise ScannerError(
+                "il formato %s non e' supportato dal carrello di questa macchina "
+                "(solo 135, APS e 110)" % chiave_formato)
+        codice = self.FORMATI_SDK[famiglia]
+        if self._info.get("motori") is False:
+            # agente con i motori bloccati: il cambio di formato muove le
+            # guide, quindi non si chiede. Si lavora sul formato gia' montato.
+            return
+        if self._formato != codice:
+            self._send("formato_%d" % codice, attesa=self.ATTESA_MOVIMENTO)
+            self._formato = codice
 
-        Passa dalla regolazione fine del rilevamento fotogrammi, che e' la
-        stessa che il programma di servizio usa nella Length Calibration.
-        Segno e scala vanno verificati sulla macchina la prima volta.
+    def advance(self, mm: float) -> None:
+        """Regolazione fine, in millimetri convertiti in passi da 0,01 mm.
+
+        Passa da frame_detect_fine_adjust, la stessa correzione che il
+        programma di servizio usa con le frecce nella Length Calibration: va
+        bene per pochi millimetri. Oltre max_regola_mm si rifiuta qui, prima
+        ancora di arrivare all'agente (che ha comunque il suo limite).
+        Segno e scala vanno verificati sulla macchina con la prova guidata.
         """
+        if abs(mm) > self.max_regola_mm:
+            raise ScannerError(
+                "movimento di %.1f mm rifiutato: la regolazione fine arriva a "
+                "%.1f mm. Per il fotogramma successivo si usa 'avanza'."
+                % (mm, self.max_regola_mm))
         passi = int(round(mm / self.passo_mm))
         if passi:
-            self._send("regola_%d" % passi)
+            self._send("regola_%d" % passi, attesa=self.ATTESA_MOVIMENTO)
         self._pos += mm
 
+    def prossimo_fotogramma(self, fmt) -> None:
+        self._send("avanza", attesa=self.ATTESA_MOVIMENTO)
+        self._pos += fmt.pitch
+
     def avanza_fotogramma(self, mezzo: bool = False) -> None:
-        self._send("avanza_mezzo" if mezzo else "avanza")
+        self._send("avanza_mezzo" if mezzo else "avanza",
+                   attesa=self.ATTESA_MOVIMENTO)
 
     def set_focus(self, mm: float) -> None:
         """L'SDK espone l'autofocus, non il posizionamento assoluto del fuoco.
 
-        Finche' non sappiamo il passo dell'attuatore (vedi NOTE-MACCHINA.md)
+        Finche' non sappiamo il passo dell'attuatore (vedi note-macchina.md)
         questa e' la cosa giusta da fare: chiedere alla macchina di mettere a
         fuoco da sola, che e' cio' che sa fare bene.
         """
-        self._send("fuoco")
+        self._send("fuoco", attesa=self.ATTESA_MOVIMENTO)
         self._focus = mm
 
     def home(self) -> None:
@@ -600,11 +589,10 @@ class PonteSdkBackend(ScannerBackend):
 
     def capture_line_block(self, channel: str, lines: int,
                            exposure: float = 1.0) -> np.ndarray:
-        if channel not in CHANNELS:
-            raise ScannerError("canale sconosciuto: %s" % channel)
-        # blocchi piccoli = calibrazione o misura: non serve la piena risoluzione
-        ris = self.risoluzione if lines > 256 else self.RIS_RIDOTTA
-        nome = self._send("grab_%s_%d_%.3f" % (channel, ris, exposure),
+        if channel not in self.canali_disponibili:
+            raise ScannerError("canale %s non disponibile su questa macchina"
+                               % channel)
+        nome = self._send("grab_%s_%d_%.3f" % (channel, self.risoluzione, exposure),
                           attesa=self.ATTESA_ACQUISIZIONE)
         percorso = os.path.join(self.root, "raw", nome)
         scadenza = time.time() + self.timeout
@@ -614,11 +602,23 @@ class PonteSdkBackend(ScannerBackend):
             raise ScannerError("l'agente non ha depositato %s" % nome)
 
         import json
-        with open(percorso[:-4] + ".json") as f:
+        meta_path = percorso[:-4] + ".json"
+        with open(meta_path) as f:
             meta = json.load(f)
         w, h = int(meta["larghezza"]), int(meta["altezza"])
         dati = np.fromfile(percorso, dtype="<u2").reshape(h, w)
-        return dati[:lines] if lines < h else dati
+        # I grezzi del ponte sono gia' stati letti: tenerli li' riempirebbe il
+        # disco di 6 MB per lettura, calibrazioni comprese.
+        for p in (percorso, meta_path):
+            try:
+                os.remove(p)
+            except OSError:
+                pass
+        # Si restituisce sempre il fotogramma intero, anche quando se ne
+        # chiedono poche righe: la lettura e' gia' stata pagata, e le prime 16
+        # righe (il bordo del fotogramma) erano un pessimo campione per dire
+        # se c'e' ancora pellicola.
+        return dati
 
     # --- espulsione -------------------------------------------------------
 
@@ -627,62 +627,7 @@ class PonteSdkBackend(ScannerBackend):
     def eject(self) -> None:
         raise NotImplementedError(
             "espulsione non ancora disponibile su questo backend: prima vanno "
-            "mappati gli ingressi digitali dei sensori (vedi PONTE.md)")
-
-
-# --------------------------------------------------------------------------
-
-class NativeBackend(ScannerBackend):
-    """Scheletro per il driver nativo.
-
-    AGGIORNATO 3/9/2026 - dalla lettura del software originale sappiamo molto di
-    piu' di quando questo scheletro e' stato scritto. Dossier completo con le
-    fonti in documentazione/SCHEDA-ACQUISIZIONE.md.
-
-    La macchina parla su DUE canali indipendenti, e la cosa cambia la struttura
-    di questo backend: non e' una scheda sola.
-
-    A) MECCANICA - seriale COM5 verso GateControl (trasporto, sensori, gate,
-       fuoco, lettura DX/MOF). Protocollo da osservare con uno sniffer seriale.
-       Alimenta advance(), set_focus(), read_sensors(), eject(), home().
-       Stati della macchina, estratti dai simboli di GateControl.exe:
-         Unloaded, Initialize, MediaInsert, Dx, FrameInPosition, Transport,
-         Eject, AdjustFocus, ChangeFilmFormat, Mof, CleanMOF, Reset, Service,
-         FatalError
-
-    B) IMMAGINE - scheda PCI "IAQ Adapter for Kodak film scanners", Eastman
-       Kodak. Alimenta solo capture_line_block().
-         Hardware ID  PCI\VEN_11B2&DEV_0008&SUBSYS_908010B5&REV_00
-         Chip         PLX PCI 9080  (dal subsystem 908010B5) - data book pubblico
-         Registri     mem 0xDE000000 (256 B)  e  I/O 0xA800 (256 B), doppia
-                      mappatura degli stessi registri: firma classica del 9080
-         Bus locale   mem 0xDD800000, 2 MB - qui compaiono i dati del CCD
-         IRQ 9 condivisa, DMA bus-master, due buffer
-         Driver       EKframe.sys, servizio EKFrame, aperto come \\.\EKFrameDev
-                      e comandato con DeviceIoControl
-         SDK          scn_dll.dll, classi DMLScanner / DMLScannerAdv, con
-                      scan_raw(canale, esposizione, risoluzione, ...) - proprio
-                      la funzione che ci serve
-
-    Ignoti, e sono i soli veri buchi: i codici IOCTL di EKframe.sys e il
-    protocollo sui mailbox del 9080 verso l'EPLD Gretag.
-
-    RACCOMANDAZIONE (SCHEDA-ACQUISIZIONE.md §8): riscrivere questo driver e'
-    lavoro da mesi con rischio reale di non arrivare in fondo. Il PC originale,
-    che il driver e l'SDK ce li ha gia', usato come motore di acquisizione via
-    BridgeBackend, da' scansioni vere in settimane. Il valore del progetto non e'
-    mai stato nel driver: e' nel salvare la piena risoluzione che il sensore gia'
-    produce, e per farlo basta poter chiamare scan_raw.
-    """
-
-    def __init__(self, **kwargs):
-        raise NotImplementedError(
-            "Driver nativo non ancora implementato.\n"
-            "Servono: mappa registri della scheda, modalita' di trasferimento "
-            "(DMA o polling), protocollo di comando del motore.\n"
-            "Nel frattempo usare MockBackend per sviluppare o BridgeBackend per "
-            "acquisire davvero tramite il PC originale."
-        )
+            "mappati gli ingressi digitali dei sensori (vedi ponte.md)")
 
 
 # --------------------------------------------------------------------------
@@ -691,16 +636,13 @@ def make_backend(cfg) -> ScannerBackend:
     """Fabbrica: sceglie il backend in base alla configurazione."""
     if cfg.driver == "mock":
         return MockBackend(sensor_pixels=cfg.sensor_pixels, dpi=cfg.optical_dpi)
-    if cfg.driver == "bridge":
-        if not cfg.bridge_path:
-            raise ScannerError("driver 'bridge' selezionato ma bridge_path e' vuoto")
-        return BridgeBackend(cfg.bridge_path, sensor_pixels=cfg.sensor_pixels)
     if cfg.driver == "sdk":
         if not cfg.bridge_path:
             raise ScannerError("driver 'sdk' selezionato ma bridge_path e' vuoto")
         return PonteSdkBackend(cfg.bridge_path,
                                risoluzione=getattr(cfg, "sdk_resolution", 0),
-                               passo_mm=cfg.transport_step_mm)
-    if cfg.driver == "native":
-        return NativeBackend()
+                               passo_mm=cfg.transport_step_mm,
+                               ingressi=getattr(cfg, "sdk_ingressi", None),
+                               ir=getattr(cfg, "sdk_ir_verificato", False),
+                               max_regola_mm=getattr(cfg, "max_regola_mm", 3.0))
     raise ScannerError("driver sconosciuto: %s" % cfg.driver)
