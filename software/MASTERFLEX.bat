@@ -6,9 +6,12 @@ REM  Doppio clic: menu con tutte le funzioni (installare, aggiornare, avviare,
 REM  avvio automatico, collaudi, diagnosi...).
 REM  Da riga di comando o dall'avvio automatico, senza menu:
 REM
-REM     MASTERFLEX.bat avvia [si]           macchina vera ("si" salta la conferma)
-REM     MASTERFLEX.bat avvia-senza-motori   macchina vera, motori bloccati
+REM     MASTERFLEX.bat avvia [si]           completo, macchina vera ("si" salta la conferma)
+REM     MASTERFLEX.bat avvia-senza-motori   completo, motori bloccati
 REM     MASTERFLEX.bat simulazione          nessuna macchina
+REM     MASTERFLEX.bat osservatore          man in the middle (programma originale)
+REM     MASTERFLEX.bat automatico           l'ultimo modo usato, senza domande
+REM                                         (lo lancia l'Utilita' di pianificazione)
 REM     MASTERFLEX.bat installa | aggiorna | collaudo | diagnosi
 REM
 REM  Sostituisce i dodici .bat della cartella windows\ della versione di
@@ -32,6 +35,11 @@ set "PY_SHA256=ad07633a1f0cd795f3bf9da33729f662281df196b4567fa795829f3bb38a30ac"
 
 call :trova_python
 
+REM  L'ultimo modo di lavoro usato: Invio nel menu riparte con quello, ed e'
+REM  quello dell'avvio automatico.
+set "MODO_ULTIMO=avvia-senza-motori"
+if defined PY for /f "usebackq delims=" %%m in (`call "%PY%" manutenzione.py modo`) do set "MODO_ULTIMO=%%m"
+
 if not "%~1"=="" (
     call :azione %*
     exit /b !errorlevel!
@@ -45,11 +53,12 @@ echo    MASTERFLEX D1008 - scanner pellicola
 echo  ==========================================================================
 if defined PY (echo    Python: !PY!) else (echo    Python 3.8 a 32 bit: NON TROVATO - scegliere 7)
 echo.
-echo    AVVIO
-echo     1  Avvia - macchina vera
-echo     2  Avvia - macchina vera, motori BLOCCATI (solo acquisizione)
-echo     3  Avvia - simulazione (nessuna macchina)
-echo    14  Avvia - programma originale + osservatore (immagini grezze)
+echo    AVVIO   ^(Invio = l'ultimo usato: !MODO_ULTIMO!^)
+echo     1  Completo - macchina vera ^(chiude il programma originale^)
+echo     2  Completo - motori BLOCCATI, solo acquisizione ^(idem^)
+echo     3  Simulazione ^(nessuna macchina^)
+echo    14  Man in the middle - programma originale + osservatore:
+echo        non chiude niente e non avvia l'agente
 echo.
 echo    COLLAUDI
 echo     4  Collaudo dello scanner: colori, intensita', trascinamento
@@ -69,6 +78,12 @@ echo     0  Esci
 echo.
 set "SCELTA="
 set /p "SCELTA=  Scelta: "
+if not defined SCELTA (
+    call :azione !MODO_ULTIMO!
+    echo.
+    pause
+    goto :menu
+)
 if "%SCELTA%"=="0" exit /b 0
 if "%SCELTA%"=="1"  call :azione avvia
 if "%SCELTA%"=="2"  call :azione avvia-senza-motori
@@ -111,6 +126,7 @@ if /i "%~1"=="originale"         goto :originale
 if /i "%~1"=="disinstalla"       goto :disinstalla
 if /i "%~1"=="firmware"          goto :firmware
 if /i "%~1"=="osservatore"       goto :osservatore
+if /i "%~1"=="automatico"        goto :automatico
 echo  Azione sconosciuta: %~1
 exit /b 1
 
@@ -144,17 +160,28 @@ if /i "%MODO%"=="avvia" (
     )
 )
 if not exist "%CARTELLA%" mkdir "%CARTELLA%" 2>nul
+"%PY%" manutenzione.py modo %MODO% >nul 2>&1
 
 "%PY%" -c "import manutenzione as m,sys;sys.exit(0 if m.agente_attivo(r'%CARTELLA%') else 1)" >nul 2>&1
-if errorlevel 1 (
-    echo  Avvio dell'agente scanner ^(%MODO%^)...
-    start "Agente scanner" cmd /k call "%PY%" ponte\agente.py --condivisa "%CARTELLA%" --scanner "%SCANNER%" --apertura %APERTURA% %OPZ%
-) else (
-    echo  L'agente e' gia' in esecuzione: uso quello.
-)
+if not errorlevel 1 goto :avvia_agente_presente
+if /i "%MODO%"=="simulazione" goto :avvia_agente
+REM  Il programma originale si apre da solo e tiene scheda e COM5: si chiude
+REM  tutto quello che parte da C:\MasterflexD, PRIMA dell'agente. Dopo no:
+REM  l'SDK dell'agente usa a sua volta il GateControl di quella cartella.
+echo  Chiusura dei programmi del software originale ^(C:\MasterflexD^)...
+set "ATTESA_CHIUSURA=--quiete 3 --massimo 30"
+if defined AUTO set "ATTESA_CHIUSURA=--quiete 15 --massimo 120"
+"%PY%" manutenzione.py termina !ATTESA_CHIUSURA!
+:avvia_agente
+echo  Avvio dell'agente scanner ^(%MODO%^)...
+start "Agente scanner" cmd /k call "%PY%" ponte\agente.py --condivisa "%CARTELLA%" --scanner "%SCANNER%" --apertura %APERTURA% %OPZ%
+goto :avvia_web
+:avvia_agente_presente
+echo  L'agente e' gia' in esecuzione: uso quello.
+:avvia_web
 call :firewall silenzioso
-echo  Avvio dell'interfaccia web...
-"%PY%" run.py --rete --porta %PORTA% --driver %DRIVER% --ponte "%CARTELLA%" --apri
+echo  Avvio dell'interfaccia web: si connette da sola appena lo scanner e' pronto...
+"%PY%" run.py --rete --porta %PORTA% --driver %DRIVER% --ponte "%CARTELLA%" --apri --connetti
 echo.
 echo  Interfaccia chiusa. L'agente resta aperto nella sua finestra:
 echo  chiuderla per fermare anche quello.
@@ -246,6 +273,7 @@ REM ===========================================================================
 REM  Scansiona il programma originale; ponte\osservatore.py copia le immagini
 REM  grezze che riceve, e l'interfaccia (collegamento "programma originale")
 REM  le elabora. L'agente NON deve girare: la scheda la usa PhxScanner.
+REM  Qui non si chiude niente: i programmi originali servono tutti.
 REM ===========================================================================
 "%PY%" -c "import manutenzione as m,sys;sys.exit(0 if m.agente_attivo(r'%PONTE%') else 1)" >nul 2>&1
 if not errorlevel 1 (
@@ -253,8 +281,23 @@ if not errorlevel 1 (
     echo  la scheda e lo scanner li usa lui.
     exit /b 1
 )
+"%PY%" manutenzione.py modo osservatore >nul 2>&1
+set "ATTESE=0"
 :osservatore_attesa
 tasklist /FI "IMAGENAME eq PhxScanner.exe" /NH 2>nul | find /i "PhxScanner.exe" >nul
+REM  All'accensione il programma originale si apre da solo: lo si aspetta,
+REM  senza domande, fino a 10 minuti.
+if errorlevel 1 if defined AUTO (
+    set /a ATTESE+=1
+    if !ATTESE! GTR 120 (
+        echo  PhxScanner.exe non si e' aperto in 10 minuti: avviare il
+        echo  programma originale e poi MASTERFLEX.bat, voce 14.
+        exit /b 1
+    )
+    if !ATTESE!==1 echo  Attendo che il programma originale apra PhxScanner.exe...
+    timeout /t 5 /nobreak >nul
+    goto :osservatore_attesa
+)
 if errorlevel 1 (
     echo  PhxScanner.exe non e' in esecuzione: avviare il programma originale
     echo  ^(voce 10^) e aspettare che sia pronto, SENZA aprire ancora un ordine.
@@ -269,8 +312,24 @@ call :firewall silenzioso
 echo  Avvio dell'interfaccia web ^(collegamento: programma originale^)...
 echo  Nell'interfaccia: Connetti, scegliere ordine e rullo, Scansiona rullo;
 echo  poi scansionare dal programma originale. STOP per chiudere il rullo.
-"%PY%" run.py --rete --porta %PORTA% --driver originale --ponte "%PONTE%" --apri
+"%PY%" run.py --rete --porta %PORTA% --driver originale --ponte "%PONTE%" --apri --connetti
 exit /b 0
+
+
+REM ===========================================================================
+:automatico
+REM  Lo lancia all'accensione l'Utilita' di pianificazione, gia' da
+REM  amministratore e senza richieste di Windows. Parte con l'ultimo modo
+REM  usato e non fa domande: davanti alla macchina, a quell'ora, non c'e'
+REM  nessuno.
+REM ===========================================================================
+set "AUTO=1"
+title Masterflex D1008 - avvio automatico
+echo.
+echo  Avvio automatico, modo: !MODO_ULTIMO!
+if /i "!MODO_ULTIMO!"=="osservatore" goto :osservatore
+call :avvia !MODO_ULTIMO! si
+exit /b !errorlevel!
 
 
 REM ===========================================================================
@@ -346,6 +405,10 @@ echo  [5/5] Driver, scheda, SDK e firmware del carrello
 "%PY%" manutenzione.py firmware
 echo.
 echo  Fatto. La prima volta: voce 3 ^(simulazione^), e collegarsi dal tablet.
+echo.
+set "AA="
+set /p "AA=  Attivare l'avvio automatico all'accensione? [s/N] "
+if /i "!AA!"=="s" call :avvio_automatico
 exit /b 0
 
 
@@ -431,20 +494,33 @@ exit /b 0
 REM ===========================================================================
 :avvio_automatico
 REM ===========================================================================
+REM  All'accensione parte da amministratore senza richieste: lo fa
+REM  un'attivita' dell'Utilita' di pianificazione. Crearla chiede
+REM  l'amministratore una volta, adesso. Parte sempre con l'ultimo modo usato:
+REM  qui si sceglie quello di partenza.
 "%PY%" manutenzione.py avvio stato
 echo.
-echo    1  attiva: macchina vera, motori BLOCCATI ^(consigliato finche' il
+echo    1  attiva - completo, motori BLOCCATI ^(consigliato finche' il
 echo       problema delle guide non e' chiuso^)
-echo    2  attiva: macchina vera, motori attivi
-echo    3  attiva: simulazione
-echo    4  disattiva
+echo    2  attiva - completo, motori attivi
+echo    3  attiva - man in the middle ^(programma originale + osservatore^)
+echo    4  attiva - simulazione
+echo    5  prova adesso, come all'accensione ^(senza riavviare^)
+echo    6  disattiva
 echo    0  indietro
 set "A="
 set /p "A=  Scelta: "
-if "%A%"=="1" "%PY%" manutenzione.py avvio on avvia-senza-motori
-if "%A%"=="2" "%PY%" manutenzione.py avvio on avvia
-if "%A%"=="3" "%PY%" manutenzione.py avvio on simulazione
-if "%A%"=="4" "%PY%" manutenzione.py avvio off
+set "M="
+if "%A%"=="1" set "M=avvia-senza-motori"
+if "%A%"=="2" set "M=avvia"
+if "%A%"=="3" set "M=osservatore"
+if "%A%"=="4" set "M=simulazione"
+if defined M (
+    "%PY%" manutenzione.py modo !M!
+    "%PY%" manutenzione.py avvio on
+)
+if "%A%"=="5" "%PY%" manutenzione.py avvio adesso
+if "%A%"=="6" "%PY%" manutenzione.py avvio off
 exit /b 0
 
 

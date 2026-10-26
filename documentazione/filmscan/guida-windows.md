@@ -37,10 +37,11 @@ Doppio clic su **`MASTERFLEX.bat`** (la prima volta: tasto destro, *Esegui
 come amministratore*, per il firewall):
 
 ```
- AVVIO          1  macchina vera
-                2  macchina vera, motori BLOCCATI (solo acquisizione)
+ AVVIO      Invio  l'ultimo modo usato
+                1  completo, macchina vera (chiude il programma originale)
+                2  completo, motori BLOCCATI (idem)
                 3  simulazione (nessuna macchina)
-               14  programma originale + osservatore (immagini grezze)
+               14  man in the middle: programma originale + osservatore
  COLLAUDI       4  scanner: colori, intensita', trascinamento, strumenti Gretag
                 5  programma (senza macchina)
                 6  diagnosi: un file da inviare
@@ -62,11 +63,30 @@ carrello, e dice cosa manca.
 
 ## Tutti i giorni
 
-Voce **1** (o **2** finché il problema delle guide non è risolto). Fa
-partire due cose:
+Si lavora in uno di due modi, e il programma ricorda l'ultimo usato:
+**Invio** nel menu riparte con quello, ed è quello dell'avvio automatico.
 
-1. l'agente, che parla allo scanner con l'SDK originale;
-2. l'interfaccia web, pubblicata sulla rete locale.
+- **Completo** (voce **1**, o **2** finché il problema delle guide non è
+  risolto). Chiude tutti i programmi che partono da `C:\MasterflexD`
+  (il programma originale si apre da solo e terrebbe scheda e carrello),
+  poi fa partire:
+  1. l'agente, che parla allo scanner con l'SDK originale;
+  2. l'interfaccia web, pubblicata sulla rete locale, che **si connette da
+     sola** appena l'agente ha lo scanner pronto (circa 40 secondi).
+
+  La chiusura avviene solo prima di avviare l'agente: dopo, alcuni
+  programmi di quella cartella (il GateControl del carrello) li usa l'SDK
+  dell'agente. TeamViewer, AnyDesk, Chrome e Windows non stanno lì e non si
+  toccano.
+- **Man in the middle** (voce **14**): il programma originale resta, e
+  l'agente non parte. Vedi più sotto.
+
+**La calibrazione di ogni giorno.** Finché oggi non è stata fatta, anteprima
+e scansione si rifiutano e il tasto **Calibra** è evidenziato. Calibra
+prima porta a zero i motori del carrello (tamburo, guide, lente, CCD), che
+senza il programma originale nessuno azzera più, poi legge la luce a
+percorso vuoto. Con i motori bloccati l'azzeramento si salta, e il diario lo
+dice.
 
 I due processi sono separati di proposito: se l'SDK del 2001 si blocca,
 l'interfaccia resta viva, lo segnala, e si riparte senza perdere l'ordine.
@@ -180,9 +200,28 @@ Dettagli in [archivio.md](archivio.md).
 
 ## Avvio automatico
 
-Voce **9**: si sceglie cosa far partire all'accensione (motori bloccati,
-motori attivi o simulazione), oppure lo si toglie. Mette un piccolo `.bat`
-in Esecuzione automatica, che si può aprire con il Blocco note.
+Voce **9** (oppure alla fine dell'installazione). Si sceglie il modo di
+partenza: completo con motori bloccati, completo con motori attivi, man in
+the middle o simulazione. All'accensione parte poi sempre **l'ultimo modo
+usato**.
+
+All'accensione il programma parte già da amministratore e **senza la
+richiesta di Windows**: lo lancia un'attività dell'Utilità di
+pianificazione, "Masterflex D1008", con i privilegi più elevati. La
+richiesta di Windows compare una volta sola, al momento di attivarla.
+L'attività parte 20 secondi dopo l'accesso, non ha limite di durata e gira
+a priorità normale. Nel menu c'è anche "prova adesso", che la lancia
+subito come all'accensione.
+
+In modo completo, all'accensione, la chiusura dei programmi originali
+aspetta che per 15 secondi non se ne apra nessuno nuovo (al massimo 2
+minuti), perché il programma originale si apre da solo poco dopo l'accesso.
+Cosa è stato chiuso si legge in `C:\MasterflexD\ponte\log\avvio-AAAAMMGG.log`.
+In man in the middle si aspetta invece che il programma originale apra
+`PhxScanner.exe`, fino a 10 minuti.
+
+Il vecchio metodo (un `.bat` in Esecuzione automatica, senza diritti) viene
+tolto quando si riattiva.
 
 ## Il programma originale
 
@@ -209,13 +248,14 @@ originale comanda la macchina, e un osservatore copia le immagini grezze che
 riceve. Filmscan le elabora e le mette nel rullo
 ([decisione 0007](../decisioni/0007-osservatore-programma-originale.md)).
 
-1. Chiudere l'agente, se è aperto.
-2. Avviare il programma originale (voce 10), **senza** aprire ancora un
-   ordine.
+1. Chiudere l'agente, se è aperto: il programma originale non si
+   collegherebbe allo scanner.
+2. Avviare il programma originale, **senza** aprire ancora un ordine
+   (all'accensione si apre da solo).
 3. Voce **14**. Si aprono la finestra "Osservatore programma originale" e
-   l'interfaccia, con il collegamento "programma originale".
-4. Nell'interfaccia: Connetti, poi ordine e rullo, poi **Scansiona rullo**.
-   L'interfaccia resta in ascolto.
+   l'interfaccia, già connessa con il collegamento "programma originale".
+4. Nell'interfaccia: ordine e rullo, poi **Scansiona rullo**. L'interfaccia
+   resta in ascolto.
 5. Nel programma originale: aprire l'ordine e scansionare. A ogni immagine,
    nell'osservatore compare "immagine N copiata" e nell'interfaccia un
    fotogramma nuovo.
@@ -232,6 +272,7 @@ coppia `.raw` + `.json` per immagine.
 | `MASTERFLEX.bat` | il menu: l'unico file da lanciare |
 | `manutenzione.py` | il lavoro dietro al menu (installazione, aggiornamento, diagnosi...) |
 | `collaudo_scanner.py` | i collaudi dello scanner vero |
+| `processi.py` | chiude i programmi che partono da `C:\MasterflexD`; `python processi.py` li elenca senza chiudere |
 | `run.py` | l'interfaccia web |
 | `selftest.py` | il collaudo del programma senza macchina |
 | `ponte\agente.py` | l'agente che comanda lo scanner |

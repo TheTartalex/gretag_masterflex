@@ -39,6 +39,22 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-10-26 — avvio automatico, modi di lavoro, calibrazione giornaliera
+
+- Avvio automatico da un'attività dell'Utilità di pianificazione, da
+  amministratore senza richieste (`manutenzione.py avvio on|off|stato|adesso`,
+  `MASTERFLEX.bat automatico`). Tolto il vecchio `.bat` in Esecuzione
+  automatica.
+- `processi.py` e `manutenzione.py termina`: chiudono i processi sotto
+  `C:\MasterflexD`, solo prima di avviare l'agente.
+- Modi di lavoro completo e man in the middle; l'ultimo usato si ricorda
+  (`modo-avvio.txt`) ed è l'Invio del menu.
+- `run.py --connetti`: l'interfaccia si connette da sola a scanner pronto.
+- Calibrazione: prima l'azzeramento dei motori (`ResetScanner` → Gretag
+  Reset, agente `azzera`); senza una calibrazione di oggi anteprima e
+  scansione si rifiutano, e Calibra è evidenziato.
+- Decisione 0008.
+
 ### 2026-10-26 — esposizione, fine striscia, fotogrammi vuoti
 
 - `PonteSdkBackend`: al rifiuto del firmware (codice 47) sopra x1

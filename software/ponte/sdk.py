@@ -617,7 +617,14 @@ class Scanner(object):
         return v.value
 
     def reset(self):
-        self._verifica(self._m["reset"](self._obj), "reset")
+        """Azzeramento: ResetScanner (0x1802D210) manda il comando 0x13 alla
+        testa e poi ScannerInterface::call_gretag_reset (0x18079510), cioe' la
+        richiesta 14, "Gretag Reset", al GateControl: il carrello si
+        reinizializza e porta a zero i suoi motori (tamburo, guide, lente,
+        CCD; vedi carrello-capri.md §1). Il programma originale non la chiama:
+        lo fa il GateControl quando parte. Senza programma originale, e con
+        il flag "No Reset" del carrello acceso, nessun altro la fa."""
+        self._verifica(self._m["reset"](self._obj), "azzeramento motori")
 
     def scegli_formato(self, formato=FilmFormat.F135):
         self._verifica(self._m["scegli_formato"](self._obj, formato), "scelta formato")

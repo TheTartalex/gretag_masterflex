@@ -41,6 +41,10 @@ class ScannerError(RuntimeError):
     pass
 
 
+class MotoriBloccati(ScannerError):
+    """L'agente e' partito con --senza-motori e rifiuta i movimenti."""
+
+
 class FinePellicola(ScannerError):
     """Il carrello non trova un altro fotogramma: la striscia e' finita.
     Non e' un guasto, e chi scansiona un rullo non deve leggerlo come tale."""
@@ -167,6 +171,12 @@ class ScannerBackend(abc.ABC):
 
     # --- espulsione ---
     supports_eject: bool = False
+
+    # --- azzeramento ---
+    def azzera_motori(self) -> bool:
+        """Porta a zero i motori della macchina. False se il backend non ha
+        motori da azzerare (simulatore, programma originale)."""
+        return False
 
     def eject(self, verso: str = "davanti") -> None:
         """Espelle la pellicola, se la macchina ha un comando dedicato.
@@ -596,6 +606,21 @@ class PonteSdkBackend(ScannerBackend):
     # successivo): la stima ottica non serve, costa una lettura a fotogramma
     # e scambierebbe i fotogrammi non esposti per pellicola finita.
     fine_striscia_dal_carrello = True   # l'agente si ferma da solo a 180 s
+
+    ATTESA_AZZERAMENTO = 120.0
+
+    def azzera_motori(self) -> bool:
+        """Gretag Reset: il carrello si reinizializza e azzera tamburo, guide,
+        lente e CCD. Con l'agente a motori bloccati l'agente lo rifiuta, e qui
+        diventa MotoriBloccati: chi calibra lo annota e prosegue."""
+        try:
+            self._send("azzera", attesa=self.ATTESA_AZZERAMENTO)
+        except ScannerError as exc:
+            if "motori bloccati" in str(exc):
+                raise MotoriBloccati(str(exc))
+            raise
+        self._pos = 0.0
+        return True
 
     def eject(self, verso: str = "davanti") -> Optional[str]:
         if verso == "retro":

@@ -43,3 +43,4 @@ Cosa diventa più facile, cosa più difficile, cosa resta da verificare.
 | [0005](0005-masterflex-bat-unico.md) | Un solo script, MASTERFLEX.bat, per tutto quello che si fa sulla macchina | 2026-10-26 | Accettata |
 | [0006](0006-firmware-carrello-1.15.md) | Il carrello Capri va tenuto al firmware 1.15 | 2026-10-26 | Accettata |
 | [0007](0007-osservatore-programma-originale.md) | Immagini dal programma originale con un osservatore esterno | 2026-10-26 | Proposta |
+| [0008](0008-avvio-automatico-e-modi.md) | Avvio da amministratore, chiusura del programma originale, due modi di lavoro | 2026-10-26 | Proposta |

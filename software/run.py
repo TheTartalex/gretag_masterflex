@@ -38,6 +38,8 @@ def main():
                     help="cartella di scambio con l'agente (driver sdk)")
     ap.add_argument("--apri", action="store_true",
                     help="apre l'interfaccia nel browser di questa macchina")
+    ap.add_argument("--connetti", action="store_true",
+                    help="si connette da solo appena l'agente ha lo scanner pronto")
     ap.add_argument("--controllo", action="store_true",
                     help="verifica ambiente e limiti di memoria")
     a = ap.parse_args()
@@ -64,7 +66,7 @@ def main():
     # dall'interfaccia si puo' passare da un collegamento all'altro
     cfg.bridge_path = a.ponte
     avvia("0.0.0.0" if a.rete else "127.0.0.1", a.porta, cfg, a.db,
-          apri=a.apri, impostazioni=a.impostazioni)
+          apri=a.apri, impostazioni=a.impostazioni, connetti=a.connetti)
     return 0
 
 

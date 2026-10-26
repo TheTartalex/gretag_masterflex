@@ -186,6 +186,29 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
   retro a quel punto risponde subito `ERR_MOVE` anche lei), e come si
   comporta il carrello sui fotogrammi non esposti.
 
+- **Avvio e modi di lavoro** ([decisione 0008](decisioni/0008-avvio-automatico-e-modi.md)):
+  - avvio automatico dall'Utilità di pianificazione, da amministratore e
+    senza richieste; parte con l'ultimo modo usato;
+  - modo **completo**: chiude tutto ciò che parte da `C:\MasterflexD`
+    (solo prima di avviare l'agente), poi agente e interfaccia, che si
+    connette da sola a scanner pronto;
+  - modo **man in the middle**: non chiude niente, niente agente, aspetta
+    `PhxScanner.exe` e apre osservatore e interfaccia già connessa;
+  - **calibrazione obbligatoria ogni giorno**: senza una calibrazione di
+    oggi anteprima e scansione si rifiutano;
+  - **azzeramento dei motori** come primo passo della calibrazione:
+    `ResetScanner` dell'SDK, che manda al GateControl la richiesta 14,
+    "Gretag Reset" (`0x18038100`, da `call_gretag_reset` `0x18079510`).
+    Il programma originale non la chiama: la fa il GateControl quando
+    parte. Con l'agente a motori bloccati si salta. Lo zero lo fa il
+    firmware del carrello, con i suoi limiti (750 passi in avanti, 200
+    indietro per le guide).
+
+  Da provare sulla riserva, nell'ordine:
+  1. `python processi.py`, per vedere cosa verrebbe chiuso;
+  2. voce 9, poi "prova adesso";
+  3. Calibra a motori attivi, guardando le guide.
+
 ## Problemi aperti, in ordine di priorità
 
 1. **Motori delle guide all'avvio.** Le guide sono i motori 3 e 4 del

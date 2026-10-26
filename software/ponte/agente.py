@@ -89,7 +89,7 @@ CANALI = {"R": 0, "G": 1, "B": 2, "IR": 3}
 
 # Comandi che muovono la meccanica. "fuoco" muove la lente.
 MOVIMENTI = ("formato", "carica", "alimenta", "avanza", "prossimo", "precedente",
-             "espelli", "espelli_retro", "regola", "fuoco")
+             "espelli", "espelli_retro", "regola", "fuoco", "azzera")
 
 MAX_PASSI = 300               # 3 mm: oltre non e' piu' una regolazione fine
 MAX_ALIMENTAZIONE = 15.0      # secondi di trascinamento acceso senza comandi
@@ -189,6 +189,9 @@ class AgenteSimulato(object):
                 "(0, 0) ERR_MOVE", [(31, 0, 0)])
         self._fotogramma += 1
     def fotogramma_precedente(self): pass
+
+    def reset(self):
+        self._fotogramma = 0
     def espelli(self): self.pellicola_inserita = False
     def espelli_retro(self):
         fatti = self.FOTOGRAMMI_STRISCIA - 1 - self._fotogramma
@@ -465,6 +468,11 @@ class Agente(object):
             self.s.alimentazione(accesa)
             self.alimentazione_dal = time.time() if accesa else None
             return "alimentazione %s" % parti[1]
+
+        if comando == "azzera":
+            # il carrello porta a zero i suoi motori (Gretag Reset)
+            self.s.reset()
+            return "motori azzerati"
 
         if comando == "precedente":
             self.s.fotogramma_precedente()

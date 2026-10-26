@@ -14,6 +14,7 @@ per chi sta alla macchina è
 ```
 MASTERFLEX.bat        il menu: installa, aggiorna, avvia, collaudi, diagnosi...
 manutenzione.py       il lavoro dietro al menu (solo libreria standard)
+processi.py           chiude i programmi originali (C:\MasterflexD) prima dell'agente
 collaudo_scanner.py   collaudi dello scanner vero: colori, intensita', trascinamento
 run.py                interfaccia web (python run.py --controllo = diagnosi ambiente)
 selftest.py           collaudo della catena di elaborazione su scanner simulato

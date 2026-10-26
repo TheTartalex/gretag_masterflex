@@ -13,6 +13,7 @@ conflitto sulla stessa pellicola.
 
 from __future__ import annotations
 
+import datetime
 import os
 import threading
 import time
@@ -27,7 +28,7 @@ from .acquire import (Annullato, Calibration, RawScan, ScanMetadata, film_presen
                       measure_channel_exposure, run_calibration, scan_frame)
 from .compat import check_environment
 from .config import AppConfig, FORMATS, PRESETS
-from .hal import (FilmSensors, FinePellicola, OriginaleBackend, ScannerBackend, ScannerError,
+from .hal import (FilmSensors, FinePellicola, MotoriBloccati, OriginaleBackend, ScannerBackend, ScannerError,
                   make_backend)
 from . import colore
 from .invert import PROFILES
@@ -86,6 +87,8 @@ class ScanService:
 
         self._lock = threading.Lock()
         self._stop = threading.Event()
+        # mentre la connessione automatica aspetta lo scanner, cosa aspetta
+        self.attesa_connessione: Optional[str] = None
 
     # ------------------------------------------------------------------
 
@@ -98,6 +101,8 @@ class ScanService:
 
     def stato(self) -> Dict[str, object]:
         st = None
+        if self.backend is None and self.attesa_connessione:
+            st = {"connesso": False, "messaggio": self.attesa_connessione}
         if self.backend is not None:
             try:
                 s = self.backend.status()
@@ -108,7 +113,8 @@ class ScanService:
 
         calib = None
         if self.calib is not None:
-            calib = {"eta_giorni": round(self.calib.age_days(), 1)}
+            calib = {"eta_giorni": round(self.calib.age_days(), 1),
+                     "di_oggi": self.calibrazione_di_oggi()}
 
         return {"macchina": st, "calibrazione": calib,
                 "driver": self.cfg.driver, "job": self.job.as_dict(),
@@ -119,14 +125,53 @@ class ScanService:
     def connetti(self, driver: Optional[str] = None) -> Dict[str, object]:
         if driver:
             self.cfg.driver = driver
-        self.backend = make_backend(self.cfg)
-        self.backend.connect()
+        # il backend si tiene solo se la connessione riesce: prima restava
+        # anche fallita, e lo stato mostrava una macchina "presente" che
+        # non rispondeva
+        backend = make_backend(self.cfg)
+        backend.connect()
+        self.backend = backend
         self.log("Backend '%s' connesso." % self.cfg.driver)
         existing = Calibration.latest(self.cfg.path("calib"))
         if existing is not None:
             self.calib = existing
             self.log("Calibrazione esistente, %.0f giorni." % existing.age_days())
         return self.stato()
+
+    def connetti_automatico(self, durata: float = 900.0,
+                            pausa: float = 5.0) -> None:
+        """Si connette da solo appena l'agente ha lo scanner pronto.
+
+        All'accensione agente e interfaccia partono insieme, ma l'SDK ci mette
+        una quarantina di secondi a collegare lo scanner (stato 10 -> 0). Si
+        riprova finche' non riesce: connect() del ponte aspetta gia' lo stato
+        0, qui si copre il tempo in cui l'agente non risponde ancora. Se nel
+        frattempo qualcuno preme Connetti, si lascia fare a lui.
+        """
+        def ciclo():
+            fine = time.time() + durata
+            ultimo = ""
+            self.attesa_connessione = "connessione automatica: attendo lo scanner"
+            try:
+                while time.time() < fine and self.backend is None:
+                    try:
+                        self.connetti()
+                        self.log("Connessione automatica riuscita.")
+                        return
+                    except Exception as exc:            # noqa: BLE001
+                        ultimo = str(exc).splitlines()[0] if str(exc) else ""
+                        self.attesa_connessione = (
+                            "connessione automatica: attendo lo scanner (%s)"
+                            % ultimo)
+                    time.sleep(pausa)
+                if self.backend is None:
+                    self.log("Connessione automatica non riuscita in %.0f "
+                             "minuti: %s. Premere Connetti." % (durata / 60, ultimo))
+            finally:
+                self.attesa_connessione = None
+
+        threading.Thread(target=ciclo, name="connessione-automatica",
+                         daemon=True).start()
 
     def _require(self) -> ScannerBackend:
         if self.backend is None:
@@ -352,10 +397,40 @@ class ScanService:
             self.progress("Inserire la pellicola", 1.0)
         self._avvia("carico", job)
 
+    def calibrazione_di_oggi(self) -> bool:
+        """La lampada e il sensore cambiano con le ore di accensione e con la
+        temperatura: il primo lavoro della giornata si fa con una calibrazione
+        fatta oggi, a macchina calda e appena azzerata."""
+        if self.calib is None:
+            return False
+        return (datetime.date.fromtimestamp(self.calib.created)
+                == datetime.date.today())
+
+    def _serve_calibrazione(self) -> None:
+        if isinstance(self.backend, OriginaleBackend):
+            return            # col programma originale calibra lui
+        if not self.calibrazione_di_oggi():
+            raise ScannerError(
+                "oggi la macchina non e' ancora stata calibrata: prima di "
+                "anteprime e scansioni premere Calibra, con il percorso "
+                "pellicola vuoto (azzera anche i motori)")
+
     def calibra(self) -> None:
         def job():
-            self.progress("Calibrazione in corso", 0.0)
-            calib = run_calibration(self._require(), progress=self.progress,
+            backend = self._require()
+            # Primo passo: i motori a zero. Lo faceva il programma originale
+            # all'avvio; senza di lui, e con il flag "No Reset" del carrello,
+            # tamburo e guide restano dove si sono fermati, e un tamburo
+            # fermo storto davanti alla luce fa leggere il buio.
+            self.progress("Azzeramento dei motori", 0.0)
+            try:
+                if backend.azzera_motori():
+                    self.log("Motori azzerati (Gretag Reset).")
+            except MotoriBloccati:
+                self.log("Azzeramento dei motori saltato: l'agente e' a "
+                         "motori bloccati. Tamburo e guide restano dove sono.")
+            self.progress("Calibrazione in corso", 0.05)
+            calib = run_calibration(backend, progress=self.progress,
                                     annulla=self.annullato)
             path = calib.save(self.cfg.path("calib"))
             self.calib = calib
@@ -363,6 +438,8 @@ class ScanService:
         self._avvia("calibrazione", job)
 
     def anteprima(self, formato: str) -> None:
+        self._serve_calibrazione()
+
         def job():
             fmt = FORMATS[formato]
             self._require().seleziona_formato(formato)
@@ -409,6 +486,7 @@ class ScanService:
 
         if isinstance(self.backend, OriginaleBackend):
             return self.ricevi_da_originale(rullo_id)
+        self._serve_calibrazione()
 
         def job():
             backend = self._require()

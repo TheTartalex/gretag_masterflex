@@ -975,6 +975,8 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .comandi button{width:auto;flex:0 0 auto;padding:11px 16px;white-space:nowrap}
 .comandi button.principale{padding:11px 26px;font-size:15px}
 .comandi .avanz{flex:1;min-width:0}
+/* la calibrazione di oggi manca: anteprima e scansione la aspettano */
+.comandi button.da-fare{box-shadow:inset 0 0 0 2px var(--avviso);color:var(--avviso)}
 .comandi #msg,.comandi .avvisi{white-space:nowrap;overflow:hidden;
  text-overflow:ellipsis}
 .comandi .avvisi{margin-top:2px;cursor:pointer}
@@ -1312,7 +1314,7 @@ details.sez>div{padding-bottom:10px}
 
  <div class="comandi">
   <button class="sec" onclick="connetti()">Connetti</button>
-  <button class="sec" onclick="calibra()">Calibra</button>
+  <button class="sec" id="tasto_calibra" onclick="calibra()">Calibra</button>
   <button class="sec" onclick="carica()" title="Guide al formato del rullo e carrello pronto a ricevere la pellicola">Carica</button>
   <button class="sec" onclick="fotogramma(1)" title="Il carrello porta in finestra il fotogramma successivo">Fotogramma &rsaquo;</button>
   <button class="sec" onclick="anteprima()">Anteprima</button>
@@ -1664,7 +1666,7 @@ function connetti(){ post('/api/connetti',{driver:val('driver')}).then(mostraSta
 function fotogramma(v){ post('/api/fotogramma',{verso:v,formato:val('formato')}).then(mostraStato); }
 function espelli(v){ post('/api/espelli',{verso:v}).then(esito); }
 function carica(){ post('/api/carica',{formato:val('formato')}).then(esito); }
-function calibra(){ if(confirm('Togliere la pellicola dal percorso ottico. Procedere?'))
+function calibra(){ if(confirm('Prima i motori vanno a zero (tamburo, guide, lente), poi si calibra. Togliere la pellicola dal percorso ottico. Procedere?'))
   post('/api/calibra',{}).then(esito); }
 function muovi(mm){ post('/api/muovi',{mm:mm}).then(mostraStato); }
 /* STOP non e' istantaneo, e fingere che lo sia e' peggio che dirlo: la
@@ -1767,7 +1769,9 @@ function mostraStato(s){
   try{ finto = on && JSON.parse(m.messaggio).simulato===true; }catch(e){}
   el('stato').innerHTML='<span class="pallino'+(on?' on':'')+'"></span>'+
     (on ? ('connesso · '+s.driver+' · '+m.posizione_mm.toFixed(2)+' mm')
-        : 'non connesso') +
+        /* durante la connessione automatica si dice cosa si aspetta */
+        : (m && m.messaggio ? String(m.messaggio).replace(/[<>&]/g,'')
+                            : 'non connesso')) +
     /* Se i fotogrammi sono finti bisogna che si veda sempre, non solo la
        prima volta: e' l'unica differenza che conta fra una prova e un rullo
        del cliente. */
@@ -1775,6 +1779,14 @@ function mostraStato(s){
   /* Il menu del collegamento deve dire come stanno le cose, non ripartire
      ogni volta dalla prima voce: e' il modo migliore per far scegliere a
      qualcuno un backend diverso da quello con cui il server e' partito. */
+  var tc=el('tasto_calibra');
+  if(tc){
+    var manca = on && s.driver!=='originale' &&
+                !(s.calibrazione && s.calibrazione.di_oggi);
+    tc.classList.toggle('da-fare', manca);
+    tc.title = manca ? "Oggi non e' ancora stata fatta: va fatta prima di anteprime e scansioni (azzera anche i motori)"
+                     : 'Azzera i motori e calibra, con il percorso pellicola vuoto';
+  }
   var dr=el('driver');
   if(dr && !dr.dataset.tocco && s.driver){
     for(var i=0;i<dr.options.length;i++)
@@ -2636,7 +2648,8 @@ def apri_nel_browser(url: str, ritardo: float = 1.2) -> None:
 def avvia(host: str = "127.0.0.1", porta: int = 8080,
           cfg: Optional[AppConfig] = None, db: str = "./ordini.db",
           token: Optional[str] = None, apri: bool = False,
-          impostazioni: Optional[str] = None) -> None:
+          impostazioni: Optional[str] = None,
+          connetti: bool = False) -> None:
     cfg = cfg or AppConfig()
     Handler.impostazioni = impostazioni
 
@@ -2668,6 +2681,10 @@ def avvia(host: str = "127.0.0.1", porta: int = 8080,
         print("  (conservazione non applicata: %s)" % exc)
 
     srv = ThreadingHTTPServer((host, porta), Handler)
+
+    if connetti:
+        # all'accensione: ci si connette da soli appena lo scanner e' pronto
+        Handler.servizio.connetti_automatico()
 
     if host in ("127.0.0.1", "localhost"):
         print("Interfaccia web attiva su http://127.0.0.1:%d/" % porta)

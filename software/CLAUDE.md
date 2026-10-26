@@ -61,6 +61,12 @@ reintrodurle.
   rifiuta (46/47/42). `PonteSdkBackend` lo impara dimezzando; non togliere
   quel ciclo e non alzare i limiti di `measure_channel_exposure` senza una
   prova sulla macchina.
+- **Si chiude il programma originale solo PRIMA dell'agente.** `processi.py`
+  chiude tutto cio' che parte da `C:\MasterflexD`; con l'agente acceso
+  ci sono anche i programmi che usa lui (GateControl). `termina` si rifiuta.
+- **Calibrazione di oggi.** Anteprima e rullo la pretendono
+  (`_serve_calibrazione`), e la calibrazione comincia azzerando i motori
+  (`azzera_motori`): senza programma originale nessun altro lo fa.
 - **La fine della striscia la dice il carrello** (`ERR_MOVE` →
   `FinePellicola`). Un fotogramma uniforme non e' fine pellicola: puo'
   essere non esposto, e ne capitano 3-4 di fila (`fotogramma_vuoto`).

@@ -47,6 +47,8 @@ software/backup/
 software/diagnosi/
 software/collaudi/
 software/impostazioni.json
+software/modo-avvio.txt
+software/attivita-avvio.xml
 # Wheel e installer di Python per l'installazione senza rete: si rifanno con
 # MASTERFLEX.bat, voce "prepara pacchetto offline".
 software/pacchetti/

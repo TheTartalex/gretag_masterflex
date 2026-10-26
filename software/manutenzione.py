@@ -9,7 +9,10 @@ altre librerie non sono ancora installate, o sono quelle sbagliate.
     python manutenzione.py verifica              controlla versioni e moduli
     python manutenzione.py macchina              driver, scheda, SDK
     python manutenzione.py aggiorna [sorgente]   aggiorna il programma
-    python manutenzione.py avvio on <modo>|off|stato
+    python manutenzione.py avvio on|off|stato|adesso
+                                                 avvio automatico all'accensione
+    python manutenzione.py modo [nuovo]          modo di lavoro (l'ultimo usato)
+    python manutenzione.py termina [--prova]     chiude i programmi in C:\\MasterflexD
     python manutenzione.py diagnosi              raccoglie lo stato in un file
     python manutenzione.py offline               prepara pacchetti\\ per l'installazione senza rete
     python manutenzione.py firmware [--usa-1.15 cartella]
@@ -63,11 +66,24 @@ AGGIORNAMENTO_URL = ("https://github.com/TheTartalex/gretag_masterflex/"
 # ektest.exe non sta in software/ nel repository: lo aggiunge prepara.sh
 # allo zip, dal pacchetto collaudato del driver.
 CODICE = ["filmscan", "ponte", "run.py", "selftest.py", "manutenzione.py",
-          "collaudo_scanner.py", "requirements.txt", "CLAUDE.md", "README.md",
-          "MASTERFLEX.bat", "ektest.exe"]
+          "processi.py", "collaudo_scanner.py", "requirements.txt", "CLAUDE.md",
+          "README.md", "MASTERFLEX.bat", "ektest.exe"]
 
 AVVIO_NOME = "Masterflex D1008.bat"
-MODI_AVVIO = ("avvia", "avvia-senza-motori", "simulazione")
+# I modi di lavoro. "osservatore" e' il man in the middle: lavora il
+# programma originale, noi copiamo le immagini, e l'agente NON parte.
+MODI_AVVIO = ("avvia", "avvia-senza-motori", "simulazione", "osservatore")
+DESCRIZIONE_MODI = {
+    "avvia": "completo, motori attivi (chiude il programma originale)",
+    "avvia-senza-motori": "completo, motori BLOCCATI (chiude il programma originale)",
+    "simulazione": "simulazione, nessuna macchina",
+    "osservatore": "man in the middle: programma originale + osservatore",
+}
+MODO_DI_SERIE = "avvia-senza-motori"
+# L'ultimo modo usato: e' quello con cui parte l'avvio automatico e quello
+# proposto dal menu. Sta accanto al programma e un aggiornamento non lo tocca.
+FILE_MODO = os.path.join(QUI, "modo-avvio.txt")
+ATTIVITA = "Masterflex D1008"
 
 
 def titolo(testo):
@@ -449,51 +465,270 @@ def _cartella_esecuzione_automatica():
                         "Start Menu", "Programs", "Startup")
 
 
-def cmd_avvio(argv):
-    """avvio on <modo> | off | stato
+def modo_attuale():
+    try:
+        with open(FILE_MODO) as f:
+            modo = f.read().strip()
+        if modo in MODI_AVVIO:
+            return modo
+    except (IOError, OSError):
+        pass
+    return MODO_DI_SERIE
 
-    Si usa un piccolo .bat in Esecuzione automatica invece di un collegamento
-    .lnk: non serve PowerShell ne' COM, e si apre con il Blocco note per
-    vedere cosa fa.
+
+def cmd_modo(argv):
+    """modo            stampa l'ultimo modo usato (per MASTERFLEX.bat)
+    modo <nuovo>    lo cambia"""
+    if not argv:
+        print(modo_attuale())
+        return 0
+    if argv[0] not in MODI_AVVIO:
+        print("  modo sconosciuto: %s (validi: %s)" % (argv[0], ", ".join(MODI_AVVIO)))
+        return 1
+    with open(FILE_MODO, "w") as f:
+        f.write(argv[0] + "\n")
+    return 0
+
+
+def amministratore():
+    if os.name != "nt":
+        return False
+    try:
+        import ctypes
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:                                    # noqa: BLE001
+        return False
+
+
+def _rilancia_da_amministratore(argv):
+    """Rilancia questo script con i diritti di amministratore: compare la
+    richiesta di Windows, una volta. True se l'utente ha confermato."""
+    import ctypes
+    parametri = subprocess.list2cmdline([os.path.abspath(__file__)] + argv)
+    r = ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable,
+                                            parametri, QUI, 1)
+    return r > 32
+
+
+def _xml_attivita(utente, comando, cartella):
+    """L'attivita' pianificata, scritta per intero.
+
+    Da riga di comando schtasks lascia due impostazioni che qui non vanno:
+    il limite di 3 giorni (dopo, Windows chiude il programma, e la macchina
+    resta accesa anche settimane) e la priorita' "sotto il normale", che
+    passa ai processi figli e rallenta acquisizione ed elaborazione.
     """
-    cartella = _cartella_esecuzione_automatica()
-    file_avvio = os.path.join(cartella, AVVIO_NOME)
+    from xml.sax.saxutils import escape as e
+    return u"""<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>Masterflex D1008: avvio all'accensione con i diritti di amministratore. Si toglie da MASTERFLEX.bat, voce 9.</Description>
+  </RegistrationInfo>
+  <Triggers>
+    <LogonTrigger>
+      <Enabled>true</Enabled>
+      <UserId>%(utente)s</UserId>
+      <Delay>PT20S</Delay>
+    </LogonTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <UserId>%(utente)s</UserId>
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>HighestAvailable</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>false</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <IdleSettings>
+      <StopOnIdleEnd>false</StopOnIdleEnd>
+      <RestartOnIdle>false</RestartOnIdle>
+    </IdleSettings>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+    <WakeToRun>false</WakeToRun>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <Priority>4</Priority>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>%(comando)s</Command>
+      <Arguments>automatico</Arguments>
+      <WorkingDirectory>%(cartella)s</WorkingDirectory>
+    </Exec>
+  </Actions>
+</Task>
+""" % {"utente": e(utente), "comando": e(comando), "cartella": e(cartella)}
+
+
+def _attivita_presente():
+    codice, _ = esegui(["schtasks", "/Query", "/TN", ATTIVITA])
+    return codice == 0
+
+
+def cmd_avvio(argv):
+    """avvio on | off | stato | adesso
+
+    All'accensione il programma deve partire gia' da amministratore (per
+    chiudere i programmi originali, che girano con i loro diritti, e per
+    l'osservatore), senza la richiesta di Windows: a quell'ora davanti alla
+    macchina non c'e' nessuno a confermarla. Lo fa l'Utilita' di
+    pianificazione, con un'attivita' "con i privilegi piu' elevati" che parte
+    all'accesso dell'utente. Crearla richiede l'amministratore una volta
+    sola: e' l'unica richiesta che compare, qui, al momento di attivarla.
+
+    L'attivita' lancia "MASTERFLEX.bat automatico", che usa l'ultimo modo di
+    lavoro scelto (vedi 'modo').
+    """
     azione = argv[0] if argv else "stato"
+    vecchio = os.path.join(_cartella_esecuzione_automatica(), AVVIO_NOME)
+    pausa = "--pausa" in argv
+
+    def fine(codice):
+        if pausa:
+            try:
+                input("  Invio per chiudere questa finestra...")
+            except EOFError:
+                pass
+        return codice
+
+    if os.name != "nt" and azione != "stato":
+        print("  (solo su Windows)")
+        return 1
+
+    if azione in ("on", "off") and not amministratore():
+        utente = "%s\\%s" % (os.environ.get("USERDOMAIN", ""),
+                              os.environ.get("USERNAME", ""))
+        print("  Serve l'amministratore, una volta sola: confermare la richiesta")
+        print("  di Windows che sta per comparire.")
+        if _rilancia_da_amministratore(["avvio", azione, "--utente", utente,
+                                        "--pausa"]):
+            print("  Proseguire nella finestra che si e' aperta.")
+            return 0
+        print("  Richiesta non confermata: non e' cambiato niente.")
+        return 1
 
     if azione == "off":
-        for p in (file_avvio, os.path.join(cartella, "Masterflex D1008.lnk")):
-            if os.path.exists(p):
-                os.remove(p)
+        if _attivita_presente():
+            codice, testo = esegui(["schtasks", "/Delete", "/TN", ATTIVITA, "/F"])
+            if codice != 0:
+                print("  Attivita' non tolta: %s" % testo.strip())
+                return fine(1)
+        if os.path.exists(vecchio):
+            os.remove(vecchio)
         print("  Avvio automatico DISATTIVATO.")
-        return 0
+        return fine(0)
 
     if azione == "on":
-        modo = argv[1] if len(argv) > 1 else "avvia-senza-motori"
-        if modo not in MODI_AVVIO:
-            print("  modo sconosciuto: %s" % modo)
-            return 1
-        if not os.path.isdir(cartella):
-            os.makedirs(cartella)
-        bat = os.path.join(QUI, "MASTERFLEX.bat")
-        # "avvia" chiede conferma a ogni avvio; scelto qui, la conferma e'
-        # gia' data, e all'accensione non c'e' nessuno a rispondere.
-        argomenti = "avvia si" if modo == "avvia" else modo
-        with open(file_avvio, "w") as f:
-            f.write("@echo off\r\n")
-            f.write("rem Creato da MASTERFLEX.bat: si toglie dal suo menu.\r\n")
-            f.write('cd /d "%s"\r\n' % QUI)
-            f.write('call "%s" %s\r\n' % (bat, argomenti))
-        print("  Avvio automatico ATTIVATO: all'accensione parte '%s'." % modo)
-        return 0
+        utente = None
+        if "--utente" in argv:
+            i = argv.index("--utente")
+            utente = argv[i + 1] if i + 1 < len(argv) else None
+        utente = utente or "%s\\%s" % (os.environ.get("USERDOMAIN", ""),
+                                        os.environ.get("USERNAME", ""))
+        xml = os.path.join(QUI, "attivita-avvio.xml")
+        with io.open(xml, "w", encoding="utf-16") as f:
+            f.write(_xml_attivita(utente, os.path.join(QUI, "MASTERFLEX.bat"), QUI))
+        codice, testo = esegui(["schtasks", "/Create", "/F", "/TN", ATTIVITA,
+                                "/XML", xml])
+        try:
+            os.remove(xml)
+        except OSError:
+            pass
+        if codice != 0:
+            print("  Attivita' non creata: %s" % testo.strip())
+            return fine(1)
+        # il metodo vecchio (un .bat in Esecuzione automatica) partiva senza
+        # diritti: se restasse, all'accensione partirebbero due copie
+        if os.path.exists(vecchio):
+            os.remove(vecchio)
+        print("  Avvio automatico ATTIVATO per %s, con i diritti di" % utente)
+        print("  amministratore e senza richieste. All'accensione parte il modo:")
+        print("      %s" % DESCRIZIONE_MODI[modo_attuale()])
+        print("  (l'ultimo usato: si cambia dal menu, voce 9 o avviando a mano)")
+        return fine(0)
 
-    if os.path.exists(file_avvio):
-        with open(file_avvio) as f:
-            riga = [r for r in f.read().splitlines() if r.startswith("call")]
-        modo = riga[0].split('"')[-1].strip() if riga else "?"
-        print("  Avvio automatico: ATTIVO (%s)" % modo)
+    if azione == "adesso":
+        # come all'accensione: con i diritti e senza richieste
+        codice, testo = esegui(["schtasks", "/Run", "/TN", ATTIVITA])
+        print("  " + (testo.strip() or "avviato"))
+        return codice
+
+    if os.name == "nt" and _attivita_presente():
+        print("  Avvio automatico: ATTIVO, da amministratore senza richieste")
+        print("  Modo all'accensione: %s" % DESCRIZIONE_MODI[modo_attuale()])
+    elif os.path.exists(vecchio):
+        print("  Avvio automatico: ATTIVO col metodo vecchio (senza diritti).")
+        print("  Riattivarlo per passare all'Utilita' di pianificazione.")
     else:
         print("  Avvio automatico: non attivo")
     return 0
+
+
+def cmd_termina(argv):
+    """termina [--prova] [--quiete S] [--massimo S]
+
+    Chiude i programmi del software originale (tutto quello che parte da
+    C:\\MasterflexD). Va fatto PRIMA di avviare l'agente e mai mentre gira:
+    l'SDK dell'agente usa a sua volta programmi di quella cartella (il
+    GateControl del carrello), e chiuderli gli toglierebbe la macchina.
+    """
+    if os.name != "nt":
+        print("  (solo su Windows)")
+        return 0
+    if "--prova" not in argv and agente_attivo():
+        print("  L'agente e' in esecuzione: i programmi in C:\\MasterflexD")
+        print("  possono essere suoi (GateControl). Non si chiude niente.")
+        return 1
+
+    def valore(nome, di_serie):
+        if nome in argv:
+            i = argv.index(nome)
+            try:
+                return float(argv[i + 1])
+            except (IndexError, ValueError):
+                pass
+        return di_serie
+
+    import processi
+    cartella_log = os.path.join(PONTE, "log")
+    try:
+        os.makedirs(cartella_log)
+    except OSError:
+        pass
+    registro = os.path.join(cartella_log, "avvio-%s.log"
+                            % datetime.date.today().strftime("%Y%m%d"))
+
+    def log(testo):
+        print(testo)
+        try:
+            with io.open(registro, "a", encoding="utf-8") as f:
+                f.write(u"%s %s\n" % (datetime.datetime.now().strftime("%H:%M:%S"),
+                                      testo))
+        except (IOError, OSError):
+            pass
+
+    if not amministratore():
+        log("  (senza diritti di amministratore: i programmi originali avviati")
+        log("   da amministratore non si potranno chiudere)")
+    chiusi, falliti = processi.termina_originale(
+        quiete=valore("--quiete", 5.0), massimo=valore("--massimo", 60.0),
+        escludi=(QUI, os.path.dirname(sys.executable)),
+        prova="--prova" in argv, log=log)
+    if not chiusi and not falliti:
+        log("  Nessun programma del software originale in esecuzione.")
+    elif falliti:
+        log("  ATTENZIONE: %d programmi originali ancora aperti. La macchina"
+            % len(falliti))
+        log("  potrebbe essere occupata: chiuderli a mano prima di lavorare.")
+    return 1 if falliti else 0
 
 
 # --------------------------------------------------------------------------
@@ -1023,6 +1258,8 @@ COMANDI = {
     "macchina": cmd_macchina,
     "aggiorna": cmd_aggiorna,
     "avvio": cmd_avvio,
+    "modo": cmd_modo,
+    "termina": cmd_termina,
     "diagnosi": cmd_diagnosi,
     "offline": cmd_offline,
     "pulisci-vecchio": cmd_pulisci_vecchio,
