@@ -126,6 +126,8 @@ class Rullo:
     stato: str = "da_scansionare"
     creato: float = 0.0
     scansionati: int = 0
+    # Digital ICE: pulizia a infrarosso, scelta rullo per rullo
+    ice: bool = False
 
 
 # --------------------------------------------------------------------------
@@ -146,6 +148,16 @@ class Archivio:
             os.makedirs(directory, exist_ok=True)
         with self._conn() as c:
             c.executescript(SCHEMA)
+            # Colonne aggiunte dopo: un archivio gia' esistente le riceve qui,
+            # con il valore di serie, senza toccare il resto.
+            for tabella, colonna, tipo in (
+                    ("rulli", "ice", "INTEGER NOT NULL DEFAULT 0"),
+                    ("fotogrammi", "numero_bordo", "TEXT DEFAULT ''")):
+                presenti = [r[1] for r in c.execute(
+                    "PRAGMA table_info(%s)" % tabella).fetchall()]
+                if colonna not in presenti:
+                    c.execute("ALTER TABLE %s ADD COLUMN %s %s"
+                              % (tabella, colonna, tipo))
 
     def _conn(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path, timeout=10.0)
@@ -332,13 +344,15 @@ class Archivio:
     # --- rulli ---
 
     def rullo_crea(self, ordine_id: int, etichetta: str, formato: str,
-                   preset: str, profilo: str = "c41", attesi: int = 0) -> int:
+                   preset: str, profilo: str = "c41", attesi: int = 0,
+                   ice: bool = False) -> int:
         with self._conn() as c:
             cur = c.execute(
                 "INSERT INTO rulli (ordine_id, etichetta, formato, preset, "
-                "profilo, attesi, stato, creato) VALUES (?,?,?,?,?,?,?,?)",
+                "profilo, attesi, stato, creato, ice) "
+                "VALUES (?,?,?,?,?,?,?,?,?)",
                 (ordine_id, etichetta, formato, preset, profilo, attesi,
-                 "da_scansionare", time.time()))
+                 "da_scansionare", time.time(), 1 if ice else 0))
             return int(cur.lastrowid)
 
     def rulli(self, ordine_id: int) -> List[Rullo]:
@@ -352,6 +366,7 @@ class Archivio:
             d = dict(r)
             d["specchiato"] = bool(d["specchiato"])
             d["conf_specchio"] = bool(d["conf_specchio"])
+            d["ice"] = bool(d.get("ice", 0))
             out.append(Rullo(**d))
         return out
 
@@ -366,6 +381,7 @@ class Archivio:
         d = dict(row)
         d["specchiato"] = bool(d["specchiato"])
         d["conf_specchio"] = bool(d["conf_specchio"])
+        d["ice"] = bool(d.get("ice", 0))
         return Rullo(**d)
 
     def rullo_specchiatura(self, rullo_id: int, specchiato: bool,
@@ -399,23 +415,40 @@ class Archivio:
     def fotogramma_registra(self, rullo_id: int, numero: int,
                             file_out: str = "", file_raw: str = "",
                             file_maschera: str = "", rotazione: int = 0,
-                            stato: str = "ok", avvisi: str = "") -> int:
+                            stato: str = "ok", avvisi: str = "",
+                            numero_bordo: str = "") -> int:
         """Registra un fotogramma scansionato. Se esiste gia', lo aggiorna:
         riscansionare un fotogramma venuto male e' normale e non deve creare
         doppioni."""
         with self._conn() as c:
             cur = c.execute(
                 "INSERT INTO fotogrammi (rullo_id, numero, file_raw, file_out, "
-                "file_maschera, rotazione, stato, avvisi, creato) "
-                "VALUES (?,?,?,?,?,?,?,?,?) "
+                "file_maschera, rotazione, stato, avvisi, creato, numero_bordo) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?) "
                 "ON CONFLICT(rullo_id, numero) DO UPDATE SET "
                 "  file_raw=excluded.file_raw, file_out=excluded.file_out, "
                 "  file_maschera=excluded.file_maschera, "
                 "  rotazione=excluded.rotazione, stato=excluded.stato, "
-                "  avvisi=excluded.avvisi, creato=excluded.creato",
+                "  avvisi=excluded.avvisi, creato=excluded.creato, "
+                "  numero_bordo=excluded.numero_bordo",
                 (rullo_id, numero, file_raw, file_out, file_maschera,
-                 rotazione, stato, avvisi, time.time()))
+                 rotazione, stato, avvisi, time.time(), numero_bordo or ""))
             return int(cur.lastrowid)
+
+    def fotogrammi_rinumera(self, nuovi: List[Dict[str, object]]) -> None:
+        """Cambia numero e file a piu' fotogrammi insieme (riordino). In due
+        passi, con numeri negativi in mezzo: il vincolo UNIQUE(rullo,
+        numero) non permette di scambiarli direttamente."""
+        with self._conn() as c:
+            for f in nuovi:
+                c.execute("UPDATE fotogrammi SET numero = ? WHERE id = ?",
+                          (-int(f["id"]), int(f["id"])))
+            for f in nuovi:
+                c.execute("UPDATE fotogrammi SET numero = ?, file_raw = ?, "
+                          "file_out = ?, file_maschera = ? WHERE id = ?",
+                          (int(f["numero"]), f.get("file_raw") or "",
+                           f.get("file_out") or "", f.get("file_maschera") or "",
+                           int(f["id"])))
 
     def fotogrammi(self, rullo_id: int) -> List[Dict[str, object]]:
         with self._conn() as c:

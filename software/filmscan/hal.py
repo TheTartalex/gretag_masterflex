@@ -53,6 +53,10 @@ class Emergenza(ScannerError):
     l'ok."""
 
 
+class PressoreBloccato(ScannerError):
+    """Il pressore non si e' rialzato: la pellicola non si muove piu'."""
+
+
 class MotoriBloccati(ScannerError):
     """L'agente e' partito con --senza-motori e rifiuta i movimenti."""
 
@@ -183,6 +187,40 @@ class ScannerBackend(abc.ABC):
 
     # --- espulsione ---
     supports_eject: bool = False
+
+    # --- esposizione, pressore, Digital ICE, temperatura ---
+    # Di serie non ci sono: chi li ha (la macchina vera) li ridefinisce.
+    supports_pressore: bool = False
+
+    def esposizione_auto(self, auto: bool) -> bool:
+        """Base dell'esposizione: True = tempi calibrati della macchina,
+        False = valori di fabbrica. False se il backend non distingue."""
+        return False
+
+    def calibra_macchina(self) -> bool:
+        """La calibrazione della macchina stessa (LED, tempi). False se non
+        c'e'."""
+        return False
+
+    def pressore(self, giu: bool) -> None:
+        pass
+
+    def digital_ice(self, acceso: bool) -> bool:
+        return False
+
+    def temperatura(self) -> Optional[Dict[str, float]]:
+        return None
+
+    def numero_bordo(self) -> Optional[str]:
+        """Il numero stampato sul bordo del fotogramma in finestra, se la
+        macchina lo sa leggere. Mai bloccante: None se non si sa."""
+        return None
+
+    def anteprima_veloce(self) -> np.ndarray:
+        """Un'immagine piccola e veloce del verde, per il posizionamento a
+        mano. Di serie: un blocco del canale G ridotto."""
+        blocco = self.capture_line_block("G", 600).astype(np.float32)
+        return blocco[::4, ::8]
 
     # --- azzeramento ---
     def azzera_motori(self) -> bool:
@@ -670,7 +708,8 @@ class PonteSdkBackend(ScannerBackend):
             # Dopo l'ultimo fotogramma il carrello risponde ERR_MOVE (31):
             # visto sulla riserva il 26/10/2026, alla fine di una striscia
             # da 20 fotogrammi.
-            if "ERR_MOVE" in str(exc) or "codice 31 " in str(exc):
+            if ("ERR_MOVE" in str(exc) or "codice 31 " in str(exc)
+                    or "ERR_END_OF_FILM" in str(exc) or "codice 32 " in str(exc)):
                 raise FinePellicola(str(exc))
             raise
         self._pos += fmt.pitch
@@ -733,6 +772,45 @@ class PonteSdkBackend(ScannerBackend):
     max_esposizione: Optional[float] = None
     ultima_esposizione: Optional[float] = None
 
+    # --- esposizione, pressore, Digital ICE, temperatura -------------------
+
+    supports_pressore = True
+    _esposizione_auto: Optional[bool] = None
+
+    def esposizione_auto(self, auto: bool) -> bool:
+        # si manda solo quando cambia: e' una riga per comando, non serve
+        # ripeterla a ogni lettura
+        if self._esposizione_auto is not bool(auto):
+            self._send("esposizione_%s" % ("auto" if auto else "fabbrica"))
+            self._esposizione_auto = bool(auto)
+            self.max_esposizione = None     # il tetto dipende dalla base
+        return True
+
+    ATTESA_CALIBRAZIONE_SDK = 600.0
+
+    def calibra_macchina(self) -> bool:
+        self._send("calibrasdk", attesa=self.ATTESA_CALIBRAZIONE_SDK)
+        return True
+
+    def pressore(self, giu: bool) -> None:
+        self._send("pressore_%s" % ("giu" if giu else "su"),
+                   attesa=self.ATTESA_MOVIMENTO)
+
+    def digital_ice(self, acceso: bool) -> bool:
+        self._send("ice_%s" % ("on" if acceso else "off"))
+        return True
+
+    def temperatura(self) -> Optional[Dict[str, float]]:
+        import json
+        return json.loads(self._send("temperatura"))
+
+    RISOLUZIONE_ANTEPRIMA = 3          # 262x175: un quarto di secondo o poco piu'
+
+    def anteprima_veloce(self) -> np.ndarray:
+        return self._leggi(self._send(
+            "grab_G_%d_1.000" % self.RISOLUZIONE_ANTEPRIMA,
+            attesa=self.ATTESA_ACQUISIZIONE)).astype(np.float32)
+
     def capture_line_block(self, channel: str, lines: int,
                            exposure: float = 1.0) -> np.ndarray:
         if channel not in self.canali_disponibili:
@@ -755,6 +833,14 @@ class PonteSdkBackend(ScannerBackend):
                 exposure = max(1.0, exposure / 2.0)
                 self.max_esposizione = exposure
         self.ultima_esposizione = exposure
+        # Si restituisce sempre il fotogramma intero, anche quando se ne
+        # chiedono poche righe: la lettura e' gia' stata pagata, e le prime 16
+        # righe (il bordo del fotogramma) erano un pessimo campione per dire
+        # se c'e' ancora pellicola.
+        return self._leggi(nome)
+
+    def _leggi(self, nome: str) -> np.ndarray:
+        """Il grezzo che l'agente ha depositato in <ponte>/raw, poi via."""
         percorso = os.path.join(self.root, "raw", nome)
         scadenza = time.time() + self.timeout
         while time.time() < scadenza and not os.path.exists(percorso):
@@ -775,10 +861,6 @@ class PonteSdkBackend(ScannerBackend):
                 os.remove(p)
             except OSError:
                 pass
-        # Si restituisce sempre il fotogramma intero, anche quando se ne
-        # chiedono poche righe: la lettura e' gia' stata pagata, e le prime 16
-        # righe (il bordo del fotogramma) erano un pessimo campione per dire
-        # se c'e' ancora pellicola.
         return dati
 
 

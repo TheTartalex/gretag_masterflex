@@ -209,6 +209,34 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
   2. voce 9, poi "prova adesso";
   3. Calibra a motori attivi, guardando le guide.
 
+- **Esposizione, pressore, Digital ICE, video** (sera):
+  - scheda Macchina, *Impostazioni macchina*:
+    - **esposizione automatica**: tempi calibrati dell'SDK (`calibrate_all`
+      dentro Calibra, poi `get_exp_time`) più la misura per canale; spenta,
+      tempi di fabbrica e x1. La calibrazione ricorda con quale base è stata
+      fatta: cambiandola va rifatta;
+    - **pressore automatico** (acceso di serie): giù per ogni lettura, su
+      prima di muovere. Se non si rialza, il rullo si ferma
+      (`PressoreBloccato`);
+    - **avanzamento automatico**: spento, ogni fotogramma si mette in
+      finestra a mano;
+    - temperatura della testa a richiesta;
+  - **Digital ICE** si sceglie alla creazione del rullo: ASF dell'SDK più la
+    nostra pulizia IR, che però resta spenta finché l'IR dell'SDK non è
+    verificato;
+  - **posizionamento a mano con video** (verde a 262x175, ~1 immagine al
+    secondo), passi da 1 e 20 mm. Si apre da solo se il carrello non trova
+    il fotogramma, o ad avanzamento automatico spento;
+  - **numeri dal bordo**: campo e riordino a fine rullo pronti; la lettura
+    no (vedi api-sdk.md §8).
+
+  Da provare sulla macchina, nell'ordine:
+  1. Calibra con l'esposizione automatica: deve comparire "Calibrazione
+     della macchina fatta". Poi il collaudo colori: i livelli cambiano?
+  2. Il pressore durante l'anteprima: si sente scendere e salire?
+  3. Il verso e la scala dei passi da 1 e 20 mm nel video.
+  4. Un rullo con Digital ICE: cosa cambia con l'ASF acceso.
+
 ## Problemi aperti, in ordine di priorità
 
 1. **Motori delle guide all'avvio.** Le guide sono i motori 3 e 4 del

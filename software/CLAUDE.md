@@ -67,6 +67,14 @@ reintrodurle.
 - **Calibrazione di oggi.** Anteprima e rullo la pretendono
   (`_serve_calibrazione`), e la calibrazione comincia azzerando i motori
   (`azzera_motori`): senza programma originale nessun altro lo fa.
+- **Pressore: giu' solo dentro `_sotto_pressore`.** Ogni lettura ci passa,
+  e all'uscita si rialza sempre; se non si rialza e' `PressoreBloccato`, che
+  ferma il rullo (mai prenderla nell'`except Exception` del fotogramma:
+  muovere la pellicola col pressore giu' la riga). Il simulatore rifiuta i
+  movimenti col pressore abbassato.
+- **La base d'esposizione e' nella calibrazione.** Il flat letto con i tempi
+  calibrati non vale per i tempi di fabbrica: la nota della calibrazione
+  porta `TAG_ESPOSIZIONE` e `_serve_calibrazione` la confronta.
 - **La fine della striscia la dice il carrello** (`ERR_MOVE` →
   `FinePellicola`). Un fotogramma uniforme non e' fine pellicola: puo'
   essere non esposto, e ne capitano 3-4 di fila (`fotogramma_vuoto`).

@@ -272,6 +272,16 @@ class AppConfig:
     export_format: str = "tiff16"        # tiff16 | tiff8 | jpeg | png
     jpeg_quality: int = 95
     keep_raw: bool = True                # conservare i grezzi per rielaborazioni future
+    # --- impostazioni della macchina (scheda Macchina) ---
+    # esposizione automatica: tempi calibrati dell'SDK (calibrate_all nella
+    # calibrazione) piu' la misura per canale a inizio rullo; spenta: tempi
+    # di fabbrica, x1 su tutti i canali
+    esposizione_auto: bool = True
+    # pressore: giu' prima di ogni lettura, su prima di muovere la pellicola
+    pressore_auto: bool = True
+    # avanzamento automatico: il carrello cerca il fotogramma successivo;
+    # spento, ogni fotogramma si mette in finestra a mano col video
+    avanzamento_automatico: bool = True
     # sotto questa escursione di densita' (D) un fotogramma e' vuoto: non
     # esposto o tutto opaco. Si salta, si annota e si conserva il grezzo.
     soglia_fotogramma_vuoto_d: float = 0.10

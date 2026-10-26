@@ -89,7 +89,8 @@ CANALI = {"R": 0, "G": 1, "B": 2, "IR": 3}
 
 # Comandi che muovono la meccanica. "fuoco" muove la lente.
 MOVIMENTI = ("formato", "carica", "alimenta", "avanza", "prossimo", "precedente",
-             "espelli", "espelli_retro", "regola", "fuoco", "azzera")
+             "espelli", "espelli_retro", "regola", "fuoco", "azzera",
+             "pressore", "calibrasdk")
 
 MAX_PASSI = 300               # 3 mm: oltre non e' piu' una regolazione fine
 MAX_ALIMENTAZIONE = 15.0      # secondi di trascinamento acceso senza comandi
@@ -187,7 +188,29 @@ class AgenteSimulato(object):
     def alimentazione(self, accesa=True): pass
     def avanza_fotogramma(self, mezzo=False): pass
 
+    def _pressore_libero(self):
+        # col pressore giu' la pellicola non deve muoversi: qui lo si
+        # rifiuta, cosi' le prove scoprono chi si dimentica di alzarlo
+        if self.pressore_giu:
+            raise ErroreSimulato("movimento con il pressore abbassato",
+                                 [(3, 0, 0)])
+
+    # Con FILMSCAN_SIM_NON_TROVATO=5 nella prima striscia il carrello "non
+    # trova" una volta il fotogramma dopo il 5, come con un negativo
+    # sbiadito: si apre il posizionamento a mano. Di serie spento, perche'
+    # poi il rullo aspetta qualcuno ai tasti.
+    NON_TROVATO_DOPO = (int(os.environ["FILMSCAN_SIM_NON_TROVATO"])
+                        if os.environ.get("FILMSCAN_SIM_NON_TROVATO") else None)
+    _non_trovato_fatto = False
+
     def fotogramma_successivo(self):
+        self._pressore_libero()
+        if (self._strisce == 1 and self._fotogramma == self.NON_TROVATO_DOPO
+                and not self._non_trovato_fatto):
+            self._non_trovato_fatto = True
+            raise ErroreSimulato(
+                "fotogramma successivo: l'SDK segnala 1 errore: codice 39 "
+                "(0, 0) ERR_FILM_UNKNOWN", [(39, 0, 0)])
         if self._fotogramma + 1 >= self.FOTOGRAMMI_STRISCIA:
             raise ErroreSimulato(
                 "fotogramma successivo: l'SDK segnala 1 errore: codice 31 "
@@ -197,6 +220,17 @@ class AgenteSimulato(object):
 
     def reset(self):
         self._fotogramma = 0
+
+    tempi_calibrati = False
+    pressore_giu = False
+
+    def calibra_sdk(self): time.sleep(0.5)
+
+    def pressore(self, giu): self.pressore_giu = bool(giu)
+
+    def temperatura(self): return 34.5, 29.0
+
+    def modo_asf(self, acceso): pass
     def espelli(self): self.pellicola_inserita = False
     def espelli_retro(self):
         fatti = self.FOTOGRAMMI_STRISCIA - 1 - self._fotogramma
@@ -204,7 +238,20 @@ class AgenteSimulato(object):
         self.pellicola_inserita = False
         return fatti, "fotogramma successivo: codice 31 (0, 0) ERR_MOVE"
     def fuoco(self, tipo=1): pass
-    def regola_fine(self, passi): pass
+    _passi = 0
+
+    def regola_fine(self, passi):
+        # a mano si va avanti a passi: ogni 38 mm (3800 passi da 0,01 mm)
+        # in finestra c'e' il fotogramma dopo
+        self._pressore_libero()
+        self._passi += int(passi)
+        while self._passi >= 3800:
+            self._passi -= 3800
+            self._fotogramma = min(self._fotogramma + 1,
+                                   self.FOTOGRAMMI_STRISCIA - 1)
+        while self._passi <= -3800:
+            self._passi += 3800
+            self._fotogramma = max(self._fotogramma - 1, 0)
     def offset_xy(self, formato=0): return (47, 76)
     def sensori(self, numeri=range(0, 16)):
         return dict((n, False) for n in numeri)
@@ -488,6 +535,30 @@ class Agente(object):
             self.s.alimentazione(accesa)
             self.alimentazione_dal = time.time() if accesa else None
             return "alimentazione %s" % parti[1]
+
+        if testa == "esposizione":
+            # esposizione_auto | esposizione_fabbrica
+            self.s.tempi_calibrati = parti[1] == "auto"
+            return "esposizione: %s" % ("tempi calibrati dell'SDK"
+                                         if self.s.tempi_calibrati else "fabbrica")
+
+        if comando == "calibrasdk":
+            # calibrate_all, a percorso vuoto: puo' muovere lente e CCD
+            self.s.calibra_sdk()
+            return "calibrazione dell'SDK fatta"
+
+        if testa == "pressore":
+            giu = parti[1] == "giu"
+            self.s.pressore(giu)
+            return "pressore %s" % ("giu'" if giu else "su")
+
+        if comando == "temperatura":
+            a, b = self.s.temperatura()
+            return json.dumps({"t1": round(a, 2), "t2": round(b, 2)})
+
+        if testa == "ice":
+            self.s.modo_asf(parti[1] == "on")
+            return "Digital ICE (ASF) %s" % parti[1]
 
         if comando == "azzera":
             # il carrello porta a zero i suoi motori (Gretag Reset)

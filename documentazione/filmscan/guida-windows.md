@@ -155,6 +155,39 @@ giudicare colore e densità.
 > [stato.md](../stato.md#problemi-aperti-in-ordine-di-priorità) e
 > [carrello-capri.md](../hardware/carrello-capri.md).
 
+## Impostazioni della macchina, Digital ICE, posizionamento a mano
+
+Nella scheda **Macchina**, *Impostazioni macchina* (si ricordano):
+
+- **Esposizione automatica** (accesa): Calibra fa anche la calibrazione
+  della macchina stessa, come il programma originale, e le letture usano i
+  suoi tempi di esposizione; a inizio rullo si misura il fattore per
+  canale. Spenta: tempi di fabbrica, uguali per tutti i canali. Dopo averla
+  cambiata va rifatta la calibrazione: il programma lo chiede.
+- **Pressore automatico** (acceso): il pressore scende per ogni lettura,
+  così la pellicola resta piatta, e risale prima di ogni movimento. Se non
+  risale, il rullo si ferma.
+- **Avanzamento automatico** (acceso): il carrello cerca da solo il
+  fotogramma. Spento: per ogni fotogramma si apre il video.
+- **Temperatura della testa**, a richiesta.
+
+**Digital ICE** si sceglie quando si crea il rullo. Acceso, si legge anche
+l'infrarosso e si puliscono polvere e graffi; è più lento. Finché l'IR non è
+verificato sulla macchina resta attivo solo l'ASF della macchina.
+
+**Posizionamento a mano.** Se il carrello non trova il fotogramma (negativo
+sbiadito, interfotogramma che non si vede) o se l'avanzamento automatico è
+spento, si apre da solo il video: un'immagine in bianco e nero, circa una al
+secondo. Coi tasti **‹ 1 mm**, **1 mm ›**, **« 20 mm**, **20 mm »** si porta
+il fotogramma in finestra, poi **Acquisisci**. *Fotogramma ›* riprova col
+carrello, *Striscia finita* espelle e aspetta la successiva, *Fine rullo*
+chiude.
+
+**Numeri dal bordo.** Se la macchina li legge, a fine rullo i fotogrammi si
+riordinano secondo quei numeri, file compresi: le strisce si possono
+inserire in qualunque ordine. Per ora la macchina non li passa ancora: i
+fotogrammi restano nell'ordine di scansione.
+
 ## Fine rullo e STOP EMERGENZA
 
 **Scansiona rullo** è verde. Mentre il rullo gira diventa **Fine rullo**,

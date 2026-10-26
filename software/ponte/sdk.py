@@ -358,6 +358,22 @@ METODI = [
 
     # --- calibrazione ---
     ("stato_calibrazione", "?get_calibration_status@DMLScanner@@QAEPAVErrStat@1@PAW4CalibrationStatus@1@PAPAY143$$CBV?$vector@HV?$allocator@H@std@@@std@@@Z", VP, [VP, VP]),
+    # --- 26/10/2026: esposizione calibrata, pressore, temperatura, ASF ---
+    # calibrate_all(NULL, NULL), come PhxScanner (0x447A2C): calibra i LED e
+    # i tempi di esposizione dell'SDK a percorso vuoto.
+    ("calibra_tutto", "?calibrate_all@DMLScanner@@QAEPAVErrStat@1@PAPAY143$$CBV?$vector@HV?$allocator@H@std@@@std@@PAX@Z", VP, [VP, VP]),
+    # get_exp_time(&open_gate, &nominale): puntatori agli ExposureTime interni
+    # (0x1802F790, "get open gate exposure time")
+    ("tempi_esposizione", "?get_exp_time@DMLScannerAdv@@QAEXPAPAVExposureTime@1@0@Z", None, [VP, VP]),
+    ("exp_assegna", "??4ExposureTime@DMLScannerAdv@@QAEAAV01@ABV01@@Z", VP, [VP]),
+    # gi_clamp(true) = Gretag Clamp Down (0x18070B20), false = Clamp Up
+    # (0x18070E10): il pressore della pellicola
+    ("pressore", "?gi_clamp@DMLScannerAdv@@QAEPAVErrStat@DMLScanner@@_N@Z", VP, [B]),
+    # get_temperature(double*, double*): comando 0x31 alla testa
+    ("temperatura", "?get_temperature@DMLScannerAdv@@QAEPAVErrStat@DMLScanner@@PAN0@Z", VP, [VP, VP]),
+    # gi_set_asf_mode(bool): comando 0x25 alla testa. ASF = Applied Science
+    # Fiction, cioe' Digital ICE
+    ("modo_asf", "?gi_set_asf_mode@DMLScanner@@QAEPAVErrStat@1@_N@Z", VP, [B]),
 
     # --- diagnostica e memoria macchina ---
     ("leggi_ingresso", "?diag_input@DMLScannerAdv@@QAE_NHPA_NPAVScanCallback@@@Z", B, [I, VP, VP]),
@@ -768,6 +784,57 @@ class Scanner(object):
         """Fotografia di tutti gli ingressi digitali, per esplorazione."""
         return dict((n, self.ingresso(n)) for n in numeri)
 
+    # Base dell'esposizione: True = i tempi calibrati dell'SDK (open gate,
+    # dopo calibrate_all), False = i valori di fabbrica.
+    tempi_calibrati = False
+
+    def calibra_sdk(self):
+        """calibrate_all: la calibrazione dell'SDK (LED e tempi), a percorso
+        vuoto. E' quella che il programma originale fa all'avvio."""
+        self._verifica(self._m["calibra_tutto"](self._obj, None, None),
+                       "calibrazione dell'SDK")
+
+    def esposizione_calibrata(self, moltiplicatore=1.0):
+        """ExposureTime copiato dai tempi open gate calibrati dell'SDK e
+        scalato. None se l'SDK non li ha (mai calibrato): allora si usano i
+        valori di fabbrica."""
+        og = ctypes.c_void_p()
+        nom = ctypes.c_void_p()
+        self._m["tempi_esposizione"](self._obj, ctypes.byref(og), ctypes.byref(nom))
+        if not og.value:
+            return None
+        buf = ctypes.create_string_buffer(SIZEOF_EXPOSURE_TIME)
+        this = ctypes.cast(buf, ctypes.c_void_p).value
+        self._m["exp_costruttore"](this)
+        self._m["exp_assegna"](this, og.value)
+        if not self._m["exp_positiva"](this):
+            return None
+        if moltiplicatore != 1.0:
+            self._m["exp_moltiplica"](this, ctypes.c_double(moltiplicatore))
+        return buf
+
+    def esposizione(self, moltiplicatore=1.0):
+        if self.tempi_calibrati:
+            buf = self.esposizione_calibrata(moltiplicatore)
+            if buf is not None:
+                return buf
+        return self.esposizione_default(moltiplicatore)
+
+    def pressore(self, giu):
+        self._verifica(self._m["pressore"](self._obj, bool(giu)),
+                       "pressore " + ("giu'" if giu else "su"))
+
+    def temperatura(self):
+        a = ctypes.c_double(0.0)
+        b = ctypes.c_double(0.0)
+        self._verifica(self._m["temperatura"](self._obj, ctypes.byref(a),
+                                              ctypes.byref(b)), "temperatura")
+        return a.value, b.value
+
+    def modo_asf(self, acceso):
+        self._verifica(self._m["modo_asf"](self._obj, bool(acceso)),
+                       "Digital ICE (ASF)")
+
     def esposizione_default(self, moltiplicatore=1.0):
         """Costruisce un ExposureTime, lo porta ai valori di fabbrica e lo scala."""
         buf = ctypes.create_string_buffer(SIZEOF_EXPOSURE_TIME)
@@ -806,7 +873,7 @@ class Scanner(object):
         w, h = larghezza >> risoluzione, altezza >> risoluzione
 
         buffer_img = (ctypes.c_uint16 * (w * h))()
-        exp = self.esposizione_default(esposizione)
+        exp = self.esposizione(esposizione)
 
         # firma: (ushort*, int canale, ExposureTime valore, bool,
         #         int col_inizio, int col_fine, int riga_inizio, int riga_fine,

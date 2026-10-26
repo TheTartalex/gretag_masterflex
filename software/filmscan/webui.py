@@ -978,6 +978,18 @@ button:disabled{opacity:.45;cursor:not-allowed}
 /* Scansiona rullo e' verde; a rullo in corso diventa Fine rullo, rosso */
 .comandi button.verde{background:var(--ok);border-color:var(--ok);color:#fff}
 .comandi button.rosso{background:var(--male);border-color:var(--male);color:#fff}
+/* Posizionamento a mano: il video e i passi, sopra tutto il resto */
+.posizionamento{position:fixed;inset:0;z-index:40;background:var(--bg);
+ display:flex;align-items:center;justify-content:center;padding:12px}
+.posizionamento .riquadro{width:100%;max-width:900px;text-align:center}
+.posizionamento h2{margin:0 0 4px}
+.pos-motivo{font-size:13px;color:var(--dim);margin-bottom:8px}
+#video{width:100%;aspect-ratio:3/2;max-height:58vh;object-fit:contain;
+ background:var(--neutro);border-radius:6px}
+.pos-tasti{display:flex;gap:8px;justify-content:center;margin-top:8px;flex-wrap:wrap}
+.pos-tasti button{width:auto;padding:12px 18px}
+.pos-tasti button.verde{background:var(--ok);border-color:var(--ok);color:#fff}
+.pos-tasti button.rosso{background:var(--male);border-color:var(--male);color:#fff}
 /* STOP EMERGENZA: copre tutto finche' il tecnico non da' l'ok */
 .emergenza{position:fixed;inset:0;z-index:50;background:var(--bg);
  border:10px solid var(--male);display:flex;align-items:center;
@@ -986,6 +998,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .emergenza h1{color:var(--male);font-size:34px;margin:0 0 12px}
 .emergenza p{font-size:16px;line-height:1.45}
 .emergenza button{margin-top:16px;padding:14px 24px;font-size:16px}
+.nota-imp{font-size:11px;color:var(--dim);margin:2px 0 8px 24px}
 /* la calibrazione di oggi manca: anteprima e scansione la aspettano */
 .comandi button.da-fare{box-shadow:inset 0 0 0 2px var(--avviso);color:var(--avviso)}
 .comandi #msg,.comandi .avvisi{white-space:nowrap;overflow:hidden;
@@ -1078,6 +1091,25 @@ details.sez>div{padding-bottom:10px}
 }
 </style></head><body>
 
+<div id="posizionamento" class="posizionamento" style="display:none">
+ <div class="riquadro">
+  <h2>Posizionamento a mano</h2>
+  <div id="pos_motivo" class="pos-motivo"></div>
+  <img id="video" alt="">
+  <div class="pos-tasti">
+   <button class="sec" onclick="posiziona('muovi',-20)">&laquo; 20 mm</button>
+   <button class="sec" onclick="posiziona('muovi',-1)">&lsaquo; 1 mm</button>
+   <button class="sec" onclick="posiziona('muovi',1)">1 mm &rsaquo;</button>
+   <button class="sec" onclick="posiziona('muovi',20)">20 mm &raquo;</button>
+  </div>
+  <div class="pos-tasti">
+   <button class="sec" onclick="posiziona('prossimo')" title="Prova a farlo trovare al carrello">Fotogramma &rsaquo;</button>
+   <button class="sec" onclick="posiziona('striscia')" title="Espelle questa striscia e aspetta la successiva">Striscia finita</button>
+   <button class="rosso" onclick="posiziona('fine')">Fine rullo</button>
+   <button class="verde" onclick="posiziona('acquisisci')">Acquisisci</button>
+  </div>
+ </div>
+</div>
 <div id="emergenza" class="emergenza" style="display:none">
  <div class="riquadro">
   <h1>STOP EMERGENZA</h1>
@@ -1138,6 +1170,8 @@ details.sez>div{padding-bottom:10px}
    <div><label>Profilo</label><select id="profilo"></select></div>
    <div><label>Specchiato</label>
     <select id="specchiato"><option value="">no</option><option value="1">si</option></select></div>
+   <div><label title="Pulizia di polvere e graffi con la lettura a infrarosso: piu' lenta, da scegliere rullo per rullo">Digital ICE</label>
+    <select id="ice"><option value="">no</option><option value="1">si</option></select></div>
   </div>
   <div style="font-size:11px;color:var(--dim);margin-top:6px">
    Lasciare vuoto: i fotogrammi si contano leggendo la striscia e ci si ferma
@@ -1267,6 +1301,17 @@ details.sez>div{padding-bottom:10px}
     <button class="sec" onclick="disconnetti()">Disconnetti</button>
    </div>
    <div id="amb" style="font-size:11px;color:var(--dim);margin-top:10px"></div>
+  </section>
+  <section class="pannello">
+   <h2>Impostazioni macchina</h2>
+   <label><input type="checkbox" id="imp_esposizione_auto" style="width:auto" onchange="impostaMacchina()"> Esposizione automatica</label>
+   <div class="nota-imp">Tempi di esposizione calibrati dalla macchina (li aggiorna Calibra) e misura per canale a inizio rullo. Spenta: tempi di fabbrica, uguali per tutti i canali. Cambiandola va rifatta la calibrazione.</div>
+   <label><input type="checkbox" id="imp_pressore_auto" style="width:auto" onchange="impostaMacchina()"> Pressore automatico</label>
+   <div class="nota-imp">Giù durante ogni lettura, così la pellicola resta piatta; su prima di muoverla.</div>
+   <label><input type="checkbox" id="imp_avanzamento_automatico" style="width:auto" onchange="impostaMacchina()"> Avanzamento automatico</label>
+   <div class="nota-imp">Il carrello cerca da solo il fotogramma. Spento: ogni fotogramma si mette in finestra a mano, con il video e i passi da 1 e 20 mm.</div>
+   <div class="row"><button class="sec" onclick="leggiTemperatura()">Temperatura della testa</button></div>
+   <div id="temperatura" class="nota-imp"></div>
   </section>
   <section class="pannello">
    <h2>Movimenti a mano</h2>
@@ -1698,6 +1743,44 @@ function calibra(){ if(confirm('Prima i motori vanno a zero (tamburo, guide, len
 function muovi(mm){ post('/api/muovi',{mm:mm}).then(mostraStato); }
 /* STOP EMERGENZA: niente conferme, deve partire al primo tocco. Toglierlo
    invece chiede il nome del tecnico: e' lui che dice che si puo' ripartire. */
+/* Le impostazioni della macchina: le spunte seguono lo stato del server
+   finche' nessuno le tocca, poi si salvano al cambio. */
+var IMP=['esposizione_auto','pressore_auto','avanzamento_automatico'];
+function impostaMacchina(){
+  var d={}; IMP.forEach(function(k){ d[k]=el('imp_'+k).checked; });
+  post('/api/macchina/impostazioni',d).then(function(r){
+    if(r && r.errore){ alert(r.errore); }
+    /* senza fuoco, al prossimo aggiornamento la spunta torna quella vera */
+    if(document.activeElement) document.activeElement.blur(); });
+}
+function leggiTemperatura(){
+  post('/api/temperatura',{}).then(function(r){
+    var t=r && r.temperatura;
+    el('temperatura').textContent = (r && r.errore) ? r.errore
+      : (t ? ('Sensore 1: '+t.t1.toFixed(1)+' \u00b0C \u00b7 sensore 2: '+t.t2.toFixed(1)+' \u00b0C')
+           : 'Questo collegamento non legge la temperatura.');
+  });
+}
+/* Il posizionamento a mano: compare da solo quando il rullo lo chiede
+   (carrello che non trova il fotogramma, avanzamento automatico spento), e
+   il video si aggiorna finche' resta aperto. */
+var videoTimer=null;
+function posiziona(azione,mm){
+  post('/api/posiziona',{azione:azione,mm:mm||0}).then(function(r){
+    if(r && r.errore) alert(r.errore); });
+}
+function mostraPosizionamento(motivo){
+  var p=el('posizionamento'); if(!p) return;
+  if(motivo){
+    p.style.display='flex';
+    el('pos_motivo').textContent=motivo;
+    if(!videoTimer) videoTimer=setInterval(function(){
+      el('video').src=url('/api/video.jpg?n='+Date.now()); }, 700);
+  } else {
+    p.style.display='none';
+    if(videoTimer){ clearInterval(videoTimer); videoTimer=null; }
+  }
+}
 function emergenza(){ post('/api/emergenza',{}).then(mostraStato); }
 function sblocca(){
   var n=prompt("Ripresa dopo lo STOP EMERGENZA.\nNome del tecnico che ha controllato la macchina:");
@@ -1749,7 +1832,8 @@ function creaRullo(){
   var o=val('ordine_id'); if(!o){alert('Scegliere prima un ordine');return;}
   post('/api/rulli',{ordine_id:parseInt(o),etichetta:val('etichetta'),
     formato:val('formato'),preset:val('preset'),profilo:val('profilo'),
-    attesi:parseInt(val('attesi'))||0,specchiato:val('specchiato')})
+    attesi:parseInt(val('attesi'))||0,specchiato:val('specchiato'),
+    ice:val('ice')})
     .then(function(){caricaRulli();caricaOrdini();}); }
 
 function caricaOrdini(){ get('/api/ordini').then(function(r){
@@ -1780,7 +1864,7 @@ function caricaRulli(){
       op.textContent=x.etichetta+' · '+x.formato+' · '+
         (x.attesi ? (x.scansionati+'/'+x.attesi)
                   : (x.scansionati+' fotogrammi'))+' · '+x.stato+
-        (x.specchiato?' · specchiato':'');
+        (x.specchiato?' · specchiato':'')+(x.ice?' · ICE':'');
       sel.appendChild(op); });
     if(RULLO_CHIESTO){
       for(var i=0;i<sel.options.length;i++)
@@ -1806,6 +1890,11 @@ function mostraStato(s){
      ogni volta dalla prima voce: e' il modo migliore per far scegliere a
      qualcuno un backend diverso da quello con cui il server e' partito. */
   ultimoJob = s.job || null;
+  mostraPosizionamento(s.job && s.job.running ? s.job.posizionamento : '');
+  if(s.impostazioni_macchina) IMP.forEach(function(k){
+    var c=el('imp_'+k);
+    if(c && document.activeElement!==c) c.checked=!!s.impostazioni_macchina[k];
+  });
   var tr=el('tasto_rullo');
   if(tr){
     var inRullo = !!(s.job && s.job.running && s.job.kind==='rullo');
@@ -2144,7 +2233,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"rulli": []})
             rulli = [{"id": r.id, "etichetta": r.etichetta, "formato": r.formato,
                       "preset": r.preset, "stato": r.stato, "attesi": r.attesi,
-                      "scansionati": r.scansionati, "specchiato": r.specchiato}
+                      "scansionati": r.scansionati, "specchiato": r.specchiato,
+                      "ice": r.ice}
                      for r in s.archivio.rulli(int(oid))]
             return self._json({"rulli": rulli})
 
@@ -2174,6 +2264,9 @@ class Handler(BaseHTTPRequestHandler):
             if not rid:
                 return self._json({"fotogrammi": []})
             return self._json({"fotogrammi": s.archivio.fotogrammi(rid)})
+
+        if u.path == "/api/video.jpg":
+            return self._immagine(s.video_jpeg() or _mancante())
 
         if u.path == "/api/provino.jpg":
             try:
@@ -2346,6 +2439,22 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if u.path == "/api/connetti":
                 return self._json(s.connetti(d.get("driver")))
+
+            if u.path == "/api/macchina/impostazioni":
+                valori = s.imposta_macchina(d)
+                if self.impostazioni:
+                    try:
+                        s.cfg.save(self.impostazioni)
+                    except (IOError, OSError) as exc:
+                        s.log("Impostazioni non salvate: %s" % exc)
+                return self._json(valori)
+
+            if u.path == "/api/temperatura":
+                return self._json({"temperatura": s.temperatura()})
+
+            if u.path == "/api/posiziona":
+                return self._json(s.posiziona(str(d.get("azione", "")),
+                                              float(d.get("mm", 0) or 0)))
 
             if u.path == "/api/fine_rullo":
                 return self._json(s.fine_rullo())
@@ -2534,7 +2643,8 @@ class Handler(BaseHTTPRequestHandler):
                 rid = s.archivio.rullo_crea(
                     int(d["ordine_id"]), d.get("etichetta", "rullo"),
                     d.get("formato", "135-full"), d.get("preset", "standard"),
-                    d.get("profilo", "c41"), int(d.get("attesi", 36)))
+                    d.get("profilo", "c41"), int(d.get("attesi", 36)),
+                    ice=bool(d.get("ice")))
                 if d.get("specchiato"):
                     s.archivio.rullo_specchiatura(rid, True, confermata=True)
                 return self._json({"id": rid})

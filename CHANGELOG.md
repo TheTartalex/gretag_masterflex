@@ -39,6 +39,25 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-10-26 — esposizione automatica, pressore, Digital ICE, video
+
+- SDK: `calibrate_all`, `get_exp_time` + `operator=`, `gi_clamp`,
+  `get_temperature`, `gi_set_asf_mode`; agente: `calibrasdk`,
+  `esposizione_auto|fabbrica`, `pressore_giu|su`, `temperatura`, `ice_on|off`.
+- Scheda Macchina: esposizione automatica, pressore automatico, avanzamento
+  automatico (salvati in `impostazioni.json`), temperatura della testa.
+- Calibra: azzeramento, poi calibrazione della macchina, poi dark/flat; la
+  nota ricorda la base d'esposizione.
+- Digital ICE per rullo (colonna `ice`): ASF dell'SDK e pulizia IR; senza,
+  niente lettura IR.
+- Posizionamento a mano con video, passi da 1 e 20 mm; si apre se il
+  carrello non trova il fotogramma o ad avanzamento automatico spento.
+- Numeri dal bordo (colonna `numero_bordo`) e riordino a fine rullo, con i
+  file rinominati; la lettura dalla macchina non c'è ancora.
+- `ERR_END_OF_FILM` (32) vale come fine striscia, come `ERR_MOVE`.
+- Simulatore: pressore che blocca i movimenti, passi che spostano il
+  fotogramma, `FILMSCAN_SIM_NON_TROVATO`.
+
 ### 2026-10-26 — rulli in strisce, Fine rullo, STOP EMERGENZA
 
 - Rullo tagliato in strisce: a fine striscia si espelle, si riarma il

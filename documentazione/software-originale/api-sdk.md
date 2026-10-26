@@ -376,6 +376,23 @@ pubblici di `DMLScanner` e `DMLScannerAdv`, 45 legati in `ponte/sdk.py`.*
 Le firme vengono dai nomi decorati. Dove serve sapere cosa fanno davvero,
 il disassemblato va guardato prima di usarle.
 
+**Usati dal 26/10/2026, sera** (`ponte/sdk.py`, da provare sulla macchina):
+
+- `calibrate_all(NULL, NULL)`, come `PhxScanner` (`0x447A2C`): secondo passo
+  di Calibra con l'esposizione automatica;
+- `get_exp_time(&og, &nom)` (`0x1802F790`) e `ExposureTime::operator=`: la
+  base dell'esposizione sono i tempi *open gate* calibrati, ripiego sui
+  valori di fabbrica se non ci sono;
+- `gi_clamp(bool)`: `true` = *Clamp Down* (`0x18070B20`), `false` = *Clamp
+  Up* (`0x18070E10`); giù per ogni lettura, su prima di ogni movimento;
+- `get_temperature(double*, double*)` (comando `0x31` alla testa);
+- `gi_set_asf_mode(bool)` (comando `0x25`) per i rulli con Digital ICE.
+
+Non ancora: i numeri dal bordo. Il carrello li manda all'SDK come evento del
+GateControl (*New frame info*, `0x18034650`), con quattro blocchi di byte
+del lettore DX/MOF. Non c'è una funzione esportata semplice che li dia:
+servono i dati veri della macchina per decodificarli.
+
 ### Da provare, in quest'ordine
 
 | Metodi | Cosa sono | Perché ci servono |

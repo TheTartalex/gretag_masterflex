@@ -13,9 +13,14 @@ conflitto sulla stessa pellicola.
 
 from __future__ import annotations
 
+import contextlib
+import dataclasses
 import datetime
+import io
 import json
 import os
+import queue
+import re
 import threading
 import time
 import traceback
@@ -30,7 +35,7 @@ from .acquire import (Annullato, Calibration, RawScan, ScanMetadata, film_presen
 from .compat import check_environment
 from .config import AppConfig, FORMATS, PRESETS
 from .hal import (FILE_EMERGENZA, Emergenza, FilmSensors, FinePellicola,
-                  MotoriBloccati, OriginaleBackend, ScannerBackend, ScannerError,
+                  MotoriBloccati, OriginaleBackend, PressoreBloccato, ScannerBackend, ScannerError,
                   make_backend)
 from . import colore
 from .invert import PROFILES
@@ -55,6 +60,8 @@ class JobState:
     attesa_striscia: bool = False
     # "Fine rullo" premuto: il rullo si sta chiudendo
     chiusura: bool = False
+    # il rullo aspetta che il fotogramma si metta in finestra a mano
+    posizionamento: str = ""
 
     def as_dict(self) -> Dict[str, object]:
         return {"running": self.running, "kind": self.kind,
@@ -62,7 +69,12 @@ class JobState:
                 "frame": self.frame, "total": self.total,
                 "errors": self.errors[-10:], "log": self.log[-40:],
                 "attesa_striscia": self.attesa_striscia,
-                "chiusura": self.chiusura}
+                "chiusura": self.chiusura,
+                "posizionamento": self.posizionamento}
+
+
+# Nella nota della calibrazione: con quale base d'esposizione e' stata fatta
+TAG_ESPOSIZIONE = ("[esposizione automatica]", "[esposizione di fabbrica]")
 
 
 class _FotogrammaVuoto(Exception):
@@ -109,6 +121,10 @@ class ScanService:
         self.emergenza: Optional[Dict[str, object]] = self._leggi_emergenza()
         # dopo un'emergenza serve una calibrazione nuova (che azzera i motori)
         self._calibra_dopo: float = 0.0
+        # posizionamento a mano: i tasti della pagina mettono qui i comandi,
+        # il thread del rullo li esegue (la macchina la comanda uno solo)
+        self._comandi_pos: "queue.Queue" = queue.Queue()
+        self._video: bytes = b""
         # mentre la connessione automatica aspetta lo scanner, cosa aspetta
         self.attesa_connessione: Optional[str] = None
         # Disconnetti ferma anche la connessione automatica: altrimenti si
@@ -143,6 +159,7 @@ class ScanService:
 
         return {"macchina": st, "calibrazione": calib,
                 "emergenza": self.emergenza,
+                "impostazioni_macchina": self.impostazioni_macchina(),
                 "driver": self.cfg.driver, "job": self.job.as_dict(),
                 "ambiente": check_environment(dpi=self.cfg.optical_dpi)}
 
@@ -251,6 +268,195 @@ class ScanService:
             return False, espulsa
         finally:
             self.job.attesa_striscia = False
+
+    # --- posizionamento a mano con il video -------------------------------
+
+    AZIONI_POSIZIONAMENTO = ("muovi", "prossimo", "acquisisci", "striscia", "fine")
+
+    def posiziona(self, azione: str, mm: float = 0.0) -> Dict[str, object]:
+        """Un tasto del posizionamento a mano. Lo esegue il thread del rullo."""
+        if not self.job.posizionamento:
+            raise ScannerError("nessun fotogramma da posizionare adesso")
+        if azione not in self.AZIONI_POSIZIONAMENTO:
+            raise ValueError("azione sconosciuta: %s" % azione)
+        if azione == "muovi" and not (0 < abs(mm) <= 20.0):
+            raise ValueError("passo non valido: %s mm" % mm)
+        self._comandi_pos.put((azione, float(mm)))
+        return self.stato()
+
+    def video_jpeg(self) -> bytes:
+        return self._video
+
+    @staticmethod
+    def _jpeg_video(img: np.ndarray) -> bytes:
+        """Il verde a bassa risoluzione, invertito come un positivo e tirato
+        sui percentili: serve a vedere dov'e' il fotogramma, non il colore."""
+        from PIL import Image
+        x = img.astype(np.float32)
+        lo, hi = np.percentile(x, (1.0, 99.0))
+        x = np.clip((x - lo) / max(hi - lo, 1e-6), 0.0, 1.0)
+        x = (1.0 - x) ** 0.8
+        buf = io.BytesIO()
+        Image.fromarray((x * 255).astype(np.uint8)).save(buf, "JPEG", quality=75)
+        return buf.getvalue()
+
+    def _sposta(self, backend, mm: float) -> None:
+        """Uno spostamento a mano, a pezzi entro la regolazione fine (3 mm):
+        20 mm sono sette comandi. La scala vera dei passi va ancora misurata
+        sulla macchina (carrello-capri.md §7)."""
+        passo = float(getattr(backend, "max_regola_mm", 3.0) or 3.0)
+        resto = float(mm)
+        while abs(resto) > 1e-6:
+            d = max(-passo, min(passo, resto))
+            backend.advance(d)
+            resto -= d
+
+    def _posizionamento_manuale(self, backend, fmt, motivo: str) -> str:
+        """Il video e i tasti: il fotogramma si mette in finestra a mano.
+
+        Si apre quando il carrello non trova il fotogramma (negativo
+        sbiadito, interfotogramma che non si vede) o quando l'avanzamento
+        automatico e' spento. Restituisce "acquisisci", "striscia" (striscia
+        finita: espelli e aspetta la prossima) o "fine".
+        """
+        self.log("Posizionamento a mano: %s." % motivo)
+        while not self._comandi_pos.empty():
+            self._comandi_pos.get_nowait()
+        self.job.posizionamento = motivo
+        ultimo = 0.0
+        try:
+            while True:
+                if self.emergenza:
+                    raise Emergenza("STOP EMERGENZA")
+                if self._stop.is_set():
+                    raise Annullato()
+                if self._fine_rullo.is_set():
+                    return "fine"
+                try:
+                    azione, mm = self._comandi_pos.get(timeout=0.15)
+                except queue.Empty:
+                    azione, mm = None, 0.0
+                if azione in ("acquisisci", "striscia", "fine"):
+                    return azione
+                try:
+                    if azione == "muovi":
+                        self._sposta(backend, mm)
+                        ultimo = 0.0
+                    elif azione == "prossimo":
+                        backend.prossimo_fotogramma(fmt)
+                        ultimo = 0.0
+                except Emergenza:
+                    raise
+                except FinePellicola:
+                    self.log("Il carrello non trova altri fotogrammi: "
+                             "striscia finita?")
+                except ScannerError as exc:
+                    self.log("Movimento non riuscito: %s" % exc)
+                if time.time() - ultimo > 0.8:
+                    try:
+                        self._video = self._jpeg_video(backend.anteprima_veloce())
+                    except Emergenza:
+                        raise
+                    except Exception as exc:            # noqa: BLE001
+                        self.log("Video non disponibile: %s" % exc)
+                        time.sleep(1.0)
+                    ultimo = time.time()
+        finally:
+            self.job.posizionamento = ""
+
+    # --- numeri dal bordo e riordino --------------------------------------
+
+    @staticmethod
+    def _chiave_bordo(testo: str) -> Optional[float]:
+        """"12" -> 12, "12A" -> 12.5 (il mezzo fotogramma dei numeri sul
+        bordo). None se non e' un numero."""
+        m = re.match(r"^\s*(\d{1,3})\s*(A?)\s*$", str(testo or ""), re.I)
+        if not m:
+            return None
+        return int(m.group(1)) + (0.5 if m.group(2) else 0.0)
+
+    @classmethod
+    def ordine_per_bordo(cls, fotogrammi: List[Dict[str, object]]) -> List[Dict[str, object]]:
+        """L'ordine dei fotogrammi secondo i numeri letti sul bordo. Chi non
+        ha un numero resta attaccato al fotogramma numerato che lo precede
+        nella scansione: le strisce si inseriscono in qualunque ordine, ma
+        dentro una striscia l'ordine e' gia' giusto."""
+        chiavi = []
+        precedente = float("-inf")
+        for i, f in enumerate(fotogrammi):
+            k = cls._chiave_bordo(f.get("numero_bordo") or "")
+            if k is not None:
+                precedente = k
+                chiavi.append((k, 0, i))
+            else:
+                chiavi.append((precedente, 1, i))
+        ordine = sorted(range(len(fotogrammi)), key=lambda i: chiavi[i])
+        return [fotogrammi[i] for i in ordine]
+
+    def _riordina_per_bordo(self, rullo_id: int) -> None:
+        """A fine rullo: se sul bordo si sono letti dei numeri, i fotogrammi
+        si rinumerano (e i file si rinominano) in quell'ordine. Se i numeri
+        non ci sono, non cambia niente: e' un di piu', non un requisito."""
+        fot = self.archivio.fotogrammi(rullo_id)
+        letti = [f for f in fot if self._chiave_bordo(f.get("numero_bordo") or "") is not None]
+        if len(letti) < 2:
+            return
+        nuovo = self.ordine_per_bordo(fot)
+        if [f["id"] for f in nuovo] == [f["id"] for f in fot]:
+            self.log("Numeri del bordo letti su %d fotogrammi: l'ordine era "
+                     "gia' quello giusto." % len(letti))
+            return
+        # i numeri di prima, nell'ordine: sono quelli che i fotogrammi
+        # prendono, uno dopo l'altro
+        numeri = [f["numero"] for f in fot]
+        piano = []
+        for numero, f in zip(numeri, nuovo):
+            g = dict(f)
+            g["numero"] = numero
+            for campo in ("file_raw", "file_out", "file_maschera"):
+                g[campo] = self._nome_con_numero(f.get(campo) or "", numero)
+            piano.append((f, g))
+        # file: prima tutti su un nome provvisorio, poi su quello giusto,
+        # cosi' due fotogrammi che si scambiano il numero non si pestano
+        spostati = []
+        try:
+            for f, g in piano:
+                for campo in ("file_raw", "file_out", "file_maschera"):
+                    for a, b in self._file_compagni(f.get(campo) or "",
+                                                    g.get(campo) or ""):
+                        if a != b and os.path.exists(a):
+                            os.replace(a, a + ".riordino")
+                            spostati.append((a + ".riordino", b))
+            for a, b in spostati:
+                os.replace(a, b)
+        except OSError as exc:
+            self.log("Riordino per numeri del bordo non riuscito (%s): i "
+                     "fotogrammi restano nell'ordine di scansione." % exc)
+            for a, b in spostati:
+                if os.path.exists(a):
+                    os.replace(a, a[:-len(".riordino")])
+            return
+        self.archivio.fotogrammi_rinumera([g for _, g in piano])
+        self.log("Fotogrammi riordinati secondo i numeri del bordo (%d letti "
+                 "su %d)." % (len(letti), len(fot)))
+
+    @staticmethod
+    def _nome_con_numero(percorso: str, numero: int) -> str:
+        if not percorso:
+            return percorso
+        cartella, nome = os.path.split(percorso)
+        nuovo = re.sub(r"_(\d{3})(?=(_maschera)?\.[^.]+$)", "_%03d" % numero, nome)
+        return os.path.join(cartella, nuovo)
+
+    @staticmethod
+    def _file_compagni(vecchio: str, nuovo: str):
+        """Il file e i suoi compagni: il grezzo .npz ha accanto il .json."""
+        if not vecchio:
+            return []
+        coppie = [(vecchio, nuovo)]
+        if vecchio.endswith(".npz"):
+            coppie.append((vecchio[:-4] + ".json", nuovo[:-4] + ".json"))
+        return coppie
 
     def disconnetti(self) -> Dict[str, object]:
         """Lascia la macchina. Non a lavoro in corso: a meta' di un rullo
@@ -586,6 +792,70 @@ class ScanService:
                 "oggi la macchina non e' ancora stata calibrata: prima di "
                 "anteprime e scansioni premere Calibra, con il percorso "
                 "pellicola vuoto (azzera anche i motori)")
+        # il flat e' stato letto con una certa base d'esposizione: se poi la
+        # si cambia, ogni lettura esce scalata di un fattore per canale
+        note = self.calib.note or ""
+        voluto = self._tag_esposizione()
+        altro = [t for t in TAG_ESPOSIZIONE if t != voluto and t in note]
+        if altro:
+            raise ScannerError(
+                "la calibrazione di oggi e' stata fatta con l'esposizione %s: "
+                "dopo aver cambiato l'impostazione va rifatta (Calibra)"
+                % ("automatica" if altro[0] == TAG_ESPOSIZIONE[0] else "di fabbrica"))
+
+    def _tag_esposizione(self) -> str:
+        return TAG_ESPOSIZIONE[0 if self.cfg.esposizione_auto else 1]
+
+    # --- impostazioni della macchina ----------------------------------
+
+    def impostazioni_macchina(self) -> Dict[str, bool]:
+        return {"esposizione_auto": self.cfg.esposizione_auto,
+                "pressore_auto": self.cfg.pressore_auto,
+                "avanzamento_automatico": self.cfg.avanzamento_automatico}
+
+    def imposta_macchina(self, valori: Dict[str, object]) -> Dict[str, bool]:
+        if self.job.running:
+            raise ScannerError("c'e' un lavoro in corso: cambiare le "
+                               "impostazioni della macchina a lavoro finito")
+        for k in ("esposizione_auto", "pressore_auto", "avanzamento_automatico"):
+            if k in valori:
+                setattr(self.cfg, k, bool(valori[k]))
+        return self.impostazioni_macchina()
+
+    def temperatura(self) -> Optional[Dict[str, float]]:
+        """Le temperature della testa (get_temperature): si leggono a
+        richiesta, non a ogni aggiornamento della pagina."""
+        return self._libera().temperatura()
+
+    def _esposizione_fissa(self, preset) -> Optional[Dict[str, float]]:
+        """Con l'esposizione automatica spenta: x1 su tutti i canali, senza
+        misura. Accesa: None, e decide la misura per canale."""
+        if self.cfg.esposizione_auto:
+            return None
+        return dict((c, 1.0) for c in preset.channels)
+
+    @contextlib.contextmanager
+    def _sotto_pressore(self, backend):
+        """Pressore giu' per la lettura, su appena finita, anche se la lettura
+        fallisce. Se non si rialza, la pellicola non si deve muovere piu':
+        PressoreBloccato ferma il rullo invece di passare al fotogramma
+        successivo."""
+        usa = (self.cfg.pressore_auto
+               and getattr(backend, "supports_pressore", False))
+        if usa:
+            backend.pressore(True)
+        try:
+            yield
+        finally:
+            if usa:
+                try:
+                    backend.pressore(False)
+                except Emergenza:
+                    raise
+                except Exception as exc:                # noqa: BLE001
+                    raise PressoreBloccato(
+                        "il pressore non si e' rialzato (%s): la pellicola "
+                        "non si muove finche' non lo si controlla" % exc)
 
     def calibra(self) -> None:
         def job():
@@ -601,9 +871,33 @@ class ScanService:
             except MotoriBloccati:
                 self.log("Azzeramento dei motori saltato: l'agente e' a "
                          "motori bloccati. Tamburo e guide restano dove sono.")
+            # Secondo passo, con l'esposizione automatica: la calibrazione
+            # della macchina stessa (calibrate_all, come il programma
+            # originale all'avvio), che da' i tempi di esposizione per LED.
+            tag = ""
+            if backend.esposizione_auto(self.cfg.esposizione_auto):
+                tag = self._tag_esposizione()
+                if self.cfg.esposizione_auto:
+                    self.progress("Calibrazione della macchina (LED e tempi)", 0.03)
+                    try:
+                        backend.calibra_macchina()
+                        self.log("Calibrazione della macchina fatta: si usano "
+                                 "i suoi tempi di esposizione.")
+                    except MotoriBloccati:
+                        self.log("Calibrazione della macchina saltata (motori "
+                                 "bloccati): tempi di esposizione dell'ultima "
+                                 "calibrazione, o di fabbrica.")
+                    except Emergenza:
+                        raise
+                    except ScannerError as exc:
+                        self.log("Calibrazione della macchina non riuscita: "
+                                 "%s. Tempi dell'ultima calibrazione, o di "
+                                 "fabbrica." % exc)
             self.progress("Calibrazione in corso", 0.05)
             calib = run_calibration(backend, progress=self.progress,
                                     annulla=self.annullato)
+            if tag:
+                calib.note = ("%s %s" % (calib.note or "", tag)).strip()
             path = calib.save(self.cfg.path("calib"))
             self.calib = calib
             self.log("Calibrazione salvata: %s" % os.path.basename(path))
@@ -614,10 +908,15 @@ class ScanService:
 
         def job():
             fmt = FORMATS[formato]
-            self._require().seleziona_formato(formato)
-            raw = scan_frame(self._require(), self.cfg, PRESETS["provino"], fmt,
-                             self.calib, progress=self.progress,
-                             annulla=self.annullato)
+            backend = self._require()
+            backend.seleziona_formato(formato)
+            backend.esposizione_auto(self.cfg.esposizione_auto)
+            with self._sotto_pressore(backend):
+                raw = scan_frame(backend, self.cfg, PRESETS["provino"], fmt,
+                                 self.calib, progress=self.progress,
+                                 annulla=self.annullato,
+                                 channel_exposure=self._esposizione_fissa(
+                                     PRESETS["provino"]))
             # L'anteprima serve a vedere se il fotogramma c'e' e com'e': il
             # ritaglio e il raddrizzamento automatici erano la parte piu'
             # lenta, e li' non servono. Si fanno nella scansione del rullo.
@@ -648,6 +947,13 @@ class ScanService:
 
         fmt = FORMATS[rullo.formato]
         preset = PRESETS[rullo.preset]
+        # Digital ICE si sceglie rullo per rullo. Senza: niente lettura IR
+        # (un passaggio in meno a fotogramma) e niente pulizia IR.
+        if rullo.ice and not preset.use_ir:
+            self.log("Digital ICE chiesto, ma il preset %s non usa l'IR "
+                     "(bianco e nero all'argento: opaco all'infrarosso)."
+                     % rullo.preset)
+        preset = dataclasses.replace(preset, use_ir=bool(rullo.ice) and preset.use_ir)
         dest = self.archivio.cartella_ordine(self.cfg.out_dir, ordine.id)
         mirror = RollMirror(flip_h=rullo.specchiato, source="operatore",
                             confirmed=rullo.conf_specchio)
@@ -655,6 +961,8 @@ class ScanService:
         opts = ProcessOptions(**{k: v for k, v in vars(self.options).items()})
         opts.profile = PROFILES.get(rullo.profilo, PROFILES["c41"])
         opts.roll_mirror = mirror
+        if not rullo.ice:
+            opts.ir_strength = 0.0
 
         if isinstance(self.backend, OriginaleBackend):
             return self.ricevi_da_originale(rullo_id)
@@ -663,6 +971,25 @@ class ScanService:
         def job():
             backend = self._require()
             backend.seleziona_formato(rullo.formato)
+            backend.esposizione_auto(self.cfg.esposizione_auto)
+            ice_sdk = False
+            if rullo.ice:
+                # Due parti: l'ASF dell'SDK (gi_set_asf_mode, sperimentale:
+                # su scan_raw l'effetto va visto sulla macchina) e la nostra
+                # pulizia dal canale IR, che pero' c'e' solo quando l'IR
+                # dell'SDK e' verificato.
+                if "IR" not in getattr(backend, "canali_disponibili", ["IR"]):
+                    self.log("Digital ICE: il canale IR non e' ancora "
+                             "verificato su questa macchina, la nostra "
+                             "pulizia IR resta spenta.")
+                try:
+                    ice_sdk = backend.digital_ice(True)
+                    if ice_sdk:
+                        self.log("Digital ICE (ASF) acceso nella macchina.")
+                except Emergenza:
+                    raise
+                except Exception as exc:                # noqa: BLE001
+                    self.log("Digital ICE (ASF) non acceso: %s" % exc)
             mancanti = [c for c in preset.channels
                         if c not in getattr(backend, "canali_disponibili", preset.channels)]
             if mancanti:
@@ -692,14 +1019,16 @@ class ScanService:
             # corso di un rullo non cambiano. Misurarla ogni volta farebbe
             # oscillare il colore da un fotogramma all'altro.
             coda = None      # fotogrammi ancora davanti alla finestra
-            gains = None
-            if preset.auto_exposure and preset.channel_exposure is None:
+            gains = self._esposizione_fissa(preset)
+            if (gains is None and preset.auto_exposure
+                    and preset.channel_exposure is None):
                 self.progress("Misura esposizione per canale", 0.0)
                 avvisi: List[str] = []
-                gains = measure_channel_exposure(backend, preset.channels,
-                                                 self.calib,
-                                                 annulla=self.annullato,
-                                                 avvisi=avvisi)
+                with self._sotto_pressore(backend):
+                    gains = measure_channel_exposure(backend, preset.channels,
+                                                     self.calib,
+                                                     annulla=self.annullato,
+                                                     avvisi=avvisi)
                 for a in avvisi:
                     self.log("Attenzione: " + a)
                 self.log("Esposizioni: " + ", ".join(
@@ -732,6 +1061,24 @@ class ScanService:
                 if self._stop.is_set():
                     self.log("Interrotto dall'operatore al fotogramma %d." % (i + 1))
                     break
+
+                # Avanzamento automatico spento: ogni fotogramma si mette in
+                # finestra a mano, con il video.
+                if not self.cfg.avanzamento_automatico:
+                    inizio_striscia = False
+                    esito = self._posizionamento_manuale(
+                        backend, fmt, "mettere in finestra il fotogramma %d"
+                        % (i + 1))
+                    if esito == "fine":
+                        self.log("Rullo chiuso dall'operatore.")
+                        break
+                    if esito == "striscia":
+                        continua, espulsa = self._prossima_striscia(
+                            backend, rullo.formato)
+                        if not continua:
+                            break
+                        strisce += 1
+                        continue
 
                 # Le strisce hanno lunghezza variabile: "attesi" e' un massimo,
                 # non una certezza. Si guardano prima i sensori di bordo, che
@@ -783,10 +1130,20 @@ class ScanService:
                     min(base, 0.97))
 
                 nome = "%s_%s_%03d" % (ordine.codice, rullo.etichetta.replace(" ", "-"), i + 1)
+                # il numero stampato sul bordo, se la macchina lo sa dire:
+                # mai bloccante, e se manca il rullo va avanti lo stesso
                 try:
-                    raw = scan_frame(backend, self.cfg, preset, fmt, self.calib,
-                                     frame_index=i, channel_exposure=gains,
-                                     annulla=self.annullato)
+                    bordo = backend.numero_bordo() or ""
+                except Emergenza:
+                    raise
+                except Exception:                       # noqa: BLE001
+                    bordo = ""
+                try:
+                    with self._sotto_pressore(backend):
+                        raw = scan_frame(backend, self.cfg, preset, fmt,
+                                         self.calib, frame_index=i,
+                                         channel_exposure=gains,
+                                         annulla=self.annullato)
 
                     vuoto, escursione = fotogramma_vuoto(
                         raw, self.cfg.soglia_fotogramma_vuoto_d)
@@ -805,7 +1162,8 @@ class ScanService:
                         raw_path = raw.save(self.cfg.path("raw"), nome)
                         self.archivio.fotogramma_registra(
                             rullo_id, i + 1, file_raw=raw_path, stato="vuoto",
-                            avvisi="non esposto: escursione %.2f D" % escursione)
+                            avvisi="non esposto: escursione %.2f D" % escursione,
+                            numero_bordo=bordo)
                         vuoti += 1
                         self.log("Fotogramma %d vuoto (escursione %.2f D): "
                                  "saltato, grezzo conservato." % (i + 1, escursione))
@@ -831,7 +1189,8 @@ class ScanService:
                         rullo_id, i + 1, file_out=out_path, file_raw=raw_path,
                         file_maschera=mask_path,
                         rotazione=res.orientation.rotation if res.orientation else 0,
-                        stato="ok", avvisi=" | ".join(res.warnings))
+                        stato="ok", avvisi=" | ".join(res.warnings),
+                        numero_bordo=bordo)
                     self.ultimo_raw = raw
                     self.preview = res.image
                     self.base_lineare = res.base
@@ -844,7 +1203,7 @@ class ScanService:
                 except _FotogrammaVuoto:
                     pass
 
-                except Emergenza:
+                except (Emergenza, PressoreBloccato):
                     raise
 
                 except _CodaIniziale:
@@ -885,7 +1244,8 @@ class ScanService:
                              "(x%.2f): %s" % (tetto, ", ".join(
                                  "%s x%.2f" % kv for kv in gains.items())))
                 try:
-                    backend.prossimo_fotogramma(fmt)
+                    if self.cfg.avanzamento_automatico:
+                        backend.prossimo_fotogramma(fmt)
                 except FinePellicola:
                     self.log("Fine della striscia %d: il carrello non trova "
                              "altri fotogrammi dopo il %d."
@@ -899,8 +1259,24 @@ class ScanService:
                 except Emergenza:
                     raise
                 except Exception as exc:                # noqa: BLE001
-                    self.log("Avanzamento fallito: %s. Interrompo." % exc)
-                    break
+                    # Il carrello non trova il fotogramma: negativo sbiadito,
+                    # interfotogramma invisibile. Non si chiude il rullo: si
+                    # apre il video e lo si mette in finestra a mano.
+                    esito = self._posizionamento_manuale(
+                        backend, fmt, "il carrello non trova il fotogramma "
+                        "successivo (%s)" % str(exc).splitlines()[0])
+                    if esito == "fine":
+                        self.log("Rullo chiuso dall'operatore.")
+                        if conta:
+                            i += 1
+                        break
+                    if esito == "striscia":
+                        continua, espulsa = self._prossima_striscia(
+                            backend, rullo.formato)
+                        if not continua:
+                            break
+                        strisce += 1
+                        inizio_striscia = True
                 if conta:
                     i += 1
 
@@ -914,6 +1290,15 @@ class ScanService:
                 stato = "problema"
                 self.job.message = ("Fermato dall'operatore dopo %d fotogramm%s"
                                     % (fatti, "a" if fatti == 1 else "i"))
+            try:
+                self._riordina_per_bordo(rullo_id)
+            except Exception as exc:                    # noqa: BLE001
+                self.log("Riordino per numeri del bordo saltato: %s" % exc)
+            if ice_sdk:
+                try:
+                    backend.digital_ice(False)
+                except Exception as exc:                # noqa: BLE001
+                    self.log("Digital ICE (ASF) non spento: %s" % exc)
             if (self.cfg.auto_eject and fatti > 0 and not espulsa
                     and not self._stop.is_set()):
                 try:
@@ -948,6 +1333,7 @@ class ScanService:
                 self.log("Rullo terminato: %d fotogrammi%s%s." % (
                     fatti, (", %d vuoti" % vuoti) if vuoti else "",
                     (", in %d strisce" % strisce) if strisce > 1 else ""))
+                self.job.message = "Rullo terminato: %d fotogrammi" % fatti
                 if i >= limite:
                     self.log(
                         "Raggiunto il tetto di %d fotogrammi per il formato %s: "
@@ -957,6 +1343,7 @@ class ScanService:
                 self.log("Rullo terminato: %d fotogrammi su %d%s%s." % (
                     fatti, rullo.attesi, (", %d vuoti" % vuoti) if vuoti else "",
                     (", in %d strisce" % strisce) if strisce > 1 else ""))
+                self.job.message = "Rullo terminato: %d fotogrammi" % fatti
 
         self._avvia("rullo", job,
                     total=rullo.attesi or FORMATS[rullo.formato].max_fotogrammi)
