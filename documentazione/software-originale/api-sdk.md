@@ -557,3 +557,44 @@ X DMLScanner::set_scanner_input_mode(__MIDL___MIDL_itf_FilmGate_0000_0003)
   DMLScanner::show_gretag_ui(bool, __MIDL___MIDL_itf_FilmGate_0000_0001)
 X bool DMLScannerAdv::writeIAQMemory(unsigned long, unsigned long, unsigned long)
 ```
+
+## 10. Fuoco, finestre Gretag, ANM, jog, video: cosa fanno
+
+*Dal disassemblato della `scn_dll.dll` e dalle stringhe di
+`PhxScanner.exe`, 26/10/2026.*
+
+- **`focus(FocusType)`, `focus_adv(modo, FocusResult*, algoritmo,
+  modo_motore)`, `gi_focus(bool)`** finiscono tutte in `focus_comm`
+  (`0x18025260`), l'autofocus su immagine: chiede un buffer DMA, e col
+  carrello Gretag usa le richieste *SetupFocus*, *GotoFocusPos*,
+  *StoreFocusPos* e *SetFocusParam* (10–13). Muove quindi il motore della
+  lente. Le differenze:
+  - `focus(t)` vale `focus_comm(t, 1, NULL, 0, 1)`;
+  - `focus_adv` fissa il tipo a 1 e lascia scegliere il resto, restituendo
+    il risultato;
+  - `gi_focus(b)` vale `focus_comm(1, b ? 1 : 0, NULL, 0, 1)`.
+
+  Serve la pellicola nel carrello ("No Focus is possible if no film is in
+  gate"). Se non trova il fuoco, torna alla posizione nominale. Il tasto
+  Fuoco dell'agente usa `focus(1)`.
+- **`show_gretag_ui(bool, finestra)`, `move_gretag_ui(x, y)`**: richieste
+  17 e 18 (*ShowUI*, *MoveUI*) al GateControl, che apre o nasconde una delle
+  sue finestre sul monitor del PC: servizio, autofocus, *Clean MOF* (pulizia
+  del lettore MOF/DX). `PhxScanner` usa le finestre 1, 3, 4 e 5 e le
+  centra come 1024x768. Le finestre di autofocus e Clean MOF non si
+  nascondono con ShowUI.
+- **`gate_enable_anm`, `gate_disable_anm`**: accendono e spengono il
+  meccanismo di **alimentazione automatica** del carrello ("gate's automatic
+  feed mechanism"). Passano dal comando del carrello Kodak (10 e 11), non dal
+  GateControl: col Gretag probabilmente non valgono, e `PhxScanner` non le
+  usa.
+- **`scan_in_preview_jog_mode`, `preview_jog_*`**: il "guarda e sistema"
+  dell'SDK: modo jog acceso, anteprima del fotogramma, un fotogramma
+  avanti o indietro, passi fini, esposizione R G B dell'anteprima, poi
+  accetta e scansiona, fine ordine. È quello che fa a mano il nostro
+  posizionamento. `PhxScanner` non lo usa.
+- **`perform_video_mode_scan`, `get_video_mode_size`**: il **video** del
+  programma originale (`CPhxScannerViewVideoBase`). Lo apre anche quando il
+  rilevamento del fotogramma fallisce ("frame detect error video mode"),
+  come il nostro posizionamento a mano. È provato sul Gretag e potrebbe
+  sostituire le letture a bassa risoluzione del nostro video.
