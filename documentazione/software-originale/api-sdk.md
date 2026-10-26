@@ -341,3 +341,19 @@ Per il carrello Gretag l'SDK lo trasforma nella richiesta 3 al GateControl,
 ChangeFilmFormat (`0x18037FA0`), e aspetta la risposta fino a 30 s. Se il
 carrello non c'è, risponde `ERR_NO_NK_GATE` (`0x18075B90`). L'arrivo della
 pellicola si annuncia con `EV_FILM_INSERTED` (200) al callback.
+
+**Fotogramma successivo, precedente, espulsione.** Con il carrello Gretag
+il programma originale usa `gretag_NextFrame` e `gretag_PreviousFrame`
+(richiesta 6 al GateControl, `0x180386A0`): è il carrello a cercare il
+fotogramma. `advance_one_frame` è dei carrelli Kodak.
+
+L'espulsione passa da `cancel_scan`, cioè `ScanCntr::OnCancelScan`
+(`0x18060000`), che per il Gretag manda la richiesta 5, Eject
+(`0x18038580`: `push 0; push 5`, poi attesa fino a 30 s). La richiesta
+**non porta il verso**, e nemmeno il comando `22` che il GateControl manda
+al carrello: il verso lo decide il flag 5 del carrello, *Eject to Back*
+([carrello-capri.md §3](../hardware/carrello-capri.md)). Sulla riserva è a
+0, quindi la pellicola esce dal davanti. Per farla uscire dal retro senza
+toccare il flash, filmscan va avanti a fotogrammi finché il carrello non
+rifiuta (`ponte/sdk.py`, `espelli_retro`). Quale errore dia l'SDK a
+pellicola uscita va ancora visto sulla macchina.

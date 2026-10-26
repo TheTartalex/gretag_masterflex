@@ -1246,8 +1246,16 @@ details.sez>div{padding-bottom:10px}
     <button class="sec" onclick="muovi(1)">1 mm &rarr;</button>
    </div>
    <div class="griglia2" style="margin-top:8px">
+    <button class="sec" onclick="fotogramma(-1)">&lsaquo; Fotogramma</button>
+    <button class="sec" onclick="fotogramma(1)">Fotogramma &rsaquo;</button>
+   </div>
+   <div class="griglia2" style="margin-top:8px">
     <button class="sec" onclick="post('/api/fuoco',{mm:0}).then(esito)">Fuoco</button>
-    <button class="sec" onclick="post('/api/espelli',{}).then(esito)">Espelli</button>
+    <span></span>
+   </div>
+   <div class="griglia2" style="margin-top:8px">
+    <button class="sec" onclick="espelli('davanti')" title="Esce da dove e' entrata">Espelli davanti</button>
+    <button class="sec" onclick="espelli('retro')" title="Prosegue nel verso del trasporto fino a uscire dal retro">Espelli retro</button>
    </div>
    <div style="font-size:11px;color:var(--dim);margin-top:8px">
     La regolazione fine funziona solo con la pellicola caricata: a percorso
@@ -1305,6 +1313,7 @@ details.sez>div{padding-bottom:10px}
   <button class="sec" onclick="connetti()">Connetti</button>
   <button class="sec" onclick="calibra()">Calibra</button>
   <button class="sec" onclick="carica()" title="Guide al formato del rullo e carrello pronto a ricevere la pellicola">Carica</button>
+  <button class="sec" onclick="fotogramma(1)" title="Il carrello porta in finestra il fotogramma successivo">Fotogramma &rsaquo;</button>
   <button class="sec" onclick="anteprima()">Anteprima</button>
   <button class="principale" onclick="scansiona()">Scansiona rullo</button>
   <div class="avanz">
@@ -1312,7 +1321,7 @@ details.sez>div{padding-bottom:10px}
    <div id="msg">pronto</div>
    <div id="avvisi" class="avvisi" onclick="apriScheda('diario')"></div>
   </div>
-  <button class="ghost facoltativo" onclick="post('/api/espelli',{}).then(esito)">Espelli</button>
+  <button class="sec" onclick="espelli('davanti')" title="Fa uscire la pellicola da dove e' entrata. Il retro sta nella scheda Macchina">Espelli</button>
  </div>
 </section>
 </main>
@@ -1651,6 +1660,8 @@ function disegnaCurva(){
 })();
 
 function connetti(){ post('/api/connetti',{driver:val('driver')}).then(mostraStato); }
+function fotogramma(v){ post('/api/fotogramma',{verso:v,formato:val('formato')}).then(mostraStato); }
+function espelli(v){ post('/api/espelli',{verso:v}).then(esito); }
 function carica(){ post('/api/carica',{formato:val('formato')}).then(esito); }
 function calibra(){ if(confirm('Togliere la pellicola dal percorso ottico. Procedere?'))
   post('/api/calibra',{}).then(esito); }
@@ -2294,6 +2305,10 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/api/muovi":
                 return self._json(s.muovi(float(d.get("mm", 0))))
 
+            if u.path == "/api/fotogramma":
+                return self._json(s.fotogramma(int(d.get("verso", 1)) >= 0,
+                                               str(d.get("formato", "135-full"))))
+
             if u.path == "/api/fuoco":
                 return self._json(s.fuoco(float(d.get("mm", 0))))
 
@@ -2302,7 +2317,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"avviato": True})
 
             if u.path == "/api/espelli":
-                s.espelli()
+                s.espelli(str(d.get("verso", "davanti")))
                 return self._json({"avviato": True})
 
             if u.path == "/api/ferma":

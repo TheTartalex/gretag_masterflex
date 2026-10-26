@@ -39,6 +39,18 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-10-26 — fotogrammi ed espulsione
+
+- Comandi `prossimo`/`precedente` (`gretag_NextFrame`/`PreviousFrame`),
+  `espelli` (davanti, `cancel_scan`) ed `espelli_retro` (fotogramma
+  successivo finché il carrello rifiuta, con tetto) nell'agente e nel
+  ponte. Nell'interfaccia: Fotogramma › ed Espelli nella barra, ‹ / › ed
+  Espelli davanti/retro nella scheda Macchina.
+- A rullo finito si espelle dal retro (`verso_espulsione_fine_rullo`).
+- Anteprima senza ritaglio né raddrizzamento automatici.
+- Tolto da `PonteSdkBackend` un vecchio `eject()` che rispondeva "non
+  disponibile" e copriva quello nuovo.
+
 ### 2026-10-26 — collegamento "programma originale"
 
 - `ponte/osservatore.py` (nuovo): si aggancia a `PhxScanner.exe` come un

@@ -144,6 +144,20 @@ class ScanService:
         self._libera().advance(float(mm))
         return self.stato()
 
+    def fotogramma(self, avanti: bool = True,
+                   formato: str = "135-full") -> Dict[str, object]:
+        """Il carrello porta in finestra il fotogramma successivo o il
+        precedente (per trovare il primo dopo aver inserito la pellicola)."""
+        backend = self._libera()
+        fmt = FORMATS.get(formato, FORMATS["135-full"])
+        if avanti:
+            backend.prossimo_fotogramma(fmt)
+        elif hasattr(backend, "fotogramma_precedente"):
+            backend.fotogramma_precedente(fmt)
+        else:
+            backend.advance(-fmt.pitch)
+        return self.stato()
+
     def fuoco(self, mm: float) -> Dict[str, object]:
         self._libera().set_focus(float(mm))
         return self.stato()
@@ -259,8 +273,11 @@ class ScanService:
         self.log("Nessuna pellicola inserita entro il tempo previsto.")
         return False
 
-    def espelli(self) -> None:
-        """Espelle la pellicola dal retro.
+    def espelli(self, verso: str = "davanti") -> None:
+        """Espelle la pellicola dal davanti (da dove e' entrata) o dal retro.
+
+        Con il carrello Gretag il verso lo decide il carrello stesso (flag 5,
+        "Eject to Back"): sulla riserva e' a 0, quindi esce dal davanti.
 
         Due strade, in ordine di preferenza:
 
@@ -273,14 +290,17 @@ class ScanService:
         corsa: se dopo quello il sensore risulta ancora coperto, la pellicola e'
         inceppata e continuare peggiorerebbe le cose.
         """
+        if verso not in ("davanti", "retro"):
+            raise ValueError("verso di espulsione sconosciuto: %s" % verso)
+
         def job():
             backend = self._require()
 
             if getattr(backend, "supports_eject", False):
                 try:
-                    self.progress("Espulsione", 0.5)
-                    backend.eject()
-                    self.log("Pellicola espulsa.")
+                    self.progress("Espulsione dal %s" % verso, 0.5)
+                    backend.eject(verso)
+                    self.log("Pellicola espulsa dal %s." % verso)
                     self.progress("Espulsione completata", 1.0)
                     return
                 except NotImplementedError:
@@ -344,7 +364,13 @@ class ScanService:
             raw = scan_frame(self._require(), self.cfg, PRESETS["provino"], fmt,
                              self.calib, progress=self.progress,
                              annulla=self.annullato)
-            res = process(raw, self.options, progress=self.progress)
+            # L'anteprima serve a vedere se il fotogramma c'e' e com'e': il
+            # ritaglio e il raddrizzamento automatici erano la parte piu'
+            # lenta, e li' non servono. Si fanno nella scansione del rullo.
+            opts = ProcessOptions(**{k: v for k, v in vars(self.options).items()})
+            opts.auto_crop = False
+            opts.auto_straighten = False
+            res = process(raw, opts, progress=self.progress)
             self.ultimo_raw = raw
             self.preview = res.image
             self.base_lineare = res.base
@@ -550,8 +576,9 @@ class ScanService:
             if self.cfg.auto_eject and fatti > 0 and not self._stop.is_set():
                 try:
                     if getattr(backend, "supports_eject", False):
-                        backend.eject()
-                        self.log("Pellicola espulsa dal retro.")
+                        verso = self.cfg.verso_espulsione_fine_rullo
+                        backend.eject(verso)
+                        self.log("Pellicola espulsa dal %s." % verso)
                     else:
                         sens = backend.read_sensors()
                         percorso = 0.0

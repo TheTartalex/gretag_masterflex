@@ -140,6 +140,25 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
   - **Non provato** su Windows: l'aggancio al processo.
   - Da verificare con le prime immagini: l'ordine dei piani R, G, B.
 
+- **Lettura vuota dopo il carico (sera)**: la pellicola entrava, ma la
+  finestra era sulla coda iniziale, non su un fotogramma. Nuovi comandi:
+  - **Fotogramma ›** nella barra e **‹ / ›** nella scheda Macchina:
+    `gretag_NextFrame` / `gretag_PreviousFrame`, il carrello cerca il
+    fotogramma. Procedura: Carica → inserire → Fotogramma › finché c'è un
+    fotogramma in finestra → Anteprima;
+  - **Espelli** (barra) e **Espelli davanti / Espelli retro** (scheda
+    Macchina). Davanti è il comando di espulsione del carrello, che esce
+    dal davanti perché il flag 5 è a 0. Retro è "fotogramma successivo"
+    ripetuto finché il carrello rifiuta, al massimo 45 fotogrammi o 180 s
+    ([api-sdk.md §7](software-originale/api-sdk.md#7-errori-e-stati-dellsdk)).
+    A rullo finito filmscan espelle dal retro
+    (`verso_espulsione_fine_rullo`);
+  - l'**anteprima** non fa più ritaglio e raddrizzamento automatici, la
+    parte più lenta. Si fanno nella scansione del rullo.
+
+  Da vedere sulla macchina: che errore dà l'SDK quando la pellicola è
+  uscita dal retro (lo scrive il registro dell'agente).
+
 ## Problemi aperti, in ordine di priorità
 
 1. **Motori delle guide all'avvio.** Le guide sono i motori 3 e 4 del

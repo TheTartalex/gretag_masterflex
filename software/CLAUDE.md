@@ -39,7 +39,8 @@ reintrodurle.
 - **Niente movimenti grandi con la regolazione fine.** `advance(mm)` passa
   da `frame_detect_fine_adjust`, una correzione di pochi millimetri. Per il
   fotogramma successivo si usa `prossimo_fotogramma(fmt)`, che sulla
-  macchina vera e' *advance_one_frame* dell'SDK. Limiti: 3 mm in
+  macchina vera e' *gretag_NextFrame* dell'SDK (*advance_one_frame* e' dei
+  carrelli Kodak). Limiti: 3 mm in
   `PonteSdkBackend`, 300 passi nell'agente.
 - **I movimenti passano dal lock dei lavori.** `ScanService.muovi()` e
   `fuoco()` rifiutano mentre un lavoro e' in corso.

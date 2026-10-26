@@ -270,6 +270,12 @@ byte di dati, `15 03`, cioè "posizione della guida sinistra". I comandi
 corti sono un byte solo: `01` reset, `02` break, `04` versione, `21`
 interfotogramma, `22` espulsione, `23` fotogramma successivo.
 
+`22` non ha dati: il verso dell'espulsione lo decide il flag 5 (*Eject to
+Back*, §3), e anche l'SDK la chiede senza verso
+([api-sdk.md §7](../software-originale/api-sdk.md#7-errori-e-stati-dellsdk)).
+Cambiare verso a ogni espulsione vorrebbe dire riscrivere il flash dalla
+COM5, che mentre l'agente lavora è del GateControl.
+
 Risposte ricorrenti:
 
 | Byte | Significato |

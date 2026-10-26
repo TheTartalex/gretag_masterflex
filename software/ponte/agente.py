@@ -88,7 +88,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 CANALI = {"R": 0, "G": 1, "B": 2, "IR": 3}
 
 # Comandi che muovono la meccanica. "fuoco" muove la lente.
-MOVIMENTI = ("formato", "carica", "alimenta", "avanza", "prossimo", "regola", "fuoco")
+MOVIMENTI = ("formato", "carica", "alimenta", "avanza", "prossimo", "precedente",
+             "espelli", "espelli_retro", "regola", "fuoco")
 
 MAX_PASSI = 300               # 3 mm: oltre non e' piu' una regolazione fine
 MAX_ALIMENTAZIONE = 15.0      # secondi di trascinamento acceso senza comandi
@@ -160,6 +161,11 @@ class AgenteSimulato(object):
     def alimentazione(self, accesa=True): pass
     def avanza_fotogramma(self, mezzo=False): pass
     def fotogramma_successivo(self): pass
+    def fotogramma_precedente(self): pass
+    def espelli(self): self.pellicola_inserita = False
+    def espelli_retro(self):
+        self.pellicola_inserita = False
+        return 6, "simulazione: fine pellicola"
     def fuoco(self, tipo=1): pass
     def regola_fine(self, passi): pass
     def offset_xy(self, formato=0): return (47, 76)
@@ -418,6 +424,20 @@ class Agente(object):
             self.s.alimentazione(accesa)
             self.alimentazione_dal = time.time() if accesa else None
             return "alimentazione %s" % parti[1]
+
+        if comando == "precedente":
+            self.s.fotogramma_precedente()
+            return "fotogramma precedente"
+
+        if comando == "espelli":
+            self.s.espelli()
+            return "pellicola espulsa dal davanti"
+
+        if comando == "espelli_retro":
+            fatti, motivo = self.s.espelli_retro()
+            return ("pellicola espulsa dal retro: %d fotogramm%s, poi il "
+                    "carrello si e' fermato (%s)"
+                    % (fatti, "o" if fatti == 1 else "i", motivo))
 
         if comando == "avanza":
             self.s.avanza_fotogramma()

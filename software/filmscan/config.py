@@ -223,7 +223,10 @@ class AppConfig:
 
     # --- ciclo automatico ---
     auto_start: bool = True     # parte da solo quando il sensore d'ingresso si copre
-    auto_eject: bool = True     # espelle dal retro a striscia completata
+    auto_eject: bool = True     # espelle a striscia completata
+    # a striscia finita la pellicola e' gia' avanti: "retro" la fa uscire nel
+    # verso in cui stava andando, "davanti" la riporta indietro tutta
+    verso_espulsione_fine_rullo: str = "retro"
     eject_max_mm: float = 400.0  # corsa massima in espulsione, per non tirare a vuoto
 
     # --- archivio degli ordini gia' fatti ---

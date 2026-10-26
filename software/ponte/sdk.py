@@ -671,7 +671,58 @@ class Scanner(object):
         self._verifica(self._m[chiave](self._obj), chiave)
 
     def fotogramma_successivo(self):
+        """Il carrello Gretag porta in finestra il fotogramma successivo:
+        richiesta 6 al GateControl (scn_dll 0x180386A0), quella che usa
+        PhxScanner.exe. advance_one_frame e' per i carrelli Kodak."""
         self._verifica(self._m["fotogramma_successivo"](self._obj), "fotogramma successivo")
+
+    def fotogramma_precedente(self):
+        self._verifica(self._m["fotogramma_precedente"](self._obj), "fotogramma precedente")
+
+    def espelli(self):
+        """Espelle la pellicola con cancel_scan: nell'SDK porta a
+        ScanCntr::OnCancelScan (0x18060000), che con il carrello Gretag
+        manda la richiesta 5, Eject, al GateControl (0x18038580). Il verso lo
+        decide il flag 5 del carrello ("Eject to Back"): a 0, come nel
+        backup del 2025, la pellicola esce dal davanti, da dove e' entrata."""
+        self.pellicola_inserita = False
+        self._verifica(self._m["annulla_acquisizione"](self._obj), "espulsione")
+
+    def espelli_retro(self, max_fotogrammi=45, max_secondi=180.0):
+        """Fa uscire la pellicola dal retro, nel verso del trasporto.
+
+        Il comando di espulsione del carrello (22, richiesta 5 dell'SDK) non
+        porta il verso: lo decide il flag 5, che sta nel Parameter Flash e si
+        cambia solo dalla COM5, occupata dall'SDK mentre l'agente lavora. Per
+        il retro si fa quindi quello che fa il carrello a fine striscia: si
+        va avanti a fotogrammi (gretag_NextFrame) finche' il carrello rifiuta,
+        perche' la pellicola non c'e' piu'.
+
+        Due tetti, fotogrammi e tempo: un rullo da 135 ne ha 40. Se si
+        arriva al tetto senza che il carrello abbia rifiutato, ci si ferma e
+        lo si dichiara: o la pellicola e' inceppata o il carrello non si
+        muove, e continuare non aiuta.
+
+        Restituisce (fotogrammi avanzati, errore che ha fermato il trasporto).
+        Quale errore dia l'SDK a pellicola uscita va ancora visto sulla
+        macchina: per questo viene restituito e scritto nel registro.
+        """
+        inizio = time.time()
+        fatti = 0
+        while fatti < max_fotogrammi and time.time() - inizio < max_secondi:
+            try:
+                self.fotogramma_successivo()
+            except ErroreScanner as exc:
+                self.pellicola_inserita = False
+                self._log("espulsione dal retro: trasporto fermo dopo %d "
+                          "fotogramm%s (%s)" % (fatti, "o" if fatti == 1 else "i", exc))
+                return fatti, str(exc)
+            fatti += 1
+        raise ErroreScanner(
+            "espulsione dal retro fermata dopo %d fotogrammi e %.0f s: il "
+            "carrello accetta ancora il fotogramma successivo. Pellicola "
+            "inceppata o lunghissima: controllare a mano."
+            % (fatti, time.time() - inizio), [])
 
     def regola_fine(self, passi):
         """Sposta la pellicola di N passi motore (0,01 mm l'uno).

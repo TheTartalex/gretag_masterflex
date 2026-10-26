@@ -163,8 +163,9 @@ class ScannerBackend(abc.ABC):
     # --- espulsione ---
     supports_eject: bool = False
 
-    def eject(self) -> None:
-        """Espelle la pellicola dal retro, se la macchina ha un comando dedicato.
+    def eject(self, verso: str = "davanti") -> None:
+        """Espelle la pellicola, se la macchina ha un comando dedicato.
+        'verso' e' "davanti" (da dove e' entrata) o "retro".
 
         L'implementazione di base non fa nulla: chi non ha un comando di
         espulsione viene gestito a monte facendo avanzare il trasporto finche'
@@ -258,7 +259,7 @@ class MockBackend(ScannerBackend):
         return FilmSensors(coperto(self.sensore_ingresso_mm),
                            coperto(self.sensore_uscita_mm), True)
 
-    def eject(self) -> None:
+    def eject(self, verso: str = "davanti") -> None:
         """Simula l'espulsione: la pellicola esce e il percorso resta libero."""
         self.film_present = False
         self._pos = 0.0
@@ -580,9 +581,30 @@ class PonteSdkBackend(ScannerBackend):
             self._send("regola_%d" % passi, attesa=self.ATTESA_MOVIMENTO)
         self._pos += mm
 
+    # L'espulsione c'e' nei due versi. Davanti: cancel_scan, che col
+    # carrello Gretag manda il comando di espulsione (il verso lo fissa il
+    # flag 5, a 0 sulla riserva). Retro: fotogramma successivo finche' il
+    # carrello rifiuta. Vedi ponte/sdk.py, espelli ed espelli_retro.
+    supports_eject = True
+    ATTESA_ESPULSIONE_RETRO = 200.0   # l'agente si ferma da solo a 180 s
+
+    def eject(self, verso: str = "davanti") -> None:
+        if verso == "retro":
+            self._send("espelli_retro", attesa=self.ATTESA_ESPULSIONE_RETRO)
+        else:
+            self._send("espelli", attesa=self.ATTESA_MOVIMENTO)
+        self._pos = 0.0
+
     def prossimo_fotogramma(self, fmt) -> None:
-        self._send("avanza", attesa=self.ATTESA_MOVIMENTO)
+        # gretag_NextFrame, come il programma originale: e' il carrello a
+        # cercare il fotogramma. Prima si usava advance_one_frame, che e' dei
+        # carrelli Kodak.
+        self._send("prossimo", attesa=self.ATTESA_MOVIMENTO)
         self._pos += fmt.pitch
+
+    def fotogramma_precedente(self, fmt) -> None:
+        self._send("precedente", attesa=self.ATTESA_MOVIMENTO)
+        self._pos -= fmt.pitch
 
     def avanza_fotogramma(self, mezzo: bool = False) -> None:
         self._send("avanza_mezzo" if mezzo else "avanza",
@@ -661,15 +683,6 @@ class PonteSdkBackend(ScannerBackend):
         # righe (il bordo del fotogramma) erano un pessimo campione per dire
         # se c'e' ancora pellicola.
         return dati
-
-    # --- espulsione -------------------------------------------------------
-
-    supports_eject = False   # diventa True quando i sensori sono mappati
-
-    def eject(self) -> None:
-        raise NotImplementedError(
-            "espulsione non ancora disponibile su questo backend: prima vanno "
-            "mappati gli ingressi digitali dei sensori (vedi ponte.md)")
 
 
 # --------------------------------------------------------------------------
