@@ -227,6 +227,9 @@ class AppConfig:
     # a striscia finita la pellicola e' gia' avanti: "retro" la fa uscire nel
     # verso in cui stava andando, "davanti" la riporta indietro tutta
     verso_espulsione_fine_rullo: str = "retro"
+    # rullo tagliato in strisce: dopo ogni striscia il carrello si riarma e
+    # aspetta la successiva per questo tempo (o fino a "Fine rullo")
+    attesa_striscia_s: float = 600.0
     eject_max_mm: float = 400.0  # corsa massima in espulsione, per non tirare a vuoto
 
     # --- archivio degli ordini gia' fatti ---

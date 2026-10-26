@@ -14,6 +14,7 @@ conflitto sulla stessa pellicola.
 from __future__ import annotations
 
 import datetime
+import json
 import os
 import threading
 import time
@@ -28,7 +29,8 @@ from .acquire import (Annullato, Calibration, RawScan, ScanMetadata, film_presen
                       measure_channel_exposure, run_calibration, scan_frame)
 from .compat import check_environment
 from .config import AppConfig, FORMATS, PRESETS
-from .hal import (FilmSensors, FinePellicola, MotoriBloccati, OriginaleBackend, ScannerBackend, ScannerError,
+from .hal import (FILE_EMERGENZA, Emergenza, FilmSensors, FinePellicola,
+                  MotoriBloccati, OriginaleBackend, ScannerBackend, ScannerError,
                   make_backend)
 from . import colore
 from .invert import PROFILES
@@ -48,16 +50,28 @@ class JobState:
     total: int = 0
     errors: List[str] = field(default_factory=list)
     log: List[str] = field(default_factory=list)
+    # il rullo aspetta la striscia successiva: l'interfaccia mostra
+    # "Fine rullo"
+    attesa_striscia: bool = False
+    # "Fine rullo" premuto: il rullo si sta chiudendo
+    chiusura: bool = False
 
     def as_dict(self) -> Dict[str, object]:
         return {"running": self.running, "kind": self.kind,
                 "message": self.message, "progress": self.progress,
                 "frame": self.frame, "total": self.total,
-                "errors": self.errors[-10:], "log": self.log[-40:]}
+                "errors": self.errors[-10:], "log": self.log[-40:],
+                "attesa_striscia": self.attesa_striscia,
+                "chiusura": self.chiusura}
 
 
 class _FotogrammaVuoto(Exception):
     """Esce dal blocco del fotogramma senza esportare: non e' un errore."""
+
+
+class _CodaIniziale(Exception):
+    """La prima lettura di una striscia e' caduta sulla coda: non e' un
+    fotogramma, non prende un numero."""
 
 
 class ScanService:
@@ -87,6 +101,14 @@ class ScanService:
 
         self._lock = threading.Lock()
         self._stop = threading.Event()
+        # "Fine rullo": chiude il rullo al primo punto sicuro, e smette di
+        # aspettare altre strisce
+        self._fine_rullo = threading.Event()
+        # STOP EMERGENZA: il blocco sta su disco e si rilegge all'avvio,
+        # cosi' un riavvio non lo scavalca
+        self.emergenza: Optional[Dict[str, object]] = self._leggi_emergenza()
+        # dopo un'emergenza serve una calibrazione nuova (che azzera i motori)
+        self._calibra_dopo: float = 0.0
         # mentre la connessione automatica aspetta lo scanner, cosa aspetta
         self.attesa_connessione: Optional[str] = None
         # Disconnetti ferma anche la connessione automatica: altrimenti si
@@ -120,6 +142,7 @@ class ScanService:
                      "di_oggi": self.calibrazione_di_oggi()}
 
         return {"macchina": st, "calibrazione": calib,
+                "emergenza": self.emergenza,
                 "driver": self.cfg.driver, "job": self.job.as_dict(),
                 "ambiente": check_environment(dpi=self.cfg.optical_dpi)}
 
@@ -178,6 +201,57 @@ class ScanService:
         threading.Thread(target=ciclo, name="connessione-automatica",
                          daemon=True).start()
 
+    def fine_rullo(self) -> Dict[str, object]:
+        """"Fine rullo", il tasto Scansiona rullo mentre il rullo gira: lo
+        chiude finito il fotogramma in corso (o subito, se sta aspettando la
+        striscia successiva), espelle la pellicola e lo segna completato.
+        E' lo stop del lavoro normale; l'emergenza e' un'altra cosa."""
+        if self.job.running and self.job.kind == "rullo":
+            self._fine_rullo.set()
+            self.job.chiusura = True
+            self.log("Fine rullo richiesto: si chiude dopo il fotogramma in "
+                     "corso.")
+        return self.stato()
+
+    def _prossima_striscia(self, backend, formato: str):
+        """Fine di una striscia di un rullo tagliato in piu' pezzi: espelle,
+        riarma subito il carrello e aspetta la striscia successiva.
+
+        Restituisce (continua, espulsa). Si smette con "Fine rullo", con
+        STOP o dopo cfg.attesa_striscia_s senza una striscia nuova.
+        """
+        if not (getattr(backend, "supports_eject", False)
+                and hasattr(backend, "pellicola_sdk")):
+            return False, False
+        espulsa = False
+        try:
+            verso = self.cfg.verso_espulsione_fine_rullo
+            esito = backend.eject(verso)
+            espulsa = True
+            self.log(esito or ("Striscia espulsa dal %s." % verso))
+            backend.prepara_carico(formato)
+        except Exception as exc:                        # noqa: BLE001
+            self.log("Striscia successiva non preparata: %s" % exc)
+            return False, espulsa
+        self.log("Carrello pronto: inserire la striscia successiva, oppure "
+                 "Fine rullo.")
+        self.job.attesa_striscia = True
+        try:
+            scadenza = time.time() + self.cfg.attesa_striscia_s
+            while time.time() < scadenza:
+                if self._stop.is_set() or self._fine_rullo.is_set():
+                    return False, espulsa
+                self.job.message = "Inserire la striscia successiva (o Fine rullo)"
+                if backend.pellicola_sdk():
+                    self.log("Striscia inserita.")
+                    return True, False
+                time.sleep(0.5)
+            self.log("Nessuna striscia nuova in %.0f s: rullo chiuso."
+                     % self.cfg.attesa_striscia_s)
+            return False, espulsa
+        finally:
+            self.job.attesa_striscia = False
+
     def disconnetti(self) -> Dict[str, object]:
         """Lascia la macchina. Non a lavoro in corso: a meta' di un rullo
         la pellicola resterebbe in una posizione che nessuno conosce. Con
@@ -197,9 +271,72 @@ class ScanService:
         return self.stato()
 
     def _require(self) -> ScannerBackend:
+        if self.emergenza:
+            raise Emergenza("STOP EMERGENZA attivo: la macchina riparte solo "
+                            "con l'ok del tecnico")
         if self.backend is None:
             raise ScannerError("macchina non connessa")
         return self.backend
+
+    # --- STOP EMERGENZA -------------------------------------------------
+
+    def _file_emergenza(self) -> str:
+        cartella = self.cfg.bridge_path or os.path.dirname(
+            os.path.abspath(self.cfg.out_dir))
+        return os.path.join(cartella, FILE_EMERGENZA)
+
+    def _leggi_emergenza(self) -> Optional[Dict[str, object]]:
+        try:
+            with open(self._file_emergenza()) as f:
+                return json.load(f)
+        except (IOError, OSError, ValueError):
+            return None
+
+    def stop_emergenza(self, motivo: str = "") -> Dict[str, object]:
+        """STOP EMERGENZA: motori incastrati, pellicola che si strappa,
+        rumori strani. Diverso dallo STOP del rullo, che aspetta un punto
+        sicuro e rimette le cose a posto: qui non si aspetta e non si rimette
+        a posto niente, perche' ogni movimento in piu' puo' peggiorare.
+
+        Cosa blocca, subito: ogni comando nuovo (il file di blocco lo vedono
+        il ponte e l'agente), l'attesa di quello in corso, il lavoro.
+        Cosa NON puo' fare: interrompere a meta' un comando che l'SDK sta gia'
+        eseguendo. Per quello c'e' l'interruttore della macchina.
+        """
+        dati = {"dalle": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "motivo": motivo or "STOP EMERGENZA dall'interfaccia"}
+        percorso = self._file_emergenza()
+        try:
+            os.makedirs(os.path.dirname(percorso), exist_ok=True)
+            with open(percorso + ".tmp", "w") as f:
+                json.dump(dati, f)
+            os.replace(percorso + ".tmp", percorso)
+        except (IOError, OSError) as exc:
+            self.log("ATTENZIONE: file di blocco non scritto (%s): il blocco "
+                     "vale solo per questa interfaccia" % exc)
+        self.emergenza = dati
+        self._stop.set()
+        self._fine_rullo.set()
+        self.log("STOP EMERGENZA: tutto bloccato. Riprende solo con l'ok del "
+                 "tecnico.")
+        return self.stato()
+
+    def sblocca_emergenza(self, nota: str = "") -> Dict[str, object]:
+        """L'ok del tecnico: ha controllato motori e percorso pellicola."""
+        if self.job.running:
+            raise ScannerError("il lavoro interrotto non si e' ancora chiuso: "
+                               "riprovare tra qualche secondo")
+        try:
+            os.remove(self._file_emergenza())
+        except OSError:
+            pass
+        self.emergenza = None
+        self._stop.clear()
+        self._calibra_dopo = time.time()
+        self.log("Emergenza chiusa: ripresa autorizzata dal tecnico%s. Prima "
+                 "di lavorare va rifatta la calibrazione (azzera i motori)."
+                 % ((" (%s)" % nota) if nota else ""))
+        return self.stato()
 
     def _libera(self) -> ScannerBackend:
         """La macchina, ma solo se nessun lavoro la sta usando.
@@ -282,6 +419,16 @@ class ScanService:
                 # non e' un errore: e' quello che l'operatore ha chiesto.
                 self.log("Fermato dall'operatore.")
                 self.job.message = "Fermato dall'operatore"
+            except Emergenza:
+                self.job.message = "BLOCCATO: STOP EMERGENZA"
+                self.log("Lavoro interrotto dallo STOP EMERGENZA: niente "
+                         "espulsione, niente riavvolgimento.")
+                rullo = getattr(self, "_rullo_in_corso", None)
+                if kind == "rullo" and rullo:
+                    try:
+                        self.archivio.rullo_stato(rullo, "problema")
+                    except Exception:                   # noqa: BLE001
+                        pass
             except Exception as exc:                    # noqa: BLE001
                 self.job.errors.append(str(exc))
                 self.log("ERRORE: %s" % exc)
@@ -426,6 +573,8 @@ class ScanService:
         fatta oggi, a macchina calda e appena azzerata."""
         if self.calib is None:
             return False
+        if self.calib.created < self._calibra_dopo:
+            return False          # fatta prima di uno STOP EMERGENZA
         return (datetime.date.fromtimestamp(self.calib.created)
                 == datetime.date.today())
 
@@ -535,6 +684,7 @@ class ScanService:
                         return
 
             self.archivio.rullo_stato(rullo_id, "in_corso")
+            self._rullo_in_corso = rullo_id
             fatti = 0
             vuoti = 0
             # L'esposizione per canale si misura UNA volta per rullo, non a
@@ -563,7 +713,22 @@ class ScanService:
             automatico = not rullo.attesi
             limite = rullo.attesi or fmt.max_fotogrammi
 
-            for i in range(limite):
+            # Un rullo puo' arrivare tagliato in strisce da 3-4 fotogrammi:
+            # a fine striscia si espelle, si riarma il carrello e si aspetta
+            # la successiva (_prossima_striscia). I numeri continuano da una
+            # striscia all'altra. "i" avanza solo sui fotogrammi veri: la coda
+            # iniziale di una striscia non prende un numero.
+            self._fine_rullo.clear()
+            espulsa = False
+            strisce = 1
+            inizio_striscia = True
+            i = 0
+            giri = 0
+            while i < limite and giri < limite + 50:
+                giri += 1
+                conta = True
+                if self.emergenza:
+                    raise Emergenza("STOP EMERGENZA")
                 if self._stop.is_set():
                     self.log("Interrotto dall'operatore al fotogramma %d." % (i + 1))
                     break
@@ -625,6 +790,12 @@ class ScanService:
 
                     vuoto, escursione = fotogramma_vuoto(
                         raw, self.cfg.soglia_fotogramma_vuoto_d)
+                    primo = inizio_striscia
+                    inizio_striscia = False
+                    if vuoto and primo:
+                        # appena caricata, la finestra sta spesso sulla coda
+                        # della striscia: non e' un fotogramma
+                        raise _CodaIniziale()
                     if vuoto:
                         # Non esposto (o tutto opaco): niente export, ma il
                         # grezzo si tiene sempre, cosi' se la soglia ha
@@ -673,6 +844,14 @@ class ScanService:
                 except _FotogrammaVuoto:
                     pass
 
+                except Emergenza:
+                    raise
+
+                except _CodaIniziale:
+                    conta = False
+                    self.log("Inizio striscia sulla coda (vuota): si passa "
+                             "al primo fotogramma.")
+
                 except Annullato:
                     # STOP non e' un fotogramma fallito: non si registra come
                     # errore e soprattutto non si passa al successivo.
@@ -686,9 +865,15 @@ class ScanService:
                     self.archivio.fotogramma_registra(
                         rullo_id, i + 1, stato="errore", avvisi=str(exc))
 
+                if self.emergenza:
+                    raise Emergenza("STOP EMERGENZA")
                 if self._stop.is_set():
                     self.log("Interrotto dall'operatore dopo il fotogramma %d."
                              % (i + 1))
+                    break
+                if self._fine_rullo.is_set():
+                    self.log("Rullo chiuso dall'operatore dopo il fotogramma %d."
+                             % (i + (1 if conta else 0)))
                     break
                 # Se la macchina ha rifiutato un'esposizione, il backend ha
                 # imparato il suo limite: da qui in poi i fotogrammi si
@@ -702,12 +887,22 @@ class ScanService:
                 try:
                     backend.prossimo_fotogramma(fmt)
                 except FinePellicola:
-                    self.log("Fine della striscia: il carrello non trova "
-                             "altri fotogrammi dopo il %d." % (i + 1))
-                    break
+                    self.log("Fine della striscia %d: il carrello non trova "
+                             "altri fotogrammi dopo il %d."
+                             % (strisce, i + (1 if conta else 0)))
+                    continua, espulsa = self._prossima_striscia(
+                        backend, rullo.formato)
+                    if not continua:
+                        break
+                    strisce += 1
+                    inizio_striscia = True
+                except Emergenza:
+                    raise
                 except Exception as exc:                # noqa: BLE001
                     self.log("Avanzamento fallito: %s. Interrompo." % exc)
                     break
+                if conta:
+                    i += 1
 
             # una striscia piu' corta del previsto non e' un problema: e' la
             # normalita' con pellicole di lunghezza variabile
@@ -719,7 +914,8 @@ class ScanService:
                 stato = "problema"
                 self.job.message = ("Fermato dall'operatore dopo %d fotogramm%s"
                                     % (fatti, "a" if fatti == 1 else "i"))
-            if self.cfg.auto_eject and fatti > 0 and not self._stop.is_set():
+            if (self.cfg.auto_eject and fatti > 0 and not espulsa
+                    and not self._stop.is_set()):
                 try:
                     if getattr(backend, "supports_eject", False):
                         verso = self.cfg.verso_espulsione_fine_rullo
@@ -749,16 +945,18 @@ class ScanService:
                          % (fatti, "a" if fatti == 1 else "i",
                             "o" if fatti == 1 else "i"))
             elif automatico:
-                self.log("Rullo terminato: %d fotogrammi%s." % (
-                    fatti, (", %d vuoti" % vuoti) if vuoti else ""))
-                if fatti + vuoti >= limite:
+                self.log("Rullo terminato: %d fotogrammi%s%s." % (
+                    fatti, (", %d vuoti" % vuoti) if vuoti else "",
+                    (", in %d strisce" % strisce) if strisce > 1 else ""))
+                if i >= limite:
                     self.log(
                         "Raggiunto il tetto di %d fotogrammi per il formato %s: "
                         "se la striscia continua, scansionare il resto come "
                         "rullo nuovo." % (limite, rullo.formato))
             else:
-                self.log("Rullo terminato: %d fotogrammi su %d%s." % (
-                    fatti, rullo.attesi, (", %d vuoti" % vuoti) if vuoti else ""))
+                self.log("Rullo terminato: %d fotogrammi su %d%s%s." % (
+                    fatti, rullo.attesi, (", %d vuoti" % vuoti) if vuoti else "",
+                    (", in %d strisce" % strisce) if strisce > 1 else ""))
 
         self._avvia("rullo", job,
                     total=rullo.attesi or FORMATS[rullo.formato].max_fotogrammi)

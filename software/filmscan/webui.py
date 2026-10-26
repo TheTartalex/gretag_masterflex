@@ -975,6 +975,17 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .comandi button{width:auto;flex:0 0 auto;padding:11px 16px;white-space:nowrap}
 .comandi button.principale{padding:11px 26px;font-size:15px}
 .comandi .avanz{flex:1;min-width:0}
+/* Scansiona rullo e' verde; a rullo in corso diventa Fine rullo, rosso */
+.comandi button.verde{background:var(--ok);border-color:var(--ok);color:#fff}
+.comandi button.rosso{background:var(--male);border-color:var(--male);color:#fff}
+/* STOP EMERGENZA: copre tutto finche' il tecnico non da' l'ok */
+.emergenza{position:fixed;inset:0;z-index:50;background:var(--bg);
+ border:10px solid var(--male);display:flex;align-items:center;
+ justify-content:center;padding:24px}
+.emergenza .riquadro{max-width:640px;text-align:center}
+.emergenza h1{color:var(--male);font-size:34px;margin:0 0 12px}
+.emergenza p{font-size:16px;line-height:1.45}
+.emergenza button{margin-top:16px;padding:14px 24px;font-size:16px}
 /* la calibrazione di oggi manca: anteprima e scansione la aspettano */
 .comandi button.da-fare{box-shadow:inset 0 0 0 2px var(--avviso);color:var(--avviso)}
 .comandi #msg,.comandi .avvisi{white-space:nowrap;overflow:hidden;
@@ -1067,6 +1078,19 @@ details.sez>div{padding-bottom:10px}
 }
 </style></head><body>
 
+<div id="emergenza" class="emergenza" style="display:none">
+ <div class="riquadro">
+  <h1>STOP EMERGENZA</h1>
+  <p id="emergenza_quando"></p>
+  <p>La macchina &egrave; bloccata: nessun motore e nessuna acquisizione
+   finch&eacute; il tecnico non d&agrave; l'ok. Controllare motori, guide,
+   tamburo e percorso pellicola. Se un motore continua a spingere, spegnere
+   la macchina dall'interruttore: il comando gi&agrave; partito non si
+   interrompe da qui.</p>
+  <p>Alla ripresa va rifatta la calibrazione, che azzera i motori.</p>
+  <button class="sec" onclick="sblocca()">Il tecnico ha controllato: riprendi</button>
+ </div>
+</div>
 <header>
  <div class="nome">Masterflex D1008</div>
  <div id="stato"><span class="pallino"></span>non connesso</div>
@@ -1076,7 +1100,7 @@ details.sez>div{padding-bottom:10px}
   font-size:13px;padding:7px 12px;border:1px solid var(--line);border-radius:6px;
   white-space:nowrap">Archivio &rarr;</a>
  /*ICONA*/
- <button class="stop" onclick="fermaTutto()">STOP</button>
+ <button class="stop" onclick="emergenza()" title="Motori incastrati o problemi meccanici: blocca tutto, riparte solo con l'ok del tecnico">STOP EMERGENZA</button>
 </header>
 
 <main>
@@ -1320,7 +1344,7 @@ details.sez>div{padding-bottom:10px}
   <button class="sec" onclick="carica()" title="Guide al formato del rullo e carrello pronto a ricevere la pellicola">Carica</button>
   <button class="sec" onclick="fotogramma(1)" title="Il carrello porta in finestra il fotogramma successivo">Fotogramma &rsaquo;</button>
   <button class="sec" onclick="anteprima()">Anteprima</button>
-  <button class="principale" onclick="scansiona()">Scansiona rullo</button>
+  <button class="principale verde" id="tasto_rullo" onclick="tastoRullo()">Scansiona rullo</button>
   <div class="avanz">
    <div class="bar" style="margin:0 0 3px"><div id="barra"></div></div>
    <div id="msg">pronto</div>
@@ -1672,25 +1696,24 @@ function carica(){ post('/api/carica',{formato:val('formato')}).then(esito); }
 function calibra(){ if(confirm('Prima i motori vanno a zero (tamburo, guide, lente), poi si calibra. Togliere la pellicola dal percorso ottico. Procedere?'))
   post('/api/calibra',{}).then(esito); }
 function muovi(mm){ post('/api/muovi',{mm:mm}).then(mostraStato); }
-/* STOP non e' istantaneo, e fingere che lo sia e' peggio che dirlo: la
-   macchina si ferma fra un passaggio e l'altro, non a meta'. Quindi il tasto
-   dice subito che ha ricevuto, e resta in quello stato finche' il lavoro non
-   e' davvero finito. Prima non diceva niente e sembrava rotto. */
-var fermando=false;
-function fermaTutto(){
-  var b=document.querySelector('button.stop');
-  post('/api/ferma',{}).then(function(r){
-    if(r && r.errore){ esito(r); return; }
-    if(r && r.messaggio){
-      var a=el('avvisi');
-      if(a){ a.textContent=r.messaggio;
-             setTimeout(function(){ if(a.textContent===r.messaggio) a.textContent=''; }, 12000); }
-    }
-    if(r && r.fermato){
-      fermando=true;
-      if(b){ b.textContent='ARRESTO...'; b.disabled=true; }
-    }
-  });
+/* STOP EMERGENZA: niente conferme, deve partire al primo tocco. Toglierlo
+   invece chiede il nome del tecnico: e' lui che dice che si puo' ripartire. */
+function emergenza(){ post('/api/emergenza',{}).then(mostraStato); }
+function sblocca(){
+  var n=prompt("Ripresa dopo lo STOP EMERGENZA.\nNome del tecnico che ha controllato la macchina:");
+  if(!n || !n.trim()) return;
+  post('/api/sblocca',{nota:n.trim()}).then(function(r){
+    if(r && r.errore){ alert(r.errore); return; } mostraStato(r); });
+}
+/* Il tasto del rullo: Scansiona rullo, e a rullo in corso Fine rullo, che
+   lo chiude dopo il fotogramma in corso. Resta "Chiusura..." finche' il
+   rullo non e' chiuso davvero: un tasto che torna subito come prima fa
+   premere di nuovo. */
+var ultimoJob=null;
+function tastoRullo(){
+  if(ultimoJob && ultimoJob.running && ultimoJob.kind==='rullo'){
+    post('/api/fine_rullo',{}).then(mostraStato); return; }
+  scansiona();
 }
 function anteprima(){ post('/api/anteprima',
   Object.assign({formato:val('formato')},opzioni())).then(esito); }
@@ -1782,6 +1805,21 @@ function mostraStato(s){
   /* Il menu del collegamento deve dire come stanno le cose, non ripartire
      ogni volta dalla prima voce: e' il modo migliore per far scegliere a
      qualcuno un backend diverso da quello con cui il server e' partito. */
+  ultimoJob = s.job || null;
+  var tr=el('tasto_rullo');
+  if(tr){
+    var inRullo = !!(s.job && s.job.running && s.job.kind==='rullo');
+    tr.textContent = !inRullo ? 'Scansiona rullo'
+      : (s.job.chiusura ? 'Chiusura...' : 'Fine rullo');
+    tr.classList.toggle('rosso', inRullo);
+    tr.classList.toggle('verde', !inRullo);
+  }
+  var em=el('emergenza');
+  if(em){
+    em.style.display = s.emergenza ? 'flex' : 'none';
+    if(s.emergenza) el('emergenza_quando').textContent =
+      'Dalle '+s.emergenza.dalle+' \u00b7 '+s.emergenza.motivo;
+  }
   var tc=el('tasto_calibra');
   if(tc){
     var manca = on && s.driver!=='originale' &&
@@ -1820,11 +1858,6 @@ function mostraStato(s){
     /* Il tasto torna disponibile quando il lavoro e' finito davvero, non
        quando la richiesta di arresto e' partita: e' l'unico modo che ha
        l'operatore di sapere che la macchina si e' fermata. */
-    if(fermando && !j.running){
-      fermando=false;
-      var b=document.querySelector('button.stop');
-      if(b){ b.textContent='STOP'; b.disabled=false; }
-    }
   }
 }
 
@@ -2313,6 +2346,15 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if u.path == "/api/connetti":
                 return self._json(s.connetti(d.get("driver")))
+
+            if u.path == "/api/fine_rullo":
+                return self._json(s.fine_rullo())
+
+            if u.path == "/api/emergenza":
+                return self._json(s.stop_emergenza(str(d.get("motivo", ""))))
+
+            if u.path == "/api/sblocca":
+                return self._json(s.sblocca_emergenza(str(d.get("nota", ""))))
 
             if u.path == "/api/disconnetti":
                 return self._json(s.disconnetti())

@@ -41,6 +41,18 @@ class ScannerError(RuntimeError):
     pass
 
 
+# Il file dello STOP EMERGENZA, nella cartella del ponte. Lo scrive
+# ScanService.emergenza(), lo leggono il ponte e l'agente, lo toglie solo il
+# tecnico (ScanService.sblocca_emergenza). Sta su disco apposta: resta anche
+# se si riavvia tutto.
+FILE_EMERGENZA = "EMERGENZA.json"
+
+
+class Emergenza(ScannerError):
+    """STOP EMERGENZA attivo: nessun comando passa finche' il tecnico non da'
+    l'ok."""
+
+
 class MotoriBloccati(ScannerError):
     """L'agente e' partito con --senza-motori e rifiuta i movimenti."""
 
@@ -451,7 +463,12 @@ class PonteSdkBackend(ScannerBackend):
 
     # --- protocollo -------------------------------------------------------
 
+    def _emergenza(self) -> bool:
+        return os.path.exists(os.path.join(self.root, FILE_EMERGENZA))
+
     def _send(self, comando: str, attesa: Optional[float] = None) -> str:
+        if self._emergenza() and comando not in ("ping", "stato"):
+            raise Emergenza("STOP EMERGENZA attivo: '%s' non inviato" % comando)
         # Il contatore evita che due comandi uguali nello stesso millisecondo
         # (due tablet aperti) finiscano sullo stesso file di risposta.
         self._contatore += 1
@@ -477,6 +494,16 @@ class PonteSdkBackend(ScannerBackend):
                 if risposta.startswith("errore"):
                     raise ScannerError("l'agente ha risposto: %s" % risposta)
                 return risposta[3:].strip() if risposta.startswith("ok") else risposta
+            if comando not in ("ping", "stato") and self._emergenza():
+                # Non si aspetta la fine del comando: chi ha premuto
+                # l'emergenza vuole che il programma smetta adesso. Se il
+                # comando non e' ancora partito si ritira; quello in corso
+                # nell'SDK non si puo' interrompere da qui.
+                try:
+                    os.remove(percorso)
+                except OSError:
+                    pass
+                raise Emergenza("STOP EMERGENZA durante '%s'" % comando)
             time.sleep(0.05)
 
         # Il comando non e' stato raccolto da nessuno: si toglie di mezzo,

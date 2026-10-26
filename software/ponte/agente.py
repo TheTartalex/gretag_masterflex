@@ -173,10 +173,15 @@ class AgenteSimulato(object):
     FOTOGRAMMI_STRISCIA = 8
     # in mezzo alle strisce capitano fotogrammi non esposti: solo base
     FOTOGRAMMI_VUOTI = (3, 4)
+    # un rullo tagliato in tre strisce: dalla seconda la prima posizione e'
+    # la coda, e dopo la terza non se ne inseriscono altre
+    STRISCE = 3
     _fotogramma = 0
+    _strisce = 0
 
     def arma_carrello(self, modo=1):
-        self.pellicola_inserita = True
+        self._strisce += 1
+        self.pellicola_inserita = self._strisce <= self.STRISCE
         self._fotogramma = 0
 
     def alimentazione(self, accesa=True): pass
@@ -236,6 +241,8 @@ class AgenteSimulato(object):
         var = random.Random(self._letture)
         if not self.pellicola_inserita:
             intervallo = (1.0, 1.0)
+        elif self._fotogramma == 0 and self._strisce > 1:
+            intervallo = (0.01, 0.01)       # la coda della striscia, annerita
         elif self._fotogramma in self.FOTOGRAMMI_VUOTI:
             intervallo = (0.45, 0.45)
         else:
@@ -406,6 +413,19 @@ class Agente(object):
 
         if comando == "ping":
             return "vivo"
+
+        # STOP EMERGENZA: filmscan ha scritto il file di blocco. Passano solo
+        # le domande; ogni comando che muove o acquisisce si rifiuta finche'
+        # il tecnico non da' l'ok dall'interfaccia, che toglie il file.
+        if comando != "stato" and os.path.exists(
+                os.path.join(self.condivisa, "EMERGENZA.json")):
+            if not getattr(self, "_emergenza_annunciata", False):
+                self._emergenza_annunciata = True
+                self.log("STOP EMERGENZA: comandi bloccati finche' il tecnico "
+                         "non da' l'ok dall'interfaccia")
+            raise ValueError("STOP EMERGENZA attivo: macchina bloccata, "
+                             "comando '%s' rifiutato" % comando)
+        self._emergenza_annunciata = False
 
         # Finche' l'SDK non ha finito di collegare lo scanner rifiuta quasi
         # tutto con ERR_NO_SCANNER (stato 10, vedi sdk.py): meglio dirlo

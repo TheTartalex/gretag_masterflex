@@ -368,3 +368,48 @@ pellicola uscita va ancora visto sulla macchina.
 firmware della testa però rifiuta già prima: a x12 rispetto ai valori di
 fabbrica risponde `ERR_SW_SCANNER_IFC` + `ERR_FW_ERR_NO 1` +
 `ERR_GENERAL_FW`, a x1 accetta. Il limite vero non è ancora misurato.
+
+## 8. Cosa l'SDK offre e non usiamo ancora
+
+*Censimento del 26/10/2026 sulla `scn_dll.dll` della riserva: 119 metodi
+pubblici di `DMLScanner` e `DMLScannerAdv`, 45 legati in `ponte/sdk.py`.*
+Le firme vengono dai nomi decorati. Dove serve sapere cosa fanno davvero,
+il disassemblato va guardato prima di usarle.
+
+### Da provare, in quest'ordine
+
+| Metodi | Cosa sono | Perché ci servono |
+|---|---|---|
+| `get_exp_time`, `calibrate_all`, `get_calibration_status` | tempi di esposizione **calibrati** per LED (la calibrazione dell'SDK, `calib_texp_*`) | noi partiamo da `set_to_default_texp`, i valori di fabbrica. Il programma originale chiama `calibrate_all` all'avvio. Coi tempi calibrati il colore e il limite d'esposizione (x12 rifiutato) potrebbero tornare a posto da soli |
+| `gi_clamp` (Adv) | pressore della pellicola: richieste Gretag 19 e 20, *Clamp Down* e *Clamp Up* | pellicola piatta durante la lettura, cioè nitidezza. Da capire se `scan_raw` lo abbassa da solo |
+| `get_temperature`, `get_voltage` (Adv) | temperatura e tensioni della testa | diagnosi e controllo prima della calibrazione del giorno. Sola lettura |
+| `nvm_ccd_serial_number`, `nvm_usage_log`, `nvm_calib_timer`, `nvm_led_initial_response`, `nvm_led_contribution`, `nvm_defect_col_list`, `get_image_column_defects` (Adv) | memoria non volatile della testa: numero di serie, contatori d'uso, risposta dei LED, **colonne difettose del CCD** | diagnosi; le colonne difettose si possono correggere nella nostra pipeline. **Attenzione:** molte `nvm_*` hanno un booleano finale che probabilmente sceglie lettura o scrittura: va verificato prima |
+| `show_gretag_ui`, `move_gretag_ui` | la finestra di servizio del GateControl | un tasto "pannello del carrello" per il tecnico, senza chiudere l'agente |
+| `gi_set_asf_mode`, `SetASFImageBufferPtr` | ASF = Applied Science Fiction, cioè **Digital ICE** | la pulizia IR dell'SDK, da confrontare con la nostra |
+| `get_processed_frame_info`, `get_processed_leader_info`, `get_is_trailer_first_status`, `assign_frame_number`, `frame_detect_scan` | rilevamento dei fotogrammi dell'SDK e numeri letti dal bordo | i **numeri veri del fotogramma** al posto del contatore, e il verso della striscia |
+| `perform_video_mode_scan`, `get_video_mode_size`, `preview_jog_*`, `scan_in_preview_jog_mode` | anteprima veloce a bassa risoluzione e spostamento fine in anteprima | un'anteprima dal vivo per mettere in finestra il fotogramma |
+| `gi_focus`, `setup_focus_scan_defaults`, `set_aperture`, `set_magnification` | fuoco e ingrandimento: richieste Gretag 10–13 (*SetupFocus*, *GotoFocusPos*, *StoreFocusPos*, *SetFocusParam*) | autofocus, e il passo del fuoco che manca ancora (`focus_step_mm`) |
+
+### Il percorso immagine dell'SDK: solo come riferimento
+
+`capture`, `import_image`, `select_image_processing_mode`,
+`select_datapath_negative`, `select_datapath_reversal`, `load_LUT_var`,
+`load_matrix_var`, `set_dmin_removal_values`, `enable_exposure_compensation`,
+`load_correction` e `get_correction_filename` sono la catena d'immagine
+dell'SDK, quella che usa `PhxScanner.exe`. Noi leggiamo il grezzo con
+`scan_raw` e facciamo la nostra. Le matrici e le LUT del programma originale
+possono servire come punto di partenza per i profili.
+
+### Da non usare
+
+| Metodi | Perché |
+|---|---|
+| `download`, `get_available_firmware_version`, `nvmem_program` | scrivono firmware o memoria non volatile della testa: un errore e la testa non riparte |
+| `diag_motor` (Adv) | muove i motori senza i nostri limiti |
+| `diag_arcnet`, `diag_exposure`, `diag_exposureReadback`, `diag_image`, `diag_mem`, `diag_nk`, `get_diagscan_data` | prove di servizio, utili per l'autotest. Prima va capito cosa muovono, uno per uno |
+| `delete_cached_data`, `lock_calibration_data`, `get_calibration_data_filename` | gestione della cache di calibrazione dell'SDK: da toccare solo insieme a `calibrate_all` |
+| `gate_enable_anm`, `gate_disable_anm` | significato non chiaro (ANM); da guardare nel disassemblato |
+
+Fra le richieste al GateControl, *Goto Frame* (8) non ha chiamanti
+nell'SDK. *NextFrameGap* (4) e *Place Manually* (9) le usano solo funzioni
+interne.

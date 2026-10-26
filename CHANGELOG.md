@@ -39,6 +39,18 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-10-26 — rulli in strisce, Fine rullo, STOP EMERGENZA
+
+- Rullo tagliato in strisce: a fine striscia si espelle, si riarma il
+  carrello e si aspetta la successiva (`attesa_striscia_s`, 10 minuti); i
+  numeri continuano, la coda iniziale non prende un numero.
+- Scansiona rullo (verde) diventa Fine rullo (rosso) a rullo in corso:
+  chiude dopo il fotogramma, espelle, rullo completato.
+- STOP EMERGENZA: file `EMERGENZA.json` nel ponte, rispettato da ponte e
+  agente; blocca subito ogni comando, copre gli schermi, sopravvive ai
+  riavvii; si toglie con il nome del tecnico, poi serve una calibrazione.
+- Simulatore: tre strisce con la coda dalla seconda.
+
 ### 2026-10-26 — installer unico
 
 - `INSTALLA.bat` al posto di `AGGIORNA.bat`: installa su una macchina

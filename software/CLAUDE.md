@@ -587,6 +587,15 @@ guarda proprio per giudicare colore e densita'.
 
 ## Lo STOP
 
+> **Dal 26/10/2026** i tasti sono due. Lo stop pulito descritto qui sotto e'
+> diventato **Fine rullo** (il tasto Scansiona rullo a rullo in corso:
+> chiude dopo il fotogramma, espelle, rullo completato). Il tasto in alto e'
+> **STOP EMERGENZA** (`ScanService.stop_emergenza`): file
+> `EMERGENZA.json` nel ponte, che ponte e agente rispettano rifiutando ogni
+> comando; niente espulsione ne' riavvolgimento; si toglie solo con l'ok del
+> tecnico (`sblocca_emergenza`), dopo il quale serve una calibrazione nuova.
+> `Emergenza` non va mai presa dall'`except Exception` del rullo.
+
 Non e' un freno di emergenza, e il codice non finge che lo sia. La macchina
 tira pellicola dentro un percorso ottico: strapparla a meta' passaggio la
 lascia in una posizione che nessuno conosce, e sulla meccanica del 1995 questo

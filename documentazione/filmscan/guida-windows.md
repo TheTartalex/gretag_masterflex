@@ -155,23 +155,39 @@ giudicare colore e densità.
 > [stato.md](../stato.md#problemi-aperti-in-ordine-di-priorità) e
 > [carrello-capri.md](../hardware/carrello-capri.md).
 
-## Il tasto STOP
+## Fine rullo e STOP EMERGENZA
 
-Non è un fungo di emergenza. La macchina sta tirando pellicola dentro il
-percorso ottico: fermarla di colpo la lascia in una posizione che nessuno
-conosce.
+**Scansiona rullo** è verde. Mentre il rullo gira diventa **Fine rullo**,
+rosso: chiude il rullo appena finito il fotogramma in corso, espelle la
+pellicola e lo segna completato. Il tasto resta `Chiusura...` finché il
+rullo non è chiuso davvero.
 
-Quello che fa: si ferma appena finisce il passaggio in corso, quindi qualche
-secondo, non il rullo intero. Il tasto mostra `ARRESTO...` finché la macchina
-non si è fermata davvero, poi torna `STOP`. Lampade spente e pellicola dov'è:
-non viene espulsa, perché se si preme STOP di solito è proprio il percorso
-che non va, e tirare ancora peggiora.
+**Rullo tagliato in strisce.** Quando una striscia finisce (il carrello
+risponde `ERR_MOVE`), la si espelle, il carrello si riarma subito e si
+aspetta la striscia successiva, fino a 10 minuti: basta inserirla. I numeri
+continuano da una striscia all'altra; la coda iniziale di ogni striscia non
+prende un numero. Quando le strisce sono finite: **Fine rullo**.
 
-I fotogrammi già salvati restano. Riaprendo il rullo la scansione riprende
-dal successivo.
+**STOP EMERGENZA** (in alto a destra) è per motori incastrati e problemi
+meccanici. Non chiede conferma e:
 
-Se la pellicola è inceppata: STOP, poi si toglie a mano. Il comando
-"Espelli" serve quando la pellicola scorre.
+- blocca subito ogni comando alla macchina: non parte più niente, né
+  espulsione né riavvolgimento;
+- copre tutti gli schermi collegati (monitor e tablet) con l'avviso di
+  blocco;
+- resta anche se si riavvia il programma o il PC (file
+  `C:\MasterflexD\ponte\EMERGENZA.json`).
+
+Il comando che l'SDK sta già eseguendo in quel momento non si interrompe
+da qui: se un motore continua a spingere, si spegne la macchina
+dall'interruttore.
+
+Si riparte solo con **"Il tecnico ha controllato: riprendi"**, scrivendo il
+nome di chi ha controllato. Il nome resta nel diario. Prima di lavorare va
+rifatta la calibrazione, che azzera i motori.
+
+I fotogrammi già salvati restano: il rullo interrotto risulta "problema" e,
+riaperto, la scansione riprende dal successivo.
 
 ## L'archivio degli ordini
 
