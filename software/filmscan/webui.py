@@ -1228,8 +1228,13 @@ details.sez>div{padding-bottom:10px}
    <label>Scanner</label>
    <select id="driver">
     <option value="sdk">scanner &mdash; macchina vera</option>
+    <option value="originale">programma originale &mdash; osservatore</option>
     <option value="mock">simulato &mdash; nessuna macchina</option>
    </select>
+   <div style="font-size:11px;color:var(--dim);margin-top:6px">
+    <b>Programma originale</b>: si scansiona da PhxScanner, con
+    MASTERFLEX.bat voce 14 (osservatore) aperta; "Scansiona rullo" qui
+    raccoglie le immagini nel rullo scelto fino a STOP.</div>
    <div class="row"><button onclick="connetti()">Connetti</button></div>
    <div id="amb" style="font-size:11px;color:var(--dim);margin-top:10px"></div>
   </section>

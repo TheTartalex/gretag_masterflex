@@ -27,7 +27,7 @@ import glob
 import os
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -674,6 +674,75 @@ class PonteSdkBackend(ScannerBackend):
 
 # --------------------------------------------------------------------------
 
+class OriginaleBackend(ScannerBackend):
+    """Collegamento "programma originale": la macchina la comanda
+    PhxScanner.exe, e ponte/osservatore.py copia le immagini grezze che riceve
+    dallo scanner in <ponte>/mitm/. Qui non si muove niente e non si
+    acquisisce: si leggono quelle immagini, che il servizio elabora come se le
+    avesse acquisite filmscan (ScanService.ricevi_da_originale).
+    """
+
+    controlla_lampada = False
+
+    def __init__(self, bridge_path: str):
+        self.cartella = os.path.join(bridge_path, "mitm")
+        self._connesso = False
+
+    def connect(self) -> None:
+        os.makedirs(self.cartella, exist_ok=True)
+        self._connesso = True
+
+    def disconnect(self) -> None:
+        self._connesso = False
+
+    def status(self) -> ScannerStatus:
+        return ScannerStatus(connected=self._connesso, film_loaded=False,
+                             message="programma originale")
+
+    def _rifiuta(self, *_a, **_k):
+        raise ScannerError("con il programma originale la macchina la comanda "
+                           "lui: movimenti e acquisizioni si fanno da li'")
+
+    advance = set_focus = _rifiuta
+
+    def capture_line_block(self, channel: str, lines: int,
+                           exposure: float = 1.0) -> np.ndarray:
+        self._rifiuta()
+
+    def nuove(self, dopo: float) -> List[str]:
+        """Le immagini copiate dall'osservatore dopo l'istante 'dopo'
+        (secondi dall'epoca), dalla piu' vecchia."""
+        trovate = []
+        for nome in os.listdir(self.cartella):
+            if nome.endswith(".raw"):
+                p = os.path.join(self.cartella, nome)
+                if os.path.getmtime(p) > dopo and os.path.exists(p[:-4] + ".json"):
+                    trovate.append(p)
+        return sorted(trovate)
+
+    @staticmethod
+    def leggi(percorso: str) -> Tuple[Dict[str, np.ndarray], Dict[str, object]]:
+        """I piani di un'immagine copiata: {canale: array 2D uint16}.
+
+        Si assume che i piani stiano uno dopo l'altro nell'ordine R, G, B
+        (e IR se ce n'e' un quarto), come li chiede capture() con la maschera
+        7 o 0xF. E' da verificare con la prima immagine vera: se i colori
+        escono scambiati, l'ordine e' un altro.
+        """
+        import json
+        with open(percorso[:-4] + ".json") as f:
+            info = json.load(f)
+        w, h = int(info["larghezza"]), int(info["altezza"])
+        dati = np.fromfile(percorso, dtype="<u2")
+        piani = min(int(info.get("piani", 3)), dati.size // (w * h))
+        if piani < 1:
+            raise ScannerError("%s: meno di un piano (%d campioni per %dx%d)"
+                               % (os.path.basename(percorso), dati.size, w, h))
+        nomi = ["R", "G", "B", "IR"]
+        return ({nomi[i]: dati[i * w * h:(i + 1) * w * h].reshape(h, w)
+                 for i in range(min(piani, 4))}, info)
+
+
 def make_backend(cfg) -> ScannerBackend:
     """Fabbrica: sceglie il backend in base alla configurazione."""
     if cfg.driver == "mock":
@@ -687,4 +756,8 @@ def make_backend(cfg) -> ScannerBackend:
                                ingressi=getattr(cfg, "sdk_ingressi", None),
                                ir=getattr(cfg, "sdk_ir_verificato", False),
                                max_regola_mm=getattr(cfg, "max_regola_mm", 3.0))
+    if cfg.driver == "originale":
+        if not cfg.bridge_path:
+            raise ScannerError("driver 'originale' selezionato ma bridge_path e' vuoto")
+        return OriginaleBackend(cfg.bridge_path)
     raise ScannerError("driver sconosciuto: %s" % cfg.driver)

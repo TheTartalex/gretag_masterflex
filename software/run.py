@@ -30,8 +30,10 @@ def main():
     ap.add_argument("--db", default="./ordini.db")
     ap.add_argument("--impostazioni", default="./impostazioni.json",
                     help="dove si ricordano le scelte fatte dall'interfaccia")
-    ap.add_argument("--driver", default="mock", choices=["mock", "sdk"],
-                    help="sdk = la macchina vera, tramite l'agente sul ponte")
+    ap.add_argument("--driver", default="mock", choices=["mock", "sdk", "originale"],
+                    help="sdk = la macchina vera, tramite l'agente sul ponte; "
+                         "originale = immagini dal programma originale "
+                         "(ponte/osservatore.py)")
     ap.add_argument("--ponte", default=r"C:\MasterflexD\ponte",
                     help="cartella di scambio con l'agente (driver sdk)")
     ap.add_argument("--apri", action="store_true",
@@ -58,8 +60,9 @@ def main():
     # conservazione...) si perdevano a ogni riavvio.
     cfg = AppConfig.load(a.impostazioni)
     cfg.driver = a.driver
-    if a.driver == "sdk":
-        cfg.bridge_path = a.ponte
+    # la cartella del ponte serve sia all'agente sia all'osservatore, e
+    # dall'interfaccia si puo' passare da un collegamento all'altro
+    cfg.bridge_path = a.ponte
     avvia("0.0.0.0" if a.rete else "127.0.0.1", a.porta, cfg, a.db,
           apri=a.apri, impostazioni=a.impostazioni)
     return 0

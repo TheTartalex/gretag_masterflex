@@ -34,6 +34,7 @@ filmscan/
 ponte/
   agente.py           l'agente sul PC della macchina (solo libreria standard)
   sdk.py              collegamento a scn_dll.dll via ctypes
+  osservatore.py      copia le immagini grezze del programma originale (voce 14)
 ```
 
 Creati durante il lavoro e fuori da git: `ordini.db`, `impostazioni.json`,

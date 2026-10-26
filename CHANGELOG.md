@@ -39,6 +39,19 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-10-26 — collegamento "programma originale"
+
+- `ponte/osservatore.py` (nuovo): si aggancia a `PhxScanner.exe` come un
+  debugger e copia in `<ponte>/mitm/` le immagini grezze che l'SDK riceve
+  (int3 su `add_image_buffer`, `remove_all_image_buffer` e sul registro
+  interno, filtrato su "xfer: image complete"). Rifiuta DLL diverse da
+  quella studiata.
+- `filmscan`: driver `originale` (`OriginaleBackend`). "Scansiona rullo"
+  raccoglie quelle immagini nel rullo fino a STOP
+  (`ScanService.ricevi_da_originale`).
+- `MASTERFLEX.bat`: voce 14. `run.py --driver originale`.
+- Decisione 0007.
+
 ### 2026-10-26 — immagini nere, pellicola dall'SDK
 
 - `ponte/sdk.py`: `scan_raw` con il bit del buio spento (prima `True`:

@@ -22,11 +22,12 @@ from typing import Callable, Dict, List, Optional
 
 import numpy as np
 
-from .acquire import (Annullato, Calibration, film_present,
+from .acquire import (Annullato, Calibration, RawScan, ScanMetadata, film_present,
                       measure_channel_exposure, run_calibration, scan_frame)
 from .compat import check_environment
 from .config import AppConfig, FORMATS, PRESETS
-from .hal import FilmSensors, ScannerBackend, ScannerError, make_backend
+from .hal import (FilmSensors, OriginaleBackend, ScannerBackend, ScannerError,
+                  make_backend)
 from . import colore
 from .invert import PROFILES
 from .orders import Archivio
@@ -375,6 +376,9 @@ class ScanService:
         opts.profile = PROFILES.get(rullo.profilo, PROFILES["c41"])
         opts.roll_mirror = mirror
 
+        if isinstance(self.backend, OriginaleBackend):
+            return self.ricevi_da_originale(rullo_id)
+
         def job():
             backend = self._require()
             backend.seleziona_formato(rullo.formato)
@@ -583,6 +587,96 @@ class ScanService:
 
         self._avvia("rullo", job,
                     total=rullo.attesi or FORMATS[rullo.formato].max_fotogrammi)
+
+    def ricevi_da_originale(self, rullo_id: int) -> None:
+        """Collegamento "programma originale": si scansiona da PhxScanner, e
+        ogni immagine che l'osservatore copia diventa un fotogramma di questo
+        rullo, elaborato dalla nostra pipeline. Si resta in ascolto finche'
+        non si preme STOP.
+
+        Le immagini sono i dati del DMA, prima delle correzioni dell'SDK:
+        niente calibrazione nostra (e' fatta per le nostre letture, non per
+        le sue), ma la pipeline normale da li' in poi.
+        """
+        rullo = self.archivio.rullo(rullo_id)
+        if rullo is None:
+            raise ValueError("rullo inesistente")
+        ordine = self.archivio.ordine(rullo.ordine_id)
+        if ordine is None:
+            raise ValueError("ordine inesistente")
+        fmt_key = rullo.formato
+        dest = self.archivio.cartella_ordine(self.cfg.out_dir, ordine.id)
+        opts = ProcessOptions(**{k: v for k, v in vars(self.options).items()})
+        opts.profile = PROFILES.get(rullo.profilo, PROFILES["c41"])
+        opts.roll_mirror = RollMirror(flip_h=rullo.specchiato, source="operatore",
+                                      confirmed=rullo.conf_specchio)
+
+        def job():
+            backend = self._require()
+            self.archivio.rullo_stato(rullo_id, "in_corso")
+            inizio = time.time()
+            visti = set()
+            fatti = 0
+            self.log("In ascolto del programma originale: scansionare da li'. "
+                     "STOP per finire il rullo.")
+            while not self._stop.is_set():
+                nuove = [p for p in backend.nuove(inizio) if p not in visti]
+                if not nuove:
+                    self.progress("In attesa del programma originale: %d fotogramm%s"
+                                  % (fatti, "a" if fatti == 1 else "i"), 0.5)
+                    time.sleep(0.5)
+                    continue
+                for percorso in nuove:
+                    visti.add(percorso)
+                    i = fatti
+                    nome = "%s_%s_%03d" % (ordine.codice,
+                                           rullo.etichetta.replace(" ", "-"), i + 1)
+                    try:
+                        piani, info = backend.leggi(percorso)
+                        h, w = next(iter(piani.values())).shape
+                        meta = ScanMetadata(
+                            timestamp=time.time(), format_key=fmt_key,
+                            preset_name="originale", dpi=self.cfg.optical_dpi,
+                            bit_depth=16, channels=list(piani),
+                            exposures=[1.0], passes_per_channel=1,
+                            frame_index=i, position_mm=0.0, focus_mm=0.0,
+                            operator_note="dal programma originale: %s"
+                                          % os.path.basename(percorso))
+                        raw = RawScan(meta)
+                        for ch, p in piani.items():
+                            raw.add(ch, p.astype(np.float32))
+                        raw_path = raw.save(self.cfg.path("raw"), nome) \
+                            if self.cfg.keep_raw else ""
+                        res = process(raw, opts)
+                        ext = {"tiff16": ".tif", "tiff8": ".tif", "png": ".png",
+                               "jpeg": ".jpg"}.get(self.cfg.export_format, ".tif")
+                        out_path = os.path.join(dest, nome + ext)
+                        export(res.image, out_path, self.cfg.export_format,
+                               self.cfg.jpeg_quality)
+                        self.archivio.fotogramma_registra(
+                            rullo_id, i + 1, file_out=out_path, file_raw=raw_path,
+                            rotazione=res.orientation.rotation if res.orientation else 0,
+                            stato="ok", avvisi=" | ".join(res.warnings))
+                        self.ultimo_raw = raw
+                        self.preview = res.image
+                        self.base_lineare = res.base
+                        self.preview_ridotta = False
+                        self.preview_neg = res.negativo
+                        fatti += 1
+                        self.job.frame = fatti
+                        self.log("Fotogramma %d dal programma originale (%dx%d, %s)."
+                                 % (fatti, w, h, "".join(piani)))
+                    except Exception as exc:                # noqa: BLE001
+                        self.job.errors.append("%s: %s" % (os.path.basename(percorso), exc))
+                        self.log("Immagine %s non elaborata: %s"
+                                 % (os.path.basename(percorso), exc))
+            self.archivio.rullo_stato(rullo_id, "completato" if fatti else "problema")
+            self.archivio.ordine_stato(ordine.id, "in_lavorazione")
+            self.aggiorna_registro()
+            self.log("Rullo chiuso: %d fotogramm%s dal programma originale."
+                     % (fatti, "a" if fatti == 1 else "i"))
+
+        self._avvia("rullo", job, total=0)
 
     # ------------------------------------------------------------------
 

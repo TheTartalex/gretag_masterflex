@@ -40,6 +40,7 @@ come amministratore*, per il firewall):
  AVVIO          1  macchina vera
                 2  macchina vera, motori BLOCCATI (solo acquisizione)
                 3  simulazione (nessuna macchina)
+               14  programma originale + osservatore (immagini grezze)
  COLLAUDI       4  scanner: colori, intensita', trascinamento, strumenti Gretag
                 5  programma (senza macchina)
                 6  diagnosi: un file da inviare
@@ -200,6 +201,29 @@ configurazione. Di ogni file tiene una copia intatta con il suffisso
 
 Il perché di ogni scelta sta in
 [programma-originale.md](../software-originale/programma-originale.md).
+
+### Scansionare con l'originale e salvare con filmscan (voce 14)
+
+Serve quando il programma originale acquisisce ma non salva. Il programma
+originale comanda la macchina, e un osservatore copia le immagini grezze che
+riceve. Filmscan le elabora e le mette nel rullo
+([decisione 0007](../decisioni/0007-osservatore-programma-originale.md)).
+
+1. Chiudere l'agente, se è aperto.
+2. Avviare il programma originale (voce 10), **senza** aprire ancora un
+   ordine.
+3. Voce **14**. Si aprono la finestra "Osservatore programma originale" e
+   l'interfaccia, con il collegamento "programma originale".
+4. Nell'interfaccia: Connetti, poi ordine e rullo, poi **Scansiona rullo**.
+   L'interfaccia resta in ascolto.
+5. Nel programma originale: aprire l'ordine e scansionare. A ogni immagine,
+   nell'osservatore compare "immagine N copiata" e nell'interfaccia un
+   fotogramma nuovo.
+6. **STOP** nell'interfaccia chiude il rullo. Ctrl+C nella finestra
+   dell'osservatore lo stacca, e il programma originale continua da solo.
+
+Le immagini copiate restano anche in `C:\MasterflexD\ponte\mitm\`, una
+coppia `.raw` + `.json` per immagine.
 
 ## Tutti i file
 

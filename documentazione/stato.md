@@ -131,6 +131,15 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
   Il salvataggio delle PNG del collaudo era tanto lento da sembrare
   bloccato: ora a metà lato e con compressione minima, meno di 5 s.
 
+- **Collegamento "programma originale"**: voce 14 di `MASTERFLEX.bat` e
+  `ponte/osservatore.py`. Il programma originale scansiona, l'osservatore
+  copia le immagini grezze e filmscan le elabora nel rullo
+  ([decisione 0007](decisioni/0007-osservatore-programma-originale.md)).
+  - Provato qui: indirizzi sulla `scn_dll.dll` della macchina; immagini
+    finte che diventano fotogrammi del rullo.
+  - **Non provato** su Windows: l'aggancio al processo.
+  - Da verificare con le prime immagini: l'ordine dei piani R, G, B.
+
 ## Problemi aperti, in ordine di priorità
 
 1. **Motori delle guide all'avvio.** Le guide sono i motori 3 e 4 del

@@ -49,6 +49,7 @@ echo    AVVIO
 echo     1  Avvia - macchina vera
 echo     2  Avvia - macchina vera, motori BLOCCATI (solo acquisizione)
 echo     3  Avvia - simulazione (nessuna macchina)
+echo    14  Avvia - programma originale + osservatore (immagini grezze)
 echo.
 echo    COLLAUDI
 echo     4  Collaudo dello scanner: colori, intensita', trascinamento
@@ -82,6 +83,7 @@ if "%SCELTA%"=="10" call :azione originale
 if "%SCELTA%"=="11" call :azione offline
 if "%SCELTA%"=="12" call :azione disinstalla
 if "%SCELTA%"=="13" call :azione firmware
+if "%SCELTA%"=="14" call :azione osservatore
 echo.
 pause
 goto :menu
@@ -108,6 +110,7 @@ if /i "%~1"=="avvio-automatico"  goto :avvio_automatico
 if /i "%~1"=="originale"         goto :originale
 if /i "%~1"=="disinstalla"       goto :disinstalla
 if /i "%~1"=="firmware"          goto :firmware
+if /i "%~1"=="osservatore"       goto :osservatore
 echo  Azione sconosciuta: %~1
 exit /b 1
 
@@ -235,6 +238,38 @@ set /p "T=  Scelta: "
 if "%T%"=="1" start "" /d "%CAPRI%\SelfTestInterface" "%CAPRI%\SelfTestInterface\SelfTestInterface.exe"
 if "%T%"=="2" start "" /d "%CAPRI%\SensorTest" "%CAPRI%\SensorTest\SensorTest_COM5.exe"
 if "%T%"=="3" start "" /d "%CAPRI%\Compad2_5" "%CAPRI%\Compad2_5\Compad2_5.exe"
+exit /b 0
+
+
+REM ===========================================================================
+:osservatore
+REM  Scansiona il programma originale; ponte\osservatore.py copia le immagini
+REM  grezze che riceve, e l'interfaccia (collegamento "programma originale")
+REM  le elabora. L'agente NON deve girare: la scheda la usa PhxScanner.
+REM ===========================================================================
+"%PY%" -c "import manutenzione as m,sys;sys.exit(0 if m.agente_attivo(r'%PONTE%') else 1)" >nul 2>&1
+if not errorlevel 1 (
+    echo  Chiudere prima la finestra dell'agente: con il programma originale
+    echo  la scheda e lo scanner li usa lui.
+    exit /b 1
+)
+:osservatore_attesa
+tasklist /FI "IMAGENAME eq PhxScanner.exe" /NH 2>nul | find /i "PhxScanner.exe" >nul
+if errorlevel 1 (
+    echo  PhxScanner.exe non e' in esecuzione: avviare il programma originale
+    echo  ^(voce 10^) e aspettare che sia pronto, SENZA aprire ancora un ordine.
+    set "OK="
+    set /p "OK=  Invio quando e' aperto, 0 per tornare al menu: "
+    if "!OK!"=="0" exit /b 1
+    goto :osservatore_attesa
+)
+echo  Avvio dell'osservatore nella sua finestra...
+start "Osservatore programma originale" cmd /k call "%PY%" ponte\osservatore.py --condivisa "%PONTE%"
+call :firewall silenzioso
+echo  Avvio dell'interfaccia web ^(collegamento: programma originale^)...
+echo  Nell'interfaccia: Connetti, scegliere ordine e rullo, Scansiona rullo;
+echo  poi scansionare dal programma originale. STOP per chiudere il rullo.
+"%PY%" run.py --rete --porta %PORTA% --driver originale --ponte "%PONTE%" --apri
 exit /b 0
 
 
