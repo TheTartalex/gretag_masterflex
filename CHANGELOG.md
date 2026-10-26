@@ -5,6 +5,13 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## Repository
 
+### 2026-10-26 — firmware del carrello
+
+- `carrello-capri.md` riscritto dal firmware disassemblato e dai backup del
+  flash decodificati: zero dei motori con i limiti, fotocellule, formato del
+  flash, flag, protocollo. L'ipotesi "1.13 incompatibile con il flash della
+  1.15" è caduta (decisione 0006 aggiornata).
+
 ### 2026-10-26 — pacchetto di aggiornamento
 
 - `strumenti/aggiornamento/`: `prepara.sh` crea lo zip per la macchina dal
@@ -31,6 +38,13 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 - `CLAUDE.md` alla radice al posto del file di contesto da allegare a mano.
 
 ## filmscan
+
+### 2026-10-26 — strumenti del carrello
+
+- `manutenzione.py firmware` (voce 13) decodifica l'ultimo backup del
+  Parameter Flash: flag, matricola, posizioni di guide, lente e CCD.
+- `manutenzione.py porta-carrello`, lanciato dalla voce 4 → 5: porta sulla
+  COM5 gli ini degli strumenti Gretag (`selftest.ini` era sulla COM1).
 
 ### 2026-10-26 — prima versione nel repository
 

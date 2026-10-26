@@ -80,6 +80,10 @@ Le parti del progetto:
   filmscan", ma le guide le muove il carrello Capri quando si inizializza.
   Prima di cercare la causa nel nostro codice, chiedersi quale pezzo
   della macchina fa davvero quel movimento.
+- **Ottobre.** Il firmware 1.13 era stato messo come prima causa delle guide
+  guardando solo i nomi dei backup. Decodificati i backup e disassemblato il
+  firmware, l'ipotesi è caduta. Il firmware del carrello (H8/300H) si legge
+  con `binutils-h8300-hms`: si guarda lì prima di formulare ipotesi.
 
 ## La scheda IAQ in breve
 

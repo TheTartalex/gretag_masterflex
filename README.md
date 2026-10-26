@@ -28,7 +28,7 @@ Problemi aperti e prossimi passi: **[documentazione/stato.md](documentazione/sta
 > ⚠️ **Non usare filmscan in modalità "macchina vera"**: all'avvio i motori
 > delle guide del carrello vanno a fine corsa e continuano a spingere. Si
 > possono usare la simulazione e la modalità "motori bloccati". Ipotesi e
-> prove in [carrello-capri.md](documentazione/hardware/carrello-capri.md#5-procedura-consigliata-per-il-problema-delle-guide).
+> prove in [carrello-capri.md](documentazione/hardware/carrello-capri.md#6-procedura-consigliata-per-il-problema-delle-guide).
 
 ## Struttura del repository
 

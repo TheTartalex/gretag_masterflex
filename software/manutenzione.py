@@ -13,7 +13,8 @@ altre librerie non sono ancora installate, o sono quelle sbagliate.
     python manutenzione.py diagnosi              raccoglie lo stato in un file
     python manutenzione.py offline               prepara pacchetti\\ per l'installazione senza rete
     python manutenzione.py firmware [--usa-1.15 cartella]
-                                                 versione del firmware del carrello (serve la 1.15)
+                                                 firmware, flag e posizioni del carrello
+    python manutenzione.py porta-carrello        mette gli strumenti Gretag sulla COM5
     python manutenzione.py pulisci-vecchio       toglie i resti della versione con windows\\*.bat
 
 Codice d'uscita 0 = tutto bene.
@@ -589,6 +590,9 @@ def cmd_diagnosi(argv):
 # giorno il software originale l'ha riportato da solo alla 1.13, perche'
 # AutomaticUpdate\Capri1FirmwareVersion.ini chiede UpdateToVersion=00000071:
 # backup del Parameter Flash delle 14:06 con M1v15, delle 14:08 con M1v13.
+# Era gia' successo l'8/4/2003. Il flash ha lo stesso formato (versione 7)
+# con le due versioni, e la 1.13 ha lavorato dal 2002 al 2004: la 1.15 resta
+# quella da tenere, ma difficilmente e' la causa del problema delle guide.
 VERSIONE_RICHIESTA = "1.15"
 
 # Come si riconoscono i file .a37 (S-record Motorola): la versione e' un
@@ -679,6 +683,65 @@ def ultimo_backup_parametri(capri):
     return migliore
 
 
+# Il Parameter Flash del carrello, come lo salva il software originale (297
+# byte, versione 7 sia con la 1.13 sia con la 1.15). Struttura ricavata dalla
+# funzione "Print parameter flash" del firmware master 1.13 (0x7d62) e
+# confermata sui 125 backup del pacchetto: nel file i campi in coda stanno
+# 0x0b byte piu' avanti che nella struttura in RAM.
+PF_POSIZIONI = 0x4b         # 20 record da 8 byte: int32 posizione, uint16 velocita', ...
+PF_MOTORI = ("tamburo", "guida sinistra", "guida destra", "lente", "CCD")
+PF_FORMATI = ("110", "135", "APS", "servizio")
+# Byte dei flag (RAM 0x100 -> file 0x10b): bit -> (numero Compad, nome)
+PF_FLAG = {4: (3, "APS Handling"), 5: (2, "Check Revolver"), 6: (1, "Read MOF"),
+           7: (0, "Eject short"), 3: (4, "Crash Detect"), 2: (5, "Eject to Back"),
+           1: (6, "No Reset (all'accensione niente motori)"), 0: (7, "Special")}
+# Secondo byte (RAM 0x110 -> file 0x11b)
+PF_FLAG2 = {7: (8, "Packet Mode"), 6: (9, "Black Mask Detect")}
+# Come li vuole Gretag (Features_and_Installation.txt e l'ini automatico)
+PF_FLAG_CONSIGLIATI = {0: 1, 1: 1, 4: 1, 6: 1, 7: 0, 8: 0, 9: 1}
+
+
+def leggi_parametri(percorso):
+    """Decodifica un ParameterBackup*.bin. None se il formato non e' quello noto."""
+    with open(percorso, "rb") as f:
+        d = f.read()
+    if len(d) != 297 or d[8:9] != b"\x07":
+        return None
+    posizioni = {}
+    for i, motore in enumerate(PF_MOTORI):
+        for j, formato in enumerate(PF_FORMATI):
+            a = PF_POSIZIONI + 8 * (4 * i + j)
+            posizioni[(motore, formato)] = struct.unpack(">i", d[a:a + 4])[0]
+    flag = {}
+    for bit, (n, nome) in PF_FLAG.items():
+        flag[n] = (nome, (d[0x10b] >> bit) & 1)
+    for bit, (n, nome) in PF_FLAG2.items():
+        flag[n] = (nome, (d[0x11b] >> bit) & 1)
+    return {
+        "posizioni": posizioni,
+        "flag": flag,
+        "formato_avvio": d[0x10d],
+        "rivelatore_fotogramma": struct.unpack(">I", d[0x10f:0x113])[0],
+        "limite_ad_pellicola": struct.unpack(">H", d[0x113:0x115])[0],
+        "matricola": struct.unpack(">I", d[0x115:0x119])[0],
+    }
+
+
+def _stampa_parametri(par):
+    print("  Matricola del carrello: %d" % par["matricola"])
+    for n in sorted(par["flag"]):
+        nome, valore = par["flag"][n]
+        voluto = PF_FLAG_CONSIGLIATI.get(n)
+        nota = ""
+        if voluto is not None and valore != voluto:
+            nota = "   <-- Gretag consiglia %d" % voluto
+        print("    flag %d %-42s %d%s" % (n, nome, valore, nota))
+    print("  Posizioni salvate (passi dallo zero)   110   135   APS  servizio")
+    for motore in PF_MOTORI:
+        print("    %-34s" % motore + "".join(
+            "%6d" % par["posizioni"][(motore, f)] for f in PF_FORMATI))
+
+
 def _leggi_ini(percorso):
     sezioni, attuale = {}, None
     with io.open(percorso, encoding="latin-1") as f:
@@ -731,6 +794,9 @@ def cmd_firmware(argv):
         if master != VERSIONE_RICHIESTA or slave != VERSIONE_RICHIESTA:
             print("  ATTENZIONE: il carrello non e' alla %s." % VERSIONE_RICHIESTA)
             problemi += 1
+        par = leggi_parametri(os.path.join(capri, "AutomaticUpdate", nome))
+        if par:
+            _stampa_parametri(par)
     else:
         print("  Nessun backup del Parameter Flash: versione attuale non nota.")
 
@@ -819,6 +885,45 @@ def _installa_115(capri, ini_path, fonte):
     return 0
 
 
+def cmd_porta_carrello(argv):
+    """Mette sulla COM5 gli strumenti Gretag che non ci sono gia'.
+
+    Nel pacchetto CapriFirmware Compad e' impostato su ComPort=4 (COM5, gli
+    indici partono da 0), ma SelfTestInterface\\selftest.ini ha ComPort=0,
+    cioe' COM1: il selftest cosi' non trova il carrello. Gli ini cambiati
+    restano anche come .prima-di-noi.
+    """
+    indicata = argv[argv.index("--cartella") + 1] if "--cartella" in argv else None
+    capri = trova_capri(indicata)
+    if not capri:
+        print("  Cartella CapriFirmware non trovata sotto C:\\MasterflexD.")
+        return 1
+    cambiati = 0
+    for sotto in ("SelfTestInterface", "Compad2_5"):
+        cartella = os.path.join(capri, sotto)
+        if not os.path.isdir(cartella):
+            continue
+        for nome in sorted(os.listdir(cartella)):
+            if not nome.lower().endswith(".ini"):
+                continue
+            p = os.path.join(cartella, nome)
+            with io.open(p, encoding="latin-1", newline="") as f:
+                testo = f.read()
+            nuovo = re.sub(r"(?m)^(ComPort=)(\d+)", r"\g<1>4", testo)
+            if nuovo == testo:
+                continue
+            copia = p + ".prima-di-noi"
+            if not os.path.exists(copia):
+                shutil.copy2(p, copia)
+            with io.open(p, "w", encoding="latin-1", newline="") as f:
+                f.write(nuovo)
+            print("  %s\\%s: porta portata a COM5" % (sotto, nome))
+            cambiati += 1
+    if not cambiati:
+        print("  Strumenti del carrello gia' sulla COM5.")
+    return 0
+
+
 # --------------------------------------------------------------------------
 # Pacchetto per l'installazione senza rete
 # --------------------------------------------------------------------------
@@ -878,6 +983,7 @@ COMANDI = {
     "offline": cmd_offline,
     "pulisci-vecchio": cmd_pulisci_vecchio,
     "firmware": cmd_firmware,
+    "porta-carrello": cmd_porta_carrello,
 }
 
 

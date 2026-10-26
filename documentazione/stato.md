@@ -50,27 +50,40 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
   verso e scala misurati sull'immagine.
 - **Pacchetto CapriFirmware analizzato**: protocollo COM5, errori, selftest,
   firmware, backup del flash. Vedi [carrello-capri.md](hardware/carrello-capri.md).
+- **Firmware del carrello disassemblato e backup del flash decodificati**
+  (sera):
+  - trovati l'algoritmo dello zero, i limiti di passi e le fotocellule;
+  - trovato il formato del flash e il vero significato dei flag;
+  - `SelfTestInterface` nel pacchetto è sulla COM1: il menu ora lo porta
+    sulla COM5 da solo;
+  - la voce 13 mostra flag, matricola e posizioni salvate.
 
 ## Problemi aperti, in ordine di priorità
 
-1. **Motori delle guide all'avvio.** Le guide sono i motori di larghezza
-   del carrello Capri, che all'accensione o al reset cercano lo zero
-   ("nulling"). Il sintomo, fine corsa e continua a spingere, è quello di un
-   nulling che non vede il riferimento. Il codice di filmscan non comanda
-   le guide: le inizializza il carrello, all'apertura dell'SDK o al reset.
-   Le correzioni ai movimenti di filmscan servono comunque, ma da sole non
-   bastano. Ipotesi in ordine:
-   1. il **firmware 1.13** imposto il 2/8/2025 al posto della 1.15, con il
-      flash scritto dalla 1.15;
-   2. il flag **Crash Detect** spento;
-   3. la fotocellula di riferimento di una guida guasta o sporca.
+1. **Motori delle guide all'avvio.** Le guide sono i motori 3 e 4 del
+   carrello Capri. Lo zero lo fa il firmware: ogni guida va verso la sua
+   fotocellula di riferimento per al massimo 750 passi, poi si ferma con
+   l'errore 37507 o 37508 e resta in spinta. Il sintomo, fine corsa e
+   continua a spingere, è quello di una fotocellula che non si copre mai
+   ([carrello-capri.md §1](hardware/carrello-capri.md#1-i-motori-e-come-trovano-lo-zero)).
+   Con il flag "No Reset" acceso, all'accensione i motori non si muovono:
+   lo zero lo chiede il PC. Il codice di filmscan non comanda le guide.
+   Ipotesi, in ordine:
+   1. la **fotocellula** di una guida, sporca, spostata o guasta; per tutte
+      e due le guide insieme, alimentazione, connettore o cavo comuni;
+   2. il PC che ripete l'inizializzazione, se la spinta riparte più volte;
+   3. il **firmware 1.13** al posto della 1.15: improbabile, perché il
+      flash ha lo stesso formato e la 1.13 ha già lavorato dal 2002 al 2004.
 
-   Le prove sono in [carrello-capri.md §5](hardware/carrello-capri.md#5-procedura-consigliata-per-il-problema-delle-guide):
-   versione, selftest di servizio (HOME e PRECISION delle guide),
-   SensorTest, flag. Finché non è chiuso, usare **"motori bloccati"** o la
-   simulazione. Attenzione: anche con i motori bloccati l'apertura dell'SDK
-   può far partire il nulling. `APERTURA=leggera` in `MASTERFLEX.bat` serve a
-   capire se è così.
+   Esclusa l'ipotesi del flag Crash Detect spento: nel backup del 2/8/2025 è
+   acceso, come tutti i flag consigliati da Gretag.
+
+   Le prove sono in [carrello-capri.md §6](hardware/carrello-capri.md#6-procedura-consigliata-per-il-problema-delle-guide):
+   accensione senza programmi, selftest di servizio (HOME e PRECISION delle
+   guide), SensorTest, flag. Finché non è chiuso, usare **"motori bloccati"**
+   o la simulazione. Attenzione: anche con i motori bloccati l'apertura
+   dell'SDK può far partire lo zero. `APERTURA=leggera` in `MASTERFLEX.bat`
+   serve a capire se è così.
 2. **Le immagini non arrivano correttamente.** Due cause in filmscan sono
    corrette (calibrazione e dark/flat, vedi sopra). Il sintomo va
    ricontrollato con la versione nuova: `MASTERFLEX.bat` → 4 → 1 (colori e

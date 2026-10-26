@@ -237,4 +237,4 @@ In compenso e' emersa una correzione scomoda e utile: la macchina legge
 - **3.12 e 3.13** hanno uno strumento: `collaudo_scanner.py sensori` e
   `passi` (`MASTERFLEX.bat` voce 4).
 - **Fase 4.** Il protocollo COM5 non va piu' osservato da zero: i comandi
-  di Compad lo descrivono in buona parte ([carrello-capri.md §6](hardware/carrello-capri.md#6-il-protocollo-per-un-uso-futuro)).
+  di Compad lo descrivono in buona parte ([carrello-capri.md §7](hardware/carrello-capri.md#7-il-protocollo)).

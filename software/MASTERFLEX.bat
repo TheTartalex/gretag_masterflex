@@ -217,16 +217,18 @@ if not errorlevel 1 (
     echo  Chiudere prima la finestra dell'agente: la COM5 puo' averla un solo programma.
     exit /b 1
 )
+REM  Nel pacchetto SelfTestInterface e' impostato sulla COM1: lo porta sulla COM5.
+"%PY%" manutenzione.py porta-carrello
 echo.
 echo  Chiudere anche il programma originale. Percorso pellicola VUOTO.
 echo.
-echo    1  SelfTestInterface: "Automatic test (Service)". Prova HOME e
-echo       PRECISION delle guide destra e sinistra, CCD, lente, tamburo,
-echo       sensori. Nel vecchio log i test risultano tutti OPEN: mai fatti.
+echo    1  SelfTestInterface: tasto SelfTest, poi Yes = conferma, No = voce
+echo       successiva. "Automatic test (Service)" prova HOME e PRECISION di
+echo       guide, CCD, lente e tamburo, e i sensori. Poi voce 6 "Report".
 echo    2  SensorTest: le fotocellule del carrello ^(rosso = coperta^)
 echo    3  Compad: comandi singoli. CP_Calibrate_Size.ini = guide sinistra e
-echo       destra ^(posizione, 5 o 50 passi^); CP_Change_Flags2.ini = Get Flags,
-echo       Crash Det; CP_FirmwareDownload.ini = Get Version
+echo       destra ^(posizione, 5 o 50 passi^); CP_Change_Flags2.ini = Get Flags;
+echo       CP_FirmwareDownload.ini = Get Version
 echo    0  Indietro
 set "T="
 set /p "T=  Scelta: "
@@ -239,7 +241,8 @@ exit /b 0
 REM ===========================================================================
 :firmware
 REM  Il carrello deve avere la 1.15. Il 2 agosto 2025 il software originale
-REM  l'ha riportato da solo alla 1.13 (Capri1FirmwareVersion.ini).
+REM  l'ha riportato da solo alla 1.13 (Capri1FirmwareVersion.ini). Mostra
+REM  anche flag e posizioni dall'ultimo backup del Parameter Flash.
 REM ===========================================================================
 "%PY%" manutenzione.py firmware
 if not errorlevel 1 exit /b 0
