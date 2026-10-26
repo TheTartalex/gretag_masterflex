@@ -39,6 +39,15 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-10-26 — installer unico
+
+- `INSTALLA.bat` al posto di `AGGIORNA.bat`: installa su una macchina
+  pulita o aggiorna quella che c'è, da solo. Si chiede i diritti di
+  amministratore, poi fa *Installa / ripara* e propone l'avvio automatico.
+- `prepara.sh` fa un solo zip, `masterflex-installer-*`, con Python 3.8.10
+  e le wheel win32 dentro (`--leggero` per farne a meno); i pacchetti si
+  tengono in `dist/cache-pacchetti`.
+
 ### 2026-10-26 — Disconnetti
 
 - Interfaccia: Connetti tolto dalla barra principale (resta nella scheda

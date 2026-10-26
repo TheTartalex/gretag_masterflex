@@ -1,43 +1,48 @@
 ===========================================================================
- Masterflex D1008 - aggiornamento del programma sulla macchina
+ Masterflex D1008 - installazione e aggiornamento
 ===========================================================================
 
+UN SOLO FILE: INSTALLA.bat
+  Va bene sia su una macchina pulita sia per aggiornare. Guarda da solo
+  se il programma c'e' gia' (di solito in Desktop\software):
+
+  - se non c'e': copia il programma e installa Python 3.8.10 e le
+    librerie dalla cartella pacchetti di questo zip. Internet non serve;
+  - se c'e': aggiorna il codice. Ordini, scansioni, calibrazioni,
+    impostazioni e modo di lavoro restano dove sono, e il codice di prima
+    finisce in software\backup\codice-<data>.
+
+
 COSA C'E' NELLO ZIP
-  AGGIORNA.bat     lancia l'aggiornamento
+  INSTALLA.bat     installa o aggiorna
   VERSIONE.txt     data e versione di questo pacchetto
-  software\        il programma nuovo (senza dati)
-
-  Facoltativo, in uno zip a parte: pacchetti\ con Python 3.8.10 e le
-  librerie, per la macchina senza internet. Va estratto nella STESSA
-  cartella di questo zip: AGGIORNA.bat lo trova e lo copia.
+  software\        il programma (senza dati)
+  pacchetti\       Python 3.8.10 a 32 bit e le librerie, per Windows 7
 
 
-COME SI AGGIORNA
-  1. Chiudere l'interfaccia web e la finestra "Agente scanner".
+COME SI FA
+  1. Chiudere l'interfaccia web e le finestre "Agente scanner" e
+     "Osservatore", se sono aperte.
   2. Estrarre lo zip (tasto destro, "Estrai tutto"). Non lanciare da
      dentro lo zip.
-  3. Tasto destro su AGGIORNA.bat -> "Esegui come amministratore".
-  4. Confermare la cartella del programma (di solito Desktop\software).
-  5. Alla fine parte da solo "Installa / ripara": librerie, firewall,
-     controlli di driver, SDK e firmware del carrello.
+  3. Doppio clic su INSTALLA.bat. Chiede da solo i diritti di
+     amministratore: confermare la richiesta di Windows.
+  4. Confermare la cartella del programma con Invio (o scriverne un'altra).
+  5. Alla fine fa "Installa / ripara" (librerie, cartelle, firewall,
+     controlli di driver, SDK e firmware del carrello) e chiede se
+     attivare l'avvio automatico all'accensione.
 
-  Ordini, scansioni, calibrazioni e impostazioni restano dove sono. Il
-  codice di prima finisce in software\backup\codice-<data>.
-
-  Dalla versione di settembre: i vecchi windows\*.bat vengono tolti, e
-  anche il vecchio avvio automatico. Da qui in poi si usa solo
-  MASTERFLEX.bat (doppio clic, menu). Per riattivare l'avvio
-  automatico: voce 9.
+  Da qui in poi si usa solo software\MASTERFLEX.bat (doppio clic, menu).
+  Invio nel menu riparte con l'ultimo modo di lavoro usato.
 
 
-DOPO L'AGGIORNAMENTO, LA PRIMA VOLTA
-  - Voce 13: firmware del carrello. Deve essere la 1.15; dal 2/8/2025 e'
-    la 1.13.
-  - Copiare il pacchetto CapriFirmware in C:\MasterflexD\CapriFirmware,
-    poi voce 4 -> 5 -> 1: selftest di servizio del carrello, percorso
-    pellicola VUOTO.
-  - Voce 2 (motori bloccati), poi voce 4 -> 1: collaudo colori e
-    intensita' con la finestra vuota.
+LA PRIMA VOLTA SU UNA MACCHINA PULITA
+  - Il software originale deve stare in C:\MasterflexD (serve almeno
+    Scanner: SDK, IniFiles, Firmware), con il driver della scheda
+    installato. Non lo installa questo pacchetto.
+  - Voce 13: firmware del carrello (richiesta la 1.15).
+  - Voce 2 (motori bloccati), poi Calibra nell'interfaccia: senza la
+    calibrazione del giorno anteprima e scansione non partono.
   - Voce 6: diagnosi. Mandare il file che produce.
 
   Non usare la voce 1 (motori attivi) finche' il problema delle guide non

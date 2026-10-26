@@ -56,10 +56,25 @@ come amministratore*, per il firewall):
 
 ## Installazione
 
-Voce **7**. Installa Python se manca, le librerie alle versioni giuste
-(numpy 1.22.4: la 1.24.4 fa cadere Python su questa CPU), crea le cartelle,
-apre la porta 8080 sul firewall, controlla driver, scheda, SDK e firmware del
-carrello, e dice cosa manca.
+Un solo zip, `masterflex-installer-<data>-<commit>.zip`, e dentro un solo
+file da lanciare: **`INSTALLA.bat`**. Va bene sia su una macchina pulita sia
+per aggiornare:
+
+- se il programma non c'è (di solito si cerca in `Desktop\software`), lo
+  copia e installa Python 3.8.10 e le librerie dalla cartella `pacchetti`
+  dello zip, senza internet;
+- se c'è, aggiorna il codice e lascia ordini, scansioni, calibrazioni,
+  impostazioni e modo di lavoro; il codice di prima va in
+  `backup\codice-<data>`.
+
+Si chiede da solo i diritti di amministratore (una richiesta di Windows),
+poi fa la voce **7**, *Installa / ripara*, e chiede se attivare l'avvio
+automatico. Le istruzioni sono anche nel `LEGGIMI.txt` dello zip.
+
+La voce **7** si può rifare quando si vuole: installa Python se manca, le
+librerie alle versioni giuste (numpy 1.22.4: la 1.24.4 fa cadere Python su
+questa CPU), crea le cartelle, apre la porta 8080 sul firewall, controlla
+driver, scheda, SDK e firmware del carrello, e dice cosa manca.
 
 ## Tutti i giorni
 

@@ -6,14 +6,17 @@ sulla macchina.
 
 | Strumento | Cosa fa |
 |---|---|
-| [`aggiornamento/`](aggiornamento/) | prepara lo zip per aggiornare il programma sulla macchina (`prepara.sh`), con l'`AGGIORNA.bat` che si lancia sul posto |
+| [`aggiornamento/`](aggiornamento/) | prepara l'installer per la macchina (`prepara.sh`), con l'`INSTALLA.bat` che si lancia sul posto: installa su una macchina pulita o aggiorna quella che c'è |
 
-Per preparare un aggiornamento, dal repository e con tutto committato:
+Per preparare l'installer, dal repository e con tutto committato:
 
 ```sh
-sh strumenti/aggiornamento/prepara.sh dist            # solo il programma
-sh strumenti/aggiornamento/prepara.sh dist --offline  # piu' Python e librerie
+sh strumenti/aggiornamento/prepara.sh dist             # con Python e librerie (~75 MB)
+sh strumenti/aggiornamento/prepara.sh dist --leggero   # solo il programma
 ```
+
+Python e librerie si tengono in `dist/cache-pacchetti` e si scaricano solo
+la prima volta.
 
 I due strumenti previsti a settembre sono entrati in
 `software/MASTERFLEX.bat` il 26/10/2026
