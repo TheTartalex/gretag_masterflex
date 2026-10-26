@@ -5,6 +5,12 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## Repository
 
+### 2026-10-26 — pacchetto di aggiornamento
+
+- `strumenti/aggiornamento/`: `prepara.sh` crea lo zip per la macchina dal
+  commit corrente (con `--offline` anche Python e librerie); `AGGIORNA.bat`
+  lo applica sulla cartella installata, con backup e senza toccare i dati.
+
 ### 2026-10-26 — filmscan e carrello
 
 - `software/`: il codice di filmscan, ripulito e corretto (vedi sotto).

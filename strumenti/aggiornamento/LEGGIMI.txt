@@ -1,0 +1,44 @@
+===========================================================================
+ Masterflex D1008 - aggiornamento del programma sulla macchina
+===========================================================================
+
+COSA C'E' NELLO ZIP
+  AGGIORNA.bat     lancia l'aggiornamento
+  VERSIONE.txt     data e versione di questo pacchetto
+  software\        il programma nuovo (senza dati)
+
+  Facoltativo, in uno zip a parte: pacchetti\ con Python 3.8.10 e le
+  librerie, per la macchina senza internet. Va estratto nella STESSA
+  cartella di questo zip: AGGIORNA.bat lo trova e lo copia.
+
+
+COME SI AGGIORNA
+  1. Chiudere l'interfaccia web e la finestra "Agente scanner".
+  2. Estrarre lo zip (tasto destro, "Estrai tutto"). Non lanciare da
+     dentro lo zip.
+  3. Tasto destro su AGGIORNA.bat -> "Esegui come amministratore".
+  4. Confermare la cartella del programma (di solito Desktop\software).
+  5. Alla fine parte da solo "Installa / ripara": librerie, firewall,
+     controlli di driver, SDK e firmware del carrello.
+
+  Ordini, scansioni, calibrazioni e impostazioni restano dove sono. Il
+  codice di prima finisce in software\backup\codice-<data>.
+
+  Dalla versione di settembre: i vecchi windows\*.bat vengono tolti, e
+  anche il vecchio avvio automatico. Da qui in poi si usa solo
+  MASTERFLEX.bat (doppio clic, menu). Per riattivare l'avvio
+  automatico: voce 9.
+
+
+DOPO L'AGGIORNAMENTO, LA PRIMA VOLTA
+  - Voce 13: firmware del carrello. Deve essere la 1.15; dal 2/8/2025 e'
+    la 1.13.
+  - Copiare il pacchetto CapriFirmware in C:\MasterflexD\CapriFirmware,
+    poi voce 4 -> 5 -> 1: selftest di servizio del carrello, percorso
+    pellicola VUOTO.
+  - Voce 2 (motori bloccati), poi voce 4 -> 1: collaudo colori e
+    intensita' con la finestra vuota.
+  - Voce 6: diagnosi. Mandare il file che produce.
+
+  Non usare la voce 1 (motori attivi) finche' il problema delle guide non
+  e' chiuso.

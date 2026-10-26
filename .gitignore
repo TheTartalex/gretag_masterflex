@@ -66,3 +66,6 @@ Thumbs.db
 desktop.ini
 .DS_Store
 *.zip
+
+# Pacchetti di aggiornamento prodotti da strumenti/aggiornamento/prepara.sh
+dist/

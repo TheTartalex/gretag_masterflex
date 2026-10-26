@@ -4,7 +4,18 @@ Script di servizio che non appartengono né al driver né a filmscan. Una
 sottocartella per strumento, ognuna con il suo `LEGGIMI.txt` per chi lo lancia
 sulla macchina.
 
-Al momento è vuota. I due strumenti previsti sono entrati in
+| Strumento | Cosa fa |
+|---|---|
+| [`aggiornamento/`](aggiornamento/) | prepara lo zip per aggiornare il programma sulla macchina (`prepara.sh`), con l'`AGGIORNA.bat` che si lancia sul posto |
+
+Per preparare un aggiornamento, dal repository e con tutto committato:
+
+```sh
+sh strumenti/aggiornamento/prepara.sh dist            # solo il programma
+sh strumenti/aggiornamento/prepara.sh dist --offline  # piu' Python e librerie
+```
+
+I due strumenti previsti a settembre sono entrati in
 `software/MASTERFLEX.bat` il 26/10/2026
 ([decisione 0005](../documentazione/decisioni/0005-masterflex-bat-unico.md)):
 

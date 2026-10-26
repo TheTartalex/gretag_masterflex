@@ -348,7 +348,8 @@ def cmd_aggiorna(argv):
     sostituisce il menu appena questo programma finisce.
     """
     titolo("Aggiornamento del programma")
-    sorgente = argv[0] if argv else ""
+    # una barra finale prima delle virgolette arriva come virgoletta: via
+    sorgente = (argv[0] if argv else "").strip().strip('"').rstrip("\\/")
     lavoro = os.path.join(QUI, "backup", "_aggiornamento")
     if os.path.isdir(lavoro):
         shutil.rmtree(lavoro)
