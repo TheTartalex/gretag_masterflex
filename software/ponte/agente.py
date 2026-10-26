@@ -102,6 +102,7 @@ class Registro(object):
 
     def __init__(self, condivisa):
         self.cartella = os.path.join(condivisa, "log")
+        self.avvisato = False
         try:
             os.makedirs(self.cartella)
         except OSError:
@@ -114,8 +115,15 @@ class Registro(object):
             nome = "agente-%s.log" % time.strftime("%Y%m%d")
             with open(os.path.join(self.cartella, nome), "a") as f:
                 f.write(riga + "\n")
-        except (IOError, OSError):
-            pass
+        except (IOError, OSError) as exc:
+            # Una volta sola, ma a schermo: se qui non si scrive, di solito
+            # non si scrivono nemmeno le risposte del ponte, e l'interfaccia
+            # vede solo comandi senza risposta.
+            if not self.avvisato:
+                self.avvisato = True
+                print("  ATTENZIONE: non riesco a scrivere il registro in %s (%s)."
+                      % (self.cartella, exc))
+                print("  Controllare i permessi della cartella del ponte.")
 
 
 class AgenteSimulato(object):

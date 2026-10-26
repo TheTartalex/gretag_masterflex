@@ -22,6 +22,18 @@ if [ -n "$(git status --porcelain -- software strumenti/aggiornamento)" ]; then
     echo "Ci sono modifiche non committate in software/ o strumenti/: prima il commit." >&2
     exit 1
 fi
+# Ogni file di software/ deve essere nella lista CODICE di manutenzione.py,
+# altrimenti AGGIORNA.bat lo salta in silenzio (era successo con
+# collaudo_scanner.py).
+MANCANTI=$(git ls-tree --name-only HEAD software/ | sed 's|^software/||' | python3 -c '
+import sys, re
+t = open("software/manutenzione.py", encoding="utf-8").read()
+codice = eval(re.search(r"^CODICE = (\[.*?\])", t, re.S | re.M).group(1))
+print(" ".join(n.strip() for n in sys.stdin if n.strip() not in codice))')
+if [ -n "$MANCANTI" ]; then
+    echo "Non sono in CODICE (manutenzione.py) e l'aggiornamento li salterebbe: $MANCANTI" >&2
+    exit 1
+fi
 mkdir -p "$OUT"
 OUT=$(cd "$OUT" && pwd)
 DATA=$(date +%Y-%m-%d)
@@ -32,6 +44,8 @@ trap 'rm -rf "$TMP"' EXIT
 
 git archive --format=tar --prefix="$NOME/" HEAD software strumenti/aggiornamento \
     | tar -x -C "$TMP"
+# ektest per la diagnosi (voce 6): lo strumento del driver collaudato
+git show HEAD:driver/EKframePnP/pacchetto/ektest.exe > "$TMP/$NOME/software/ektest.exe"
 mv "$TMP/$NOME/strumenti/aggiornamento/AGGIORNA.bat" "$TMP/$NOME/"
 mv "$TMP/$NOME/strumenti/aggiornamento/LEGGIMI.txt" "$TMP/$NOME/"
 rm -rf "$TMP/$NOME/strumenti"

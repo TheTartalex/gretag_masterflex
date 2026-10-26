@@ -58,6 +58,18 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
     sulla COM5 da solo;
   - la voce 13 mostra flag, matricola e posizioni salvate.
 
+- **Prima diagnosi dalla riserva** (16:52), con questi risultati:
+  - i due collaudi si sono fermati alla connessione, perché l'agente era
+    chiuso dalle 16:49;
+  - il rapporto non lo diceva, e l'agente non aveva lasciato registri in
+    `ponte\log`;
+  - `AGGIORNA.bat` non aggiornava `collaudo_scanner.py` (mancava nella lista
+    `CODICE`).
+
+  Corretto: l'errore va nel rapporto; la diagnosi mostra lo stato della
+  cartella del ponte e gli ultimi collaudi; lo zip porta `ektest.exe`;
+  `prepara.sh` controlla la lista.
+
 ## Problemi aperti, in ordine di priorità
 
 1. **Motori delle guide all'avvio.** Le guide sono i motori 3 e 4 del
@@ -119,6 +131,16 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
 4. Voce 2 (motori bloccati) e collaudo colori: le immagini sono giuste?
 
 ## Avvertenze operative
+
+- Nel log dell'SDK della riserva compaiono tre messaggi da tenere presenti:
+  - `CalibDataDir … last err= 2` e `CheckForFirmwareMismatch … 135anm.wrp`
+    c'erano anche nella sessione precedente, prima dei nostri cambi;
+  - `ioctl failed (2): 87` / `unable to unregister buffer #1, #2` compare
+    alla chiusura. Lo dà EKframePnP quando si sgancia un buffer che non
+    risulta agganciato (`EkDmaRelease`, ricostruito da `0x121BE`).
+
+  Va confrontato con il driver originale nel banco di prova. Se i buffer
+  vengono sganciati prima del tempo, le immagini ne risentono.
 
 - Non lanciare `ektest` mentre filmscan o l'agente sono aperti: alla
   chiusura dell'handle il driver spegne la parte logica della scheda, come

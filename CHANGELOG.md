@@ -39,6 +39,16 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-10-26 — dopo la prima diagnosi dalla riserva
+
+- `manutenzione.py`: `collaudo_scanner.py` e `ektest.exe` nella lista
+  `CODICE`, così l'aggiornamento li sostituisce; la diagnosi mostra lo stato
+  della cartella del ponte e gli ultimi rapporti di collaudo.
+- `collaudo_scanner.py`: l'errore che ferma il collaudo finisce nel rapporto.
+- `ponte/agente.py`: avvisa a schermo se non riesce a scrivere il registro.
+- `prepara.sh`: mette `ektest.exe` nello zip e si ferma se un file di
+  `software/` non è in `CODICE`.
+
 ### 2026-10-26 — strumenti del carrello
 
 - `manutenzione.py firmware` (voce 13) decodifica l'ultimo backup del

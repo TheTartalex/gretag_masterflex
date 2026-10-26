@@ -57,8 +57,14 @@ AGGIORNAMENTO_URL = ("https://github.com/TheTartalex/gretag_masterflex/"
 # Quello che un aggiornamento puo' sostituire. Tutto il resto della cartella
 # (ordini.db, scansioni, calibrazione, impostazioni.json, pacchetti) sono
 # dati e non si toccano.
+# collaudo_scanner.py mancava fino al 26/10/2026 sera: gli aggiornamenti lo
+# saltavano e sulla macchina restava la prima versione. prepara.sh ora si
+# rifiuta di fare lo zip se un file di software/ non e' in questa lista.
+# ektest.exe non sta in software/ nel repository: lo aggiunge prepara.sh
+# allo zip, dal pacchetto collaudato del driver.
 CODICE = ["filmscan", "ponte", "run.py", "selftest.py", "manutenzione.py",
-          "requirements.txt", "CLAUDE.md", "README.md", "MASTERFLEX.bat"]
+          "collaudo_scanner.py", "requirements.txt", "CLAUDE.md", "README.md",
+          "MASTERFLEX.bat", "ektest.exe"]
 
 AVVIO_NOME = "Masterflex D1008.bat"
 MODI_AVVIO = ("avvia", "avvia-senza-motori", "simulazione")
@@ -502,6 +508,30 @@ def _coda(percorso, righe=60):
         return "(non leggibile: %s)\n" % e
 
 
+def _stato_ponte(ponte):
+    """Esiste, ci si scrive, cosa c'e' dentro: senza questo un ponte non
+    scrivibile si vede solo come comandi senza risposta."""
+    if not os.path.isdir(ponte):
+        print("  Cartella del ponte %s: NON ESISTE" % ponte)
+        return
+    prova = os.path.join(ponte, "diagnosi-prova-scrittura.tmp")
+    try:
+        with open(prova, "w") as f:
+            f.write("prova")
+        os.remove(prova)
+        print("  Cartella del ponte %s: scrivibile" % ponte)
+    except (IOError, OSError) as exc:
+        print("  Cartella del ponte %s: NON SCRIVIBILE (%s)" % (ponte, exc))
+    voci = []
+    for nome in sorted(os.listdir(ponte)):
+        p = os.path.join(ponte, nome)
+        if os.path.isdir(p):
+            voci.append("%s\\ (%d file)" % (nome, len(os.listdir(p))))
+        else:
+            voci.append(nome)
+    print("  Contenuto: %s" % (", ".join(voci) or "vuota"))
+
+
 def _trova_ektest():
     for p in (os.path.join(QUI, "..", "driver", "EKframePnP", "pacchetto", "ektest.exe"),
               os.path.join(QUI, "ektest.exe"),
@@ -548,16 +578,30 @@ def cmd_diagnosi(argv):
 
         titolo("Agente e ponte")
         print("  Agente attivo: %s" % ("si" if agente_attivo() else "no"))
+        _stato_ponte(PONTE)
         log_dir = os.path.join(PONTE, "log")
-        if os.path.isdir(log_dir):
-            ultimi = sorted(os.listdir(log_dir))[-1:]
-            for f in ultimi:
-                print("  --- %s (ultime righe)" % f)
-                print(_coda(os.path.join(log_dir, f), 80))
+        ultimi = sorted(os.listdir(log_dir))[-1:] if os.path.isdir(log_dir) else []
+        if not ultimi:
+            print("  Nessun registro dell'agente in %s: l'agente non e' mai" % log_dir)
+            print("  partito su questa cartella, oppure non ci puo' scrivere.")
+        for f in ultimi:
+            print("  --- %s (ultime righe)" % f)
+            print(_coda(os.path.join(log_dir, f), 80))
         sdk_log = os.path.join(SCANNER, "SDKCacheDir", "log_0000.txt")
         if os.path.exists(sdk_log):
             print("  --- log dell'SDK (ultime righe)")
             print(_coda(sdk_log, 60))
+
+        titolo("Ultimi collaudi")
+        coll = os.path.join(QUI, "collaudi")
+        recenti = sorted(os.listdir(coll))[-3:] if os.path.isdir(coll) else []
+        if not recenti:
+            print("  Nessun collaudo in %s" % coll)
+        for c in recenti:
+            r = os.path.join(coll, c, "rapporto.txt")
+            if os.path.exists(r):
+                print("  --- %s" % c)
+                print(_coda(r, 40))
 
         titolo("ektest (driver EKframePnP)")
         ektest = _trova_ektest()

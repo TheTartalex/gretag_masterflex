@@ -37,6 +37,7 @@ import json
 import os
 import sys
 import time
+import traceback
 
 import numpy as np
 
@@ -56,6 +57,11 @@ PX_PER_MM_PIENA = 1569 / 25.4
 class Rapporto(object):
     """Scrive a schermo e in rapporto.txt; tiene i numeri per rapporto.json."""
 
+    # L'ultimo rapporto aperto: main() ci scrive l'errore che ferma il
+    # collaudo. Prima l'errore finiva solo a schermo e il rapporto restava
+    # con la sola intestazione, inutile da allegare.
+    aperto = None
+
     def __init__(self, tipo):
         data = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         self.cartella = os.path.join(QUI, "collaudi", "%s-%s" % (tipo, data))
@@ -64,6 +70,7 @@ class Rapporto(object):
                        encoding="utf-8")
         self.dati = {"tipo": tipo, "data": data}
         self.avvisi = []
+        Rapporto.aperto = self
 
     def __call__(self, testo=""):
         print(testo)
@@ -87,6 +94,7 @@ class Rapporto(object):
                   encoding="utf-8") as f:
             json.dump(self.dati, f, indent=2, ensure_ascii=False)
         self._f.close()
+        Rapporto.aperto = None
         print("")
         print("Rapporto e immagini in:")
         print("  %s" % self.cartella)
@@ -457,9 +465,21 @@ def main(argv=None):
     try:
         return {"colori": cmd_colori, "sensori": cmd_sensori,
                 "passi": cmd_passi}[a.prova](a)
-    except ScannerError as exc:
-        print("")
-        print("ERRORE: %s" % exc)
+    except Exception as exc:
+        if isinstance(exc, ScannerError):
+            testo = "ERRORE: %s" % exc
+        else:
+            testo = "ERRORE INATTESO:\n" + traceback.format_exc()
+        r = Rapporto.aperto
+        if r is not None:
+            r("")
+            r(testo)
+            r.avviso("collaudo interrotto")
+            r.dati["errore"] = str(exc)
+            r.chiudi()
+        else:
+            print("")
+            print(testo)
         return 1
 
 
