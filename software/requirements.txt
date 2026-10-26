@@ -1,0 +1,38 @@
+# Versioni bloccate per Python 3.8 a 32 bit su Windows 7.
+#
+# Non sono "le ultime che funzionano": sono le ultime che ESISTONO come wheel
+# gia' compilata per cp38-win32. Oltre queste, su PyPI c'e' solo il sorgente,
+# e pip prova a compilarlo: e' li' che nasce l'errore
+#
+#     mesonpy requires at least Python 3.10
+#
+# che sembra un problema di versione di Python e invece e' il sistema di
+# compilazione di scipy, che su una macchina senza compilatore non partira'
+# comunque. La cura non e' aggiornare Python - su Windows 7 non si puo' - ma
+# chiedere solo wheel gia' pronte:  pip install --only-binary=:all:
+# Cosi' pip dice subito "non esiste la wheel" invece di tentare di costruirla.
+#
+# Verificato su PyPI il 3 settembre 2026 - ultima wheel cp38-win32 disponibile:
+
+numpy==1.24.4        # 1.25 e successive non supportano piu' Python 3.8
+scipy==1.9.1         # 1.9.2 e successive non pubblicano piu' wheel a 32 bit
+Pillow==10.4.0       # ultima con wheel cp38-win32
+tifffile==2023.7.10  # pura Python, ultima che supporta il 3.8
+
+# scipy 1.9.1 pretende numpy<1.25: con 1.24.4 i conti tornano.
+#
+# scipy serve per scipy.ndimage (spostamenti sub-pixel, filtri). Tutti i moduli
+# lo importano dentro un try: se manca, il programma parte lo stesso con meno
+# funzioni invece di rifiutarsi di partire.
+
+# Registro degli ordini in formato Excel. Pura Python, nessuna compilazione.
+# Senza, il registro viene scritto in CSV: Excel lo apre lo stesso, con il
+# punto e virgola come separatore.
+openpyxl==3.1.5
+
+# Ripiego per la scrittura TIFF a 16 bit quando tifffile non c'e'. Pura Python.
+# imageio==2.35.1
+
+# Opzionale: legge le scritte sul bordo pellicola per determinare la
+# specchiatura. Senza, la specchiatura si imposta a mano.
+# pytesseract==0.3.10
