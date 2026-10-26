@@ -10,6 +10,10 @@ ekframe.sys
 scn_dll.dll
 *.wrp
 *.rbf
+*.a37
+*.lod
+CapriFirmware/
+ParameterBackup*.bin
 
 # ---------------------------------------------------------------------------
 #  Prodotti della compilazione del driver (il pacchetto collaudato sta in
@@ -41,6 +45,7 @@ software/calibrazione/
 software/out/
 software/backup/
 software/diagnosi/
+software/collaudi/
 software/impostazioni.json
 # Wheel e installer di Python per l'installazione senza rete: si rifanno con
 # MASTERFLEX.bat, voce "prepara pacchetto offline".

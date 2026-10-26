@@ -131,6 +131,31 @@ class ErroreScanner(RuntimeError):
         self.codici = list(codici)
 
 
+# Messaggi del carrello Capri (UserErrorDescriptionV1.0x.html del pacchetto
+# CapriFirmware). Non si sa ancora se l'SDK li riporta con questi numeri:
+# se uno dei valori di un errore coincide, il messaggio lo dice.
+MESSAGGI_CARRELLO = {
+    37502: "carrello non inizializzato (inizializzazione interrotta)",
+    37503: "risposta inattesa dello slave (sezione APS)",
+    37504: "lo slave del carrello non risponde",
+    37505: "CCD o lente non trovano lo zero",
+    37506: "il tamburo (revolver) non trova lo zero",
+    37507: "la guida SINISTRA della pellicola non trova lo zero",
+    37508: "la guida DESTRA della pellicola non trova lo zero",
+    37509: "il tamburo non cambia formato",
+    27502: "guide bloccate dal sollevatore APS: formato non cambiato",
+    37510: "pellicola rimasta sui sensori di rilevamento fotogramma",
+    37511: "pellicola rimasta sul sensore d'uscita",
+    37512: "sensori di rilevamento fotogramma fuori finestra",
+    37513: "sensore DX sinistro fuori finestra",
+    37514: "sensore DX destro fuori finestra",
+    37515: "Parameter Flash: errore di lettura o scrittura",
+    37516: "Parameter Flash: checksum sbagliato o dati non validi",
+    37525: "coperchio dello scanner aperto",
+    37526: "pellicola inceppata fra tamburo e uscita",
+    37531: "pellicola inceppata nel distaccatore",
+}
+
 # I due callback che il costruttore di DMLScannerAdv accetta. Prima si
 # passava NULL a entrambi: l'SDK non aveva modo di dirci niente mentre
 # lavorava, e quando i motori delle guide sono andati a fine corsa non e'
@@ -414,7 +439,11 @@ class Scanner(object):
             raise ErroreScanner("%s: l'SDK segnala un errore illeggibile" % cosa)
         if not voci:
             return
-        testo = ", ".join("codice %s (%s, %s)" % v for v in voci)
+        def descrivi(v):
+            noti = [MESSAGGI_CARRELLO[x] for x in v if x in MESSAGGI_CARRELLO]
+            base = "codice %s (%s, %s)" % v
+            return base + (" = " + "; ".join(noti) if noti else "")
+        testo = ", ".join(descrivi(v) for v in voci)
         raise ErroreScanner("%s: l'SDK segnala %d error%s: %s"
                             % (cosa, len(voci), "e" if len(voci) == 1 else "i",
                                testo), voci)

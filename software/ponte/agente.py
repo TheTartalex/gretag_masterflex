@@ -150,7 +150,9 @@ class AgenteSimulato(object):
                3: (264, 175), 4: (132, 88)}[risoluzione]
         w, h = larghezza or dim[0], altezza or dim[1]
         rnd = random.Random(canale * 7 + risoluzione)
-        base = [20000 + 8000 * (x / float(w)) + rnd.randint(-400, 400)
+        # il segnale segue l'esposizione fino alla saturazione, come un CCD
+        base = [min(65535.0, esposizione * (12000 + 5000 * (x / float(w))
+                                            + rnd.randint(-300, 300)))
                 for x in range(w)]
         # Bande orizzontali che cambiano a ogni lettura: senza un po' di
         # "immagine" il rilevamento di fine pellicola vedeva luce uniforme e
