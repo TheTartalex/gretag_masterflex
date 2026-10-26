@@ -39,6 +39,23 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-10-26 — interfaccia per il monitor 4:3
+
+- `filmscan/webui.py`, pagina di scansione rifatta per il monitor della
+  macchina (4:3, al massimo 1280x720):
+  - tutto in uno schermo senza scorrere;
+  - schede a sinistra (Lavoro, Colore, Ritocco, Macchina, Diario) come
+    sottomenu, una alla volta;
+  - l'immagine al centro, con sotto la striscia del rullo;
+  - una barra fissa con i comandi principali: Connetti, Calibra, Anteprima,
+    Scansiona rullo, Espelli.
+
+  Provata a 1280x620, 1280x720, 1024x668, 960x640 e in verticale. Gli
+  avvisi vanno nel Diario, con un numerino sulla scheda. L'Archivio non
+  cambia.
+- Chrome si apre in modalità app, senza barre.
+- La scritta sui sensori dice cosa manca: gli ingressi non ancora mappati.
+
 ### 2026-10-26 — finestra di scan_raw
 
 - `ponte/sdk.py`: `scan_raw` riceve colonne e righe inizio–fine a partire

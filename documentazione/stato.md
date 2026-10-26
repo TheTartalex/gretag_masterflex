@@ -103,6 +103,11 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
     `ERR_ILLEGAL_IN_THIS_STATE`. È normale: tutti i `frame_detect_*` sono
     vietati nello stato 0 e servono con la pellicola caricata.
 
+- **Prime immagini grezze dallo scanner vero** (17:45–17:52): `scan_raw`
+  con la finestra corretta dà R, G e B a 2100x1400 in circa 1,2 s a
+  canale. La calibrazione è passata. Resta da far mettere il carrello in
+  attesa della pellicola (vedi sotto).
+
 ## Problemi aperti, in ordine di priorità
 
 1. **Motori delle guide all'avvio.** Le guide sono i motori 3 e 4 del

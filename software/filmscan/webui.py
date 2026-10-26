@@ -824,20 +824,50 @@ html,body{height:100%}
 body{margin:0;background:var(--bg);color:var(--ink);overflow:hidden;
  font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif}
 
-header{display:flex;align-items:center;gap:12px;padding:8px 14px;
+/* --- Impaginazione per il monitor della macchina: 4:3, al massimo
+   1280x720, con il browser che si mangia una parte dell'altezza. Tutto sta
+   in uno schermo senza scorrere la pagina: a sinistra la colonna delle
+   schede (i sottomenu), poi il pannello della scheda aperta, al centro
+   l'immagine con sotto la striscia del rullo e la barra dei comandi
+   principali, che non sparisce mai. --- */
+:root{--testa:46px;--binario:78px;--lato:300px;--striscia:72px}
+body{display:flex;flex-direction:column}
+
+header{display:flex;align-items:center;gap:12px;padding:0 12px;
+ height:var(--testa);flex:0 0 auto;
  border-bottom:1px solid var(--line);background:var(--bg)}
 header .nome{font-weight:600;letter-spacing:.2px;white-space:nowrap}
 header .sp{flex:1}
-#stato,#sensori{font-size:12px;color:var(--dim);white-space:nowrap}
+#stato,#sensori{font-size:12px;color:var(--dim);white-space:nowrap;
+ overflow:hidden;text-overflow:ellipsis;min-width:0}
 .pallino{display:inline-block;width:8px;height:8px;border-radius:50%;
  background:var(--male);margin-right:5px;vertical-align:middle}
 .pallino.on{background:var(--ok)}
 button.stop{width:auto;flex:0 0 auto;background:#6b2420;color:#ffd9d4;
  border:1px solid #8c3029;font-weight:700;letter-spacing:.5px;
- padding:9px 20px;border-radius:6px;cursor:pointer}
+ padding:8px 22px;border-radius:6px;cursor:pointer}
 
-main{display:grid;grid-template-columns:300px minmax(0,1fr) 270px;
- gap:10px;padding:10px;height:calc(100% - 49px);overflow:hidden}
+main{flex:1;min-height:0;display:grid;
+ grid-template-columns:var(--binario) var(--lato) minmax(0,1fr);
+ gap:8px;padding:8px;overflow:hidden}
+
+/* --- le schede: un pannello alla volta, invece di tre colonne da scorrere --- */
+nav.binario{display:flex;flex-direction:column;gap:6px;min-height:0}
+nav.binario button{background:var(--campo);color:var(--dim);
+ border:1px solid var(--line);border-radius:8px;padding:10px 2px;
+ font-size:12px;font-weight:600;line-height:1.15;
+ display:flex;flex-direction:column;align-items:center;gap:5px}
+nav.binario button svg{width:22px;height:22px;stroke:currentColor;fill:none;
+ stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+nav.binario button.on{background:var(--acc);color:var(--su-acc);
+ border-color:var(--acc)}
+nav.binario .conta{font-size:10px;min-width:16px;padding:0 4px;
+ border-radius:8px;background:var(--avviso);color:#1a1310;display:none}
+nav.binario .conta.si{display:inline-block}
+.schede{overflow-y:auto;min-height:0;min-width:0}
+.scheda{display:none;flex-direction:column;gap:10px}
+.scheda.on{display:flex}
+
 aside{overflow-y:auto;display:flex;flex-direction:column;gap:10px}
 .pannello{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px}
 .pannello h2{font-size:11px;text-transform:uppercase;letter-spacing:.9px;
@@ -917,11 +947,19 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .tagli b{font-weight:600}
 .tagli .male{color:var(--male)} .tagli .avviso{color:var(--avviso)}
 
-/* --- destra: striscia del rullo --- */
-.striscia{display:grid;grid-template-columns:repeat(auto-fill,minmax(66px,1fr));
- gap:6px;max-height:38vh;overflow-y:auto}
-.prov{position:relative;border:2px solid transparent;border-radius:4px;
- overflow:hidden;background:var(--neutro);cursor:pointer;aspect-ratio:3/2}
+/* --- sotto l'immagine: la striscia del rullo, come una pellicola --- */
+.filmina{flex:0 0 var(--striscia);display:flex;gap:8px;min-height:0;
+ background:var(--card);border:1px solid var(--line);border-radius:8px;
+ padding:6px}
+.filmina .testa{flex:0 0 92px;display:flex;flex-direction:column;
+ justify-content:center;font-size:11px;color:var(--dim);line-height:1.3;
+ overflow:hidden}
+.filmina .testa b{color:var(--acc);text-transform:uppercase;letter-spacing:.8px}
+.striscia{flex:1;min-width:0;display:flex;gap:6px;overflow-x:auto;
+ overflow-y:hidden;align-items:stretch}
+.prov{position:relative;flex:0 0 auto;height:100%;aspect-ratio:3/2;
+ border:2px solid transparent;border-radius:4px;
+ overflow:hidden;background:var(--neutro);cursor:pointer}
 .prov.sel{border-color:var(--acc)}
 .prov img{width:100%;height:100%;object-fit:cover;display:block}
 .prov .n{position:absolute;left:0;bottom:0;font-size:10px;padding:1px 4px;
@@ -929,6 +967,16 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .prov .s{position:absolute;right:3px;top:3px;width:7px;height:7px;border-radius:50%}
 .prov .s.ok{background:var(--ok)} .prov .s.avviso{background:var(--avviso)}
 .prov .s.errore{background:var(--male)}
+
+/* --- la barra dei comandi principali: sempre visibile, tasti grandi --- */
+.comandi{flex:0 0 auto;display:flex;gap:8px;align-items:center;
+ background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px}
+.comandi button{width:auto;flex:0 0 auto;padding:11px 16px;white-space:nowrap}
+.comandi button.principale{padding:11px 26px;font-size:15px}
+.comandi .avanz{flex:1;min-width:0}
+.comandi #msg,.comandi .avvisi{white-space:nowrap;overflow:hidden;
+ text-overflow:ellipsis}
+.comandi .avvisi{margin-top:2px;cursor:pointer}
 .vuota{color:var(--dim);font-size:12px;padding:6px 0}
 
 .bar{height:6px;background:var(--campo2);border-radius:3px;overflow:hidden;margin:4px 0 6px}
@@ -975,16 +1023,41 @@ details.sez>div{padding-bottom:10px}
  .gruppo button{min-height:48px;padding:12px 16px}
  label{font-size:14px}
  .prov{aspect-ratio:3/2}
- .striscia{grid-template-columns:repeat(auto-fill,minmax(84px,1fr))}
 }
-/* Tablet in verticale e schermi stretti: il visore prima di tutto. */
+/* 4:3 a 1024 o 960 di larghezza: pannello piu' stretto, niente nome. */
 @media(max-width:1100px){
+ :root{--lato:264px;--binario:70px}
+ header .nome{display:none}
+ .comandi .facoltativo{display:none}
+ .comandi button{padding:10px 12px}
+ .comandi button.principale{padding:10px 18px}
+}
+/* Poca altezza (1280x720 con le barre del browser): si stringe tutto in
+   verticale, non si toglie niente. */
+@media(max-height:700px){
+ :root{--testa:40px;--striscia:58px}
+ main{padding:6px;gap:6px}
+ .pannello{padding:9px 10px}
+ label{margin:6px 0 2px}
+ nav.binario button{padding:7px 2px;gap:3px}
+ .strumenti .gruppo button{padding:5px 11px}
+ .comandi{padding:6px}
+ .comandi button{padding:8px 12px}
+ .comandi button.principale{padding:8px 18px}
+ .isto canvas{height:72px}
+}
+/* Tablet in verticale e telefoni: una colonna, le schede diventano una fila
+   in alto e la pagina scorre. */
+@media(max-width:860px){
  body{overflow:auto}
- main{grid-template-columns:1fr;height:auto;overflow:visible}
- aside{overflow:visible}
+ main{display:flex;flex-direction:column;height:auto;overflow:visible}
+ nav.binario{flex-direction:row;order:-2}
+ nav.binario button{flex:1}
  .centro{order:-1}
- .visore{height:52vh}
- .striscia{max-height:none}
+ .visore{height:52vh;flex:0 0 auto}
+ .schede{overflow:visible}
+ .comandi{flex-wrap:wrap}
+ .comandi .avanz{flex-basis:100%}
 }
 </style></head><body>
 
@@ -994,37 +1067,24 @@ details.sez>div{padding-bottom:10px}
  <div id="sensori"></div>
  <div class="sp"></div>
  <a id="vaiarchivio" href="/archivio" style="color:var(--dim);text-decoration:none;
-  font-size:13px;padding:8px 12px;border:1px solid var(--line);border-radius:6px">
-  Archivio &rarr;</a>
+  font-size:13px;padding:7px 12px;border:1px solid var(--line);border-radius:6px;
+  white-space:nowrap">Archivio &rarr;</a>
  /*ICONA*/
  <button class="stop" onclick="fermaTutto()">STOP</button>
 </header>
 
 <main>
-<!-- ============ SINISTRA ============ -->
-<aside class="sx">
+<!-- ============ SCHEDE: i sottomenu, uno alla volta ============ -->
+<nav class="binario" id="binario">
+ <button data-s="lavoro" onclick="apriScheda('lavoro')"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 5v14M17 5v14M3 9h4M3 15h4M17 9h4M17 15h4"/></svg>Lavoro</button>
+ <button data-s="colore" onclick="apriScheda('colore')"><svg viewBox="0 0 24 24"><circle cx="9" cy="10" r="5"/><circle cx="15" cy="10" r="5"/><circle cx="12" cy="15" r="5"/></svg>Colore</button>
+ <button data-s="correzioni" onclick="apriScheda('correzioni')"><svg viewBox="0 0 24 24"><path d="M4 20l9-9M14 4l1.2 2.8L18 8l-2.8 1.2L14 12l-1.2-2.8L10 8l2.8-1.2z"/></svg>Ritocco</button>
+ <button data-s="macchina" onclick="apriScheda('macchina')"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>Macchina</button>
+ <button data-s="diario" onclick="apriScheda('diario')"><svg viewBox="0 0 24 24"><path d="M6 3h9l3 3v15H6z"/><path d="M9 10h6M9 14h6M9 18h4"/></svg>Diario<span class="conta" id="conta_avvisi"></span></button>
+</nav>
 
- <section class="pannello">
-  <h2>Macchina</h2>
-  <div class="griglia2">
-   <div><label>Collegamento</label>
-    <select id="driver">
-     <option value="sdk">scanner &mdash; macchina vera</option>
-     <option value="mock">simulato &mdash; nessuna macchina</option>
-    </select></div>
-   <div><label>&nbsp;</label><button onclick="connetti()">Connetti</button></div>
-  </div>
-  <div class="griglia3" style="margin-top:10px">
-   <button class="sec" onclick="muovi(-1)">&larr; 1mm</button>
-   <button class="sec" onclick="muovi(1)">1mm &rarr;</button>
-   <button class="sec" onclick="post('/api/fuoco',{mm:0}).then(esito)">Fuoco</button>
-   <button class="sec" onclick="calibra()">Calibra</button>
-   <button class="sec" onclick="post('/api/espelli',{}).then(esito)">Espelli</button>
-   <button class="sec" onclick="muovi(-0.1)">&minus;0,1</button>
-  </div>
-  <div id="amb" style="font-size:11px;color:var(--dim);margin-top:10px"></div>
- </section>
-
+<div class="schede">
+ <div class="scheda" id="s_lavoro">
  <section class="pannello">
   <h2>Ordine</h2>
   <div class="griglia2">
@@ -1037,7 +1097,6 @@ details.sez>div{padding-bottom:10px}
   <select id="ordine_id"></select>
   <table id="ordini"></table>
  </section>
-
  <section class="pannello">
   <h2>Rullo</h2>
   <div class="griglia2">
@@ -1058,82 +1117,13 @@ details.sez>div{padding-bottom:10px}
   <label style="margin-top:12px">Rullo in lavorazione</label>
   <select id="rullo_id"></select>
  </section>
-
- <section class="pannello">
-  <h2>Correzioni <span id="tocco"></span></h2>
-  <label>Pulizia infrarosso <b id="v_ir">1,0</b></label>
-  <input type="range" id="ir" min="0" max="1" step="0.1" value="1">
-  <label>Riduzione grana <b id="v_grana_riduci">0,0</b></label>
-  <input type="range" id="grana_riduci" min="0" max="1" step="0.1" value="0">
-  <label>Nitidezza <b id="v_nitidezza">0,0</b></label>
-  <input type="range" id="nitidezza" min="0" max="1" step="0.1" value="0">
-  <label>Graffi senza IR <b id="v_graffi">0,0</b></label>
-  <input type="range" id="graffi" min="0" max="1" step="0.1" value="0">
-  <label>Polvere <b id="v_polvere">0,0</b></label>
-  <input type="range" id="polvere" min="0" max="1" step="0.1" value="0">
-  <label>Grana sintetica <b id="v_grana_aggiungi">0,00</b></label>
-  <input type="range" id="grana_aggiungi" min="0" max="0.1" step="0.01" value="0">
-  <div style="margin-top:12px">
-   <label><input type="checkbox" id="ritaglio" checked style="width:auto"> Ritaglio automatico</label>
-   <label><input type="checkbox" id="auto_ruota" style="width:auto"> Orientamento automatico</label>
-  </div>
-  <div class="row"><button class="ghost" onclick="azzeraCorrezioni()">Azzera</button></div>
- </section>
-</aside>
-
-<!-- ============ CENTRO: il visore ============ -->
-<section class="centro">
- <div class="strumenti">
-  <div class="gruppo" id="g_vista">
-   <button data-v="prima">Negativo</button>
-   <button data-v="dopo" class="on">Positivo</button>
-   <button data-v="confronto">Confronto</button>
-  </div>
-  <div class="gruppo" id="g_zoom">
-   <button data-z="0" class="on">Adatta</button>
-   <button data-z="1">1:1</button>
-  </div>
-  <button class="ghost" id="b_griglia" style="width:auto" onclick="togliGriglia()">Griglia</button>
-  <span class="info" id="zoominfo"></span>
  </div>
 
- <div class="visore" id="visore">
-  <div class="tela" id="tela">
-   <img id="im_dopo" alt="">
-   <div id="clip"><img id="im_prima" alt=""></div>
-   <div id="maniglia"></div>
-   <div id="griglia"></div>
-   <div class="etichetta" id="et_prima">NEGATIVO</div>
-   <div class="etichetta" id="et_dopo">POSITIVO</div>
+ <div class="scheda" id="s_colore">
+  <div class="isto">
+   <canvas id="isto" width="512" height="96"></canvas>
+   <div class="tagli" id="tagli"></div>
   </div>
-  <div class="vuoto" id="vuoto">Nessuna anteprima.<br>Premere <b>Anteprima</b> qui a destra.</div>
- </div>
-
- <div class="isto">
-  <canvas id="isto" width="512" height="96"></canvas>
-  <div class="tagli" id="tagli"></div>
- </div>
-</section>
-
-<!-- ============ DESTRA ============ -->
-<aside class="dx">
- <section class="pannello">
-  <h2>Scansione</h2>
-  <div class="row" style="margin-top:0">
-   <button class="sec" onclick="anteprima()">Anteprima</button>
-   <button onclick="scansiona()">Scansiona</button>
-  </div>
-  <div class="bar" style="margin-top:10px"><div id="barra"></div></div>
-  <div id="msg">pronto</div>
-  <div id="avvisi" class="avvisi"></div>
- </section>
-
- <section class="pannello">
-  <h2>Rullo <span id="rullo_info"></span></h2>
-  <div class="striscia" id="striscia"></div>
-  <div id="prov_info" style="font-size:11px;color:var(--dim);margin-top:8px"></div>
- </section>
-
  <section class="pannello" id="colore">
   <details class="sez" open><summary>Bilanciamento</summary><div>
    <div class="griglia3">
@@ -1204,14 +1194,150 @@ details.sez>div{padding-bottom:10px}
   <div class="row"><button class="ghost" onclick="azzeraTutto()">Azzera tutto</button>
    <button onclick="applica(true)">Applica</button></div>
  </section>
+ </div>
 
+ <div class="scheda" id="s_correzioni">
  <section class="pannello">
-  <details class="sez"><summary>Diario</summary><div>
-   <div id="log"></div>
-  </div></details>
+  <h2>Correzioni <span id="tocco"></span></h2>
+  <label>Pulizia infrarosso <b id="v_ir">1,0</b></label>
+  <input type="range" id="ir" min="0" max="1" step="0.1" value="1">
+  <label>Riduzione grana <b id="v_grana_riduci">0,0</b></label>
+  <input type="range" id="grana_riduci" min="0" max="1" step="0.1" value="0">
+  <label>Nitidezza <b id="v_nitidezza">0,0</b></label>
+  <input type="range" id="nitidezza" min="0" max="1" step="0.1" value="0">
+  <label>Graffi senza IR <b id="v_graffi">0,0</b></label>
+  <input type="range" id="graffi" min="0" max="1" step="0.1" value="0">
+  <label>Polvere <b id="v_polvere">0,0</b></label>
+  <input type="range" id="polvere" min="0" max="1" step="0.1" value="0">
+  <label>Grana sintetica <b id="v_grana_aggiungi">0,00</b></label>
+  <input type="range" id="grana_aggiungi" min="0" max="0.1" step="0.01" value="0">
+  <div style="margin-top:12px">
+   <label><input type="checkbox" id="ritaglio" checked style="width:auto"> Ritaglio automatico</label>
+   <label><input type="checkbox" id="auto_ruota" style="width:auto"> Orientamento automatico</label>
+  </div>
+  <div class="row"><button class="ghost" onclick="azzeraCorrezioni()">Azzera</button></div>
  </section>
-</aside>
+ </div>
+
+ <div class="scheda" id="s_macchina">
+  <section class="pannello">
+   <h2>Collegamento</h2>
+   <label>Scanner</label>
+   <select id="driver">
+    <option value="sdk">scanner &mdash; macchina vera</option>
+    <option value="mock">simulato &mdash; nessuna macchina</option>
+   </select>
+   <div class="row"><button onclick="connetti()">Connetti</button></div>
+   <div id="amb" style="font-size:11px;color:var(--dim);margin-top:10px"></div>
+  </section>
+  <section class="pannello">
+   <h2>Movimenti a mano</h2>
+   <div class="griglia3">
+    <button class="sec" onclick="muovi(-1)">&larr; 1 mm</button>
+    <button class="sec" onclick="muovi(-0.1)">&larr; 0,1</button>
+    <button class="sec" onclick="muovi(1)">1 mm &rarr;</button>
+   </div>
+   <div class="griglia2" style="margin-top:8px">
+    <button class="sec" onclick="post('/api/fuoco',{mm:0}).then(esito)">Fuoco</button>
+    <button class="sec" onclick="post('/api/espelli',{}).then(esito)">Espelli</button>
+   </div>
+   <div style="font-size:11px;color:var(--dim);margin-top:8px">
+    La regolazione fine funziona solo con la pellicola caricata: a percorso
+    vuoto l'SDK la rifiuta.</div>
+  </section>
+ </div>
+
+ <div class="scheda" id="s_diario">
+  <section class="pannello">
+   <h2>Avvisi del lavoro</h2>
+   <div id="avvisi_tutti" class="avvisi" style="margin-top:0">nessuno</div>
+  </section>
+  <section class="pannello">
+   <h2>Diario</h2>
+   <div id="log" style="max-height:none"></div>
+  </section>
+ </div>
+</div>
+
+<!-- ============ CENTRO: immagine, rullo, comandi ============ -->
+<section class="centro">
+ <div class="strumenti">
+  <div class="gruppo" id="g_vista">
+   <button data-v="prima">Negativo</button>
+   <button data-v="dopo" class="on">Positivo</button>
+   <button data-v="confronto">Confronto</button>
+  </div>
+  <div class="gruppo" id="g_zoom">
+   <button data-z="0" class="on">Adatta</button>
+   <button data-z="1">1:1</button>
+  </div>
+  <button class="ghost" id="b_griglia" style="width:auto" onclick="togliGriglia()">Griglia</button>
+  <span class="info" id="zoominfo"></span>
+ </div>
+
+ <div class="visore" id="visore">
+  <div class="tela" id="tela">
+   <img id="im_dopo" alt="">
+   <div id="clip"><img id="im_prima" alt=""></div>
+   <div id="maniglia"></div>
+   <div id="griglia"></div>
+   <div class="etichetta" id="et_prima">NEGATIVO</div>
+   <div class="etichetta" id="et_dopo">POSITIVO</div>
+  </div>
+  <div class="vuoto" id="vuoto">Nessuna anteprima.<br>Premere <b>Anteprima</b> qui sotto.</div>
+ </div>
+
+ <div class="filmina">
+  <div class="testa"><b>Rullo</b><span id="rullo_info"></span>
+   <span id="prov_info"></span></div>
+  <div class="striscia" id="striscia"></div>
+ </div>
+
+ <div class="comandi">
+  <button class="sec" onclick="connetti()">Connetti</button>
+  <button class="sec" onclick="calibra()">Calibra</button>
+  <button class="sec" onclick="anteprima()">Anteprima</button>
+  <button class="principale" onclick="scansiona()">Scansiona rullo</button>
+  <div class="avanz">
+   <div class="bar" style="margin:0 0 3px"><div id="barra"></div></div>
+   <div id="msg">pronto</div>
+   <div id="avvisi" class="avvisi" onclick="apriScheda('diario')"></div>
+  </div>
+  <button class="ghost facoltativo" onclick="post('/api/espelli',{}).then(esito)">Espelli</button>
+ </div>
+</section>
 </main>
+
+<script>
+/* Le schede a sinistra. Quella aperta si ricorda nel browser: e' una
+   comodita' di chi sta a quello schermo, non un dato della macchina. */
+function apriScheda(n){
+  var tutte=document.querySelectorAll('.scheda');
+  for(var i=0;i<tutte.length;i++) tutte[i].classList.toggle('on', tutte[i].id==='s_'+n);
+  var t=document.querySelectorAll('#binario button');
+  for(var j=0;j<t.length;j++) t[j].classList.toggle('on', t[j].getAttribute('data-s')===n);
+  try{ localStorage.setItem('scheda', n); }catch(e){}
+  if(n==='colore' && window.disegnaCurva){ try{ disegnaCurva(); disegnaIstogramma(); }catch(e){} }
+}
+(function(){
+  var n='lavoro';
+  try{ n=localStorage.getItem('scheda')||'lavoro'; }catch(e){}
+  if(!document.getElementById('s_'+n)) n='lavoro';
+  apriScheda(n);
+  /* gli avvisi della barra finiscono anche nel Diario, interi, con un
+     numerino sulla scheda: nella barra c'e' posto solo per una riga */
+  var a=document.getElementById('avvisi');
+  new MutationObserver(function(){
+    var testo=a.textContent.trim(), tutti=document.getElementById('avvisi_tutti');
+    var c=document.getElementById('conta_avvisi');
+    tutti.textContent = testo ? testo.split(' \u00b7 ').join('\n') : 'nessuno';
+    tutti.style.whiteSpace='pre-wrap';
+    var n=testo ? testo.split(' \u00b7 ').length : 0;
+    c.textContent=n; c.classList.toggle('si', n>0);
+    a.title=testo;
+  }).observe(a,{childList:true,characterData:true,subtree:true});
+})();
+</script>
 
 <script>
 var TOKEN = new URLSearchParams(location.search).get('t') || '';
@@ -1667,7 +1793,7 @@ function mostraStato(s){
 
 function mostraSensori(){ get('/api/sensori').then(function(x){
   var e=el('sensori');
-  if(!x.disponibili){ e.textContent='sensori non disponibili su questo driver'; return; }
+  if(!x.disponibili){ e.textContent='sensori pellicola: ingressi non ancora mappati (collaudo 4 \u2192 2)'; return; }
   e.innerHTML='ingresso <b style="color:'+(x.ingresso?'var(--ok)':'var(--dim)')+'">'+
     (x.ingresso?'pellicola':'libero')+'</b> · uscita <b style="color:'+
     (x.uscita?'var(--ok)':'var(--dim)')+'">'+(x.uscita?'pellicola':'libero')+'</b>'; }); }
@@ -2442,7 +2568,13 @@ def apri_nel_browser(url: str, ritardo: float = 1.2) -> None:
         try:
             if percorso:
                 import subprocess
-                subprocess.Popen([percorso, url])
+                # Chrome in modalita' app: niente schede ne' barra degli
+                # indirizzi. Sul monitor 4:3 della macchina (al massimo
+                # 1280x720) sono un'ottantina di pixel di immagine in piu'.
+                if nome == "Chrome":
+                    subprocess.Popen([percorso, "--app=" + url, "--start-maximized"])
+                else:
+                    subprocess.Popen([percorso, url])
                 print("  Interfaccia aperta in %s su questa macchina." % nome)
             else:
                 import webbrowser
