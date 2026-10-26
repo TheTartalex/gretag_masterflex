@@ -315,6 +315,17 @@ class ScanService:
 
         self._avvia("espulsione", job)
 
+    def carica(self, formato: str) -> None:
+        """Guide al formato e carrello pronto a ricevere la pellicola."""
+        def job():
+            if formato not in FORMATS:
+                raise ValueError("formato sconosciuto: %s" % formato)
+            self.progress("Carrello in preparazione", 0.3)
+            self._require().prepara_carico(formato)
+            self.log("Carrello pronto: inserire la pellicola (%s)." % formato)
+            self.progress("Inserire la pellicola", 1.0)
+        self._avvia("carico", job)
+
     def calibra(self) -> None:
         def job():
             self.progress("Calibrazione in corso", 0.0)

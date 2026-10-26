@@ -105,8 +105,17 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
 
 - **Prime immagini grezze dallo scanner vero** (17:45–17:52): `scan_raw`
   con la finestra corretta dà R, G e B a 2100x1400 in circa 1,2 s a
-  canale. La calibrazione è passata. Resta da far mettere il carrello in
-  attesa della pellicola (vedi sotto).
+  canale. La calibrazione è passata.
+- **Il carrello non accettava la pellicola**: `select_film_format` sceglie
+  il formato nell'SDK ma non arma il carrello. Il programma originale
+  chiama anche `set_scanner_input_mode`, con modo 1 o 2 (`PhxScanner.exe`
+  `0x447860`), che per il Gretag diventa il ChangeFilmFormat del
+  GateControl: guide al formato e carrello in attesa (`scn_dll`
+  `0x18037FA0`).
+
+  Nuovo tasto **Carica** nella barra (agente: `carica_1`). L'agente annota
+  anche l'evento `EV_FILM_INSERTED`. Quale dei modi 1 e 2 sia il rullo
+  intero va visto sulla macchina.
 
 ## Problemi aperti, in ordine di priorità
 

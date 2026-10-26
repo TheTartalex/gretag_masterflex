@@ -134,6 +134,11 @@ class ScannerBackend(abc.ABC):
     def seleziona_formato(self, chiave_formato: str) -> None:
         """Dice alla macchina che formato c'e' nel carrello. Di serie, niente."""
 
+    def prepara_carico(self, chiave_formato: str) -> None:
+        """Porta il carrello al formato e lo mette in attesa della pellicola.
+        Di serie, niente: il simulato ha sempre la pellicola dentro."""
+        self.seleziona_formato(chiave_formato)
+
     def prossimo_fotogramma(self, fmt) -> None:
         """Porta in finestra il fotogramma successivo.
 
@@ -546,6 +551,15 @@ class PonteSdkBackend(ScannerBackend):
         if self._formato != codice:
             self._send("formato_%d" % codice, attesa=self.ATTESA_MOVIMENTO)
             self._formato = codice
+
+    def prepara_carico(self, chiave_formato: str) -> None:
+        """Formato e carrello in attesa della pellicola (comando "carica"
+        dell'agente): senza, il carrello non accetta la pellicola."""
+        if self._info.get("motori") is False:
+            raise ScannerError("agente con i motori bloccati: preparare il carico "
+                               "muove le guide. Avviare con i motori attivi.")
+        self.seleziona_formato(chiave_formato)
+        self._send("carica_1", attesa=self.ATTESA_MOVIMENTO)
 
     def advance(self, mm: float) -> None:
         """Regolazione fine, in millimetri convertiti in passi da 0,01 mm.

@@ -171,6 +171,7 @@ NOMI_ERRORI_SDK = {
 ERR_ILLEGAL_IN_THIS_STATE = 3
 ERR_NO_SCANNER = 4
 EV_STATE_CHANGE = 203
+EV_FILM_INSERTED = 200
 
 # Lo stato interno dell'SDK (variabile globale a 0x180BF92C, controllata da
 # ScnState a 0x18079E40 prima di ogni comando). Vale 7 al caricamento della
@@ -303,6 +304,11 @@ METODI = [
 
     # --- formato e ottica ---
     ("scegli_formato", "?select_film_format@DMLScanner@@QAEPAVErrStat@1@W4FilmFormat@1@@Z", VP, [I]),
+    # Con il carrello Gretag diventa la richiesta 3 al GateControl,
+    # ChangeFilmFormat: guide al formato e carrello in attesa della pellicola
+    # (scn_dll 0x18037FA0, attesa fino a 30 s). PhxScanner.exe la chiama con
+    # 1 o 2 (0x447860).
+    ("modo_ingresso", "?set_scanner_input_mode@DMLScanner@@QAEPAVErrStat@1@W4__MIDL___MIDL_itf_FilmGate_0000_0003@@@Z", VP, [I]),
     ("tipo_gate", "?get_gate_type@DMLScanner@@QAEPAVErrStat@1@PAW4GateType@1@@Z", VP, [VP]),
     ("modo_gate", "?get_gate_mode@DMLScanner@@QAEPAVErrStat@1@PAW4GateMode@1@@Z", VP, [VP]),
     ("imposta_modo_gate", "?set_gate_mode@DMLScanner@@QAEPAVErrStat@1@W4GateMode@1@@Z", VP, [I]),
@@ -442,6 +448,7 @@ class Scanner(object):
         self.eventi = []          # (ora, numero) degli eventi asincroni
         self.stato_sdk = None     # dagli eventi EV_STATE_CHANGE; None = non noto
         self.formato = FilmFormat.F135   # quello che l'SDK sceglie all'apertura
+        self.pellicola_inserita = False  # dall'evento EV_FILM_INSERTED
         self._offset = {}         # offset XY per formato, letti una volta
         if apri_subito:
             self.apri()
@@ -513,6 +520,10 @@ class Scanner(object):
         try:
             voci = self._leggi_errori(err_ptr) if err_ptr else []
             for codice, nuovo, vecchio in (voci or []):
+                if codice == EV_FILM_INSERTED:
+                    self.pellicola_inserita = True
+                    self._log("SDK: pellicola inserita (%s, %s)" % (nuovo, vecchio))
+                    return
                 if codice == EV_STATE_CHANGE:
                     self.stato_sdk = nuovo
                     self._log("SDK: stato %s -> %s (%s)"
@@ -611,6 +622,21 @@ class Scanner(object):
     def scegli_formato(self, formato=FilmFormat.F135):
         self._verifica(self._m["scegli_formato"](self._obj, formato), "scelta formato")
         self.formato = formato
+
+    def arma_carrello(self, modo=1):
+        """Mette il carrello in attesa della pellicola nel formato scelto.
+
+        select_film_format da solo sceglie il formato nell'SDK ma non tocca
+        il carrello: il 26/10/2026 sulla riserva lo scanner acquisiva ma il
+        carrello non accettava la pellicola. Il programma originale fa
+        select_film_format e poi set_scanner_input_mode (PhxScanner.exe,
+        0x447820 e 0x447860), che per il Gretag e' il ChangeFilmFormat del
+        GateControl. Il modo che usa e' 1 o 2; quale dei due sia il rullo
+        intero e quale il fotogramma singolo va visto sulla macchina.
+        """
+        self.pellicola_inserita = False
+        self._verifica(self._m["modo_ingresso"](self._obj, int(modo)),
+                       "carrello in attesa della pellicola (modo %d)" % modo)
 
     def origine_finestra(self):
         """Angolo in alto a sinistra del fotogramma sul CCD, per il formato

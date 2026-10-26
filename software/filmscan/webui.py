@@ -1029,7 +1029,10 @@ details.sez>div{padding-bottom:10px}
  :root{--lato:264px;--binario:70px}
  header .nome{display:none}
  .comandi .facoltativo{display:none}
- .comandi button{padding:10px 12px}
+ /* l'avanzamento sopra i tasti: accanto, a 960 px, restavano tre parole */
+ .comandi{flex-wrap:wrap;row-gap:6px}
+ .comandi .avanz{order:-1;flex-basis:100%}
+ .comandi button{padding:10px 12px;flex:1 1 auto}
  .comandi button.principale{padding:10px 18px}
 }
 /* Poca altezza (1280x720 con le barre del browser): si stringe tutto in
@@ -1296,6 +1299,7 @@ details.sez>div{padding-bottom:10px}
  <div class="comandi">
   <button class="sec" onclick="connetti()">Connetti</button>
   <button class="sec" onclick="calibra()">Calibra</button>
+  <button class="sec" onclick="carica()" title="Guide al formato del rullo e carrello pronto a ricevere la pellicola">Carica</button>
   <button class="sec" onclick="anteprima()">Anteprima</button>
   <button class="principale" onclick="scansiona()">Scansiona rullo</button>
   <div class="avanz">
@@ -1642,6 +1646,7 @@ function disegnaCurva(){
 })();
 
 function connetti(){ post('/api/connetti',{driver:val('driver')}).then(mostraStato); }
+function carica(){ post('/api/carica',{formato:val('formato')}).then(esito); }
 function calibra(){ if(confirm('Togliere la pellicola dal percorso ottico. Procedere?'))
   post('/api/calibra',{}).then(esito); }
 function muovi(mm){ post('/api/muovi',{mm:mm}).then(mostraStato); }
@@ -2279,6 +2284,10 @@ class Handler(BaseHTTPRequestHandler):
 
             if u.path == "/api/fuoco":
                 return self._json(s.fuoco(float(d.get("mm", 0))))
+
+            if u.path == "/api/carica":
+                s.carica(str(d.get("formato", "135-full")))
+                return self._json({"avviato": True})
 
             if u.path == "/api/espelli":
                 s.espelli()

@@ -39,6 +39,16 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-10-26 — carrello in attesa della pellicola
+
+- `ponte/sdk.py`: `arma_carrello(modo)` con `set_scanner_input_mode`;
+  l'evento `EV_FILM_INSERTED` imposta `pellicola_inserita`.
+- `ponte/agente.py`: comando `carica[_<modo>]` (è un movimento, quindi
+  bloccato con i motori bloccati); `pellicola_inserita` nello stato.
+- `filmscan`: `prepara_carico()` nel ponte, `carica()` nel servizio, tasto
+  **Carica** nella barra dei comandi.
+- Sotto i 1100 px l'avanzamento sta sopra i tasti.
+
 ### 2026-10-26 — interfaccia per il monitor 4:3
 
 - `filmscan/webui.py`, pagina di scansione rifatta per il monitor della

@@ -331,3 +331,13 @@ il quarto piano, l'IR); 4 vale tre piani (maschera 7), 5 quattro piani
 Nello stato 0 sono vietati i comandi `0x0D`, `0x14`, `0x1C` e `0x1D`.
 `0x1D` è quello di tutti i `frame_detect_*`, compresa la regolazione fine:
 servono con la pellicola caricata.
+
+**Mettere il carrello Gretag in attesa della pellicola.**
+`select_film_format` da solo non basta. Il programma originale (`PhxScanner`,
+`0x447820` e `0x447860`) chiama poi `set_scanner_input_mode(modo)`, con modo
+1 o 2: il 3 lo rifiuta come non supportato.
+
+Per il carrello Gretag l'SDK lo trasforma nella richiesta 3 al GateControl,
+ChangeFilmFormat (`0x18037FA0`), e aspetta la risposta fino a 30 s. Se il
+carrello non c'è, risponde `ERR_NO_NK_GATE` (`0x18075B90`). L'arrivo della
+pellicola si annuncia con `EV_FILM_INSERTED` (200) al callback.

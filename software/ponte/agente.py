@@ -40,6 +40,8 @@ COMANDI
     alimenta_on | alimenta_off  trascinamento
     avanza | avanza_mezzo       avanza di un fotogramma o mezzo
     prossimo                    va al fotogramma successivo
+    carica[_<modo>]             carrello in attesa della pellicola nel formato
+                                scelto (set_scanner_input_mode, modo 1 di serie)
     regola_<passi>              sposta di N passi motore (0,01 mm l'uno),
                                 al massimo --max-passi per comando
     fuoco                       autofocus
@@ -86,7 +88,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 CANALI = {"R": 0, "G": 1, "B": 2, "IR": 3}
 
 # Comandi che muovono la meccanica. "fuoco" muove la lente.
-MOVIMENTI = ("formato", "alimenta", "avanza", "prossimo", "regola", "fuoco")
+MOVIMENTI = ("formato", "carica", "alimenta", "avanza", "prossimo", "regola", "fuoco")
 
 MAX_PASSI = 300               # 3 mm: oltre non e' piu' una regolazione fine
 MAX_ALIMENTAZIONE = 15.0      # secondi di trascinamento acceso senza comandi
@@ -153,6 +155,8 @@ class AgenteSimulato(object):
     def id_scanner(self): return 60210
     def tipo_gate(self): return 0
     def scegli_formato(self, f): pass
+    pellicola_inserita = False
+    def arma_carrello(self, modo=1): self.pellicola_inserita = True
     def alimentazione(self, accesa=True): pass
     def avanza_fotogramma(self, mezzo=False): pass
     def fotogramma_successivo(self): pass
@@ -348,6 +352,7 @@ class Agente(object):
                 "motori": self.motori,
                 "max_passi": self.max_passi,
                 "apertura": self.apertura,
+                "pellicola_inserita": getattr(self.s, "pellicola_inserita", None),
             }
             errori = {}
             letture = (("tipo_scanner", self.s.tipo_scanner),
@@ -379,6 +384,11 @@ class Agente(object):
         if testa == "formato":
             self.s.scegli_formato(int(parti[1]))
             return "formato %s" % parti[1]
+
+        if testa == "carica":
+            modo = int(parti[1]) if len(parti) > 1 else 1
+            self.s.arma_carrello(modo)
+            return "carrello in attesa della pellicola (modo %d)" % modo
 
         if testa == "alimenta":
             accesa = parti[1] == "on"
