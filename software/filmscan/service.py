@@ -822,10 +822,35 @@ class ScanService:
                 setattr(self.cfg, k, bool(valori[k]))
         return self.impostazioni_macchina()
 
-    def temperatura(self) -> Optional[Dict[str, float]]:
-        """Le temperature della testa (get_temperature): si leggono a
-        richiesta, non a ogni aggiornamento della pagina."""
-        return self._libera().temperatura()
+    def stato_testa(self) -> Dict[str, object]:
+        """Temperature e tensioni della testa: si leggono a richiesta, non a
+        ogni aggiornamento della pagina. Una che non risponde non toglie
+        l'altra."""
+        backend = self._libera()
+        esito: Dict[str, object] = {}
+        for nome in ("temperatura", "tensioni"):
+            try:
+                esito[nome] = getattr(backend, nome)()
+            except Emergenza:
+                raise
+            except Exception as exc:                    # noqa: BLE001
+                esito[nome + "_errore"] = str(exc)
+        return esito
+
+    def alza_pressore(self) -> Dict[str, object]:
+        """Il pressore su, a mano: dopo un PressoreBloccato o per liberare la
+        pellicola. Vale anche con lo STOP EMERGENZA attivo, perche' non muove
+        la pellicola; non a lavoro in corso, quando il pressore e' del lavoro."""
+        if self.job.running:
+            raise ScannerError("c'e' un lavoro in corso: il pressore lo "
+                               "comanda lui")
+        if self.backend is None:
+            raise ScannerError("macchina non connessa")
+        if not getattr(self.backend, "supports_pressore", False):
+            raise ScannerError("questo collegamento non comanda il pressore")
+        self.backend.pressore(False)
+        self.log("Pressore alzato a mano.")
+        return self.stato()
 
     def _esposizione_fissa(self, preset) -> Optional[Dict[str, float]]:
         """Con l'esposizione automatica spenta: x1 su tutti i canali, senza

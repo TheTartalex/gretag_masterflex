@@ -1310,8 +1310,11 @@ details.sez>div{padding-bottom:10px}
    <div class="nota-imp">Giù durante ogni lettura, così la pellicola resta piatta; su prima di muoverla.</div>
    <label><input type="checkbox" id="imp_avanzamento_automatico" style="width:auto" onchange="impostaMacchina()"> Avanzamento automatico</label>
    <div class="nota-imp">Il carrello cerca da solo il fotogramma. Spento: ogni fotogramma si mette in finestra a mano, con il video e i passi da 1 e 20 mm.</div>
-   <div class="row"><button class="sec" onclick="leggiTemperatura()">Temperatura della testa</button></div>
-   <div id="temperatura" class="nota-imp"></div>
+   <div class="row">
+    <button class="sec" onclick="leggiTesta()">Stato della testa</button>
+    <button class="sec" onclick="alzaPressore()" title="Libera la pellicola senza muoverla. Funziona anche con lo STOP EMERGENZA">Alza pressore</button>
+   </div>
+   <div id="testa" class="nota-imp" style="white-space:pre-line"></div>
   </section>
   <section class="pannello">
    <h2>Movimenti a mano</h2>
@@ -1753,13 +1756,20 @@ function impostaMacchina(){
     /* senza fuoco, al prossimo aggiornamento la spunta torna quella vera */
     if(document.activeElement) document.activeElement.blur(); });
 }
-function leggiTemperatura(){
-  post('/api/temperatura',{}).then(function(r){
-    var t=r && r.temperatura;
-    el('temperatura').textContent = (r && r.errore) ? r.errore
-      : (t ? ('Sensore 1: '+t.t1.toFixed(1)+' \u00b0C \u00b7 sensore 2: '+t.t2.toFixed(1)+' \u00b0C')
-           : 'Questo collegamento non legge la temperatura.');
+function leggiTesta(){
+  post('/api/testa',{}).then(function(r){
+    if(r && r.errore){ el('testa').textContent=r.errore; return; }
+    var t=r.temperatura, v=r.tensioni, righe=[];
+    righe.push(t ? ('Temperature: '+t.t1.toFixed(1)+' \u00b0C \u00b7 '+t.t2.toFixed(1)+' \u00b0C')
+                 : ('Temperature: '+(r.temperatura_errore||'non disponibili su questo collegamento')));
+    righe.push(v ? ('Tensioni: '+v.map(function(x){return x.toFixed(2)+' V';}).join(' \u00b7 '))
+                 : ('Tensioni: '+(r.tensioni_errore||'non disponibili su questo collegamento')));
+    el('testa').textContent=righe.join('\n');
   });
+}
+function alzaPressore(){
+  post('/api/pressore_su',{}).then(function(r){
+    el('testa').textContent = (r && r.errore) ? r.errore : 'Pressore alzato.'; });
 }
 /* Il posizionamento a mano: compare da solo quando il rullo lo chiede
    (carrello che non trova il fotogramma, avanzamento automatico spento), e
@@ -2449,8 +2459,11 @@ class Handler(BaseHTTPRequestHandler):
                         s.log("Impostazioni non salvate: %s" % exc)
                 return self._json(valori)
 
-            if u.path == "/api/temperatura":
-                return self._json({"temperatura": s.temperatura()})
+            if u.path == "/api/testa":
+                return self._json(s.stato_testa())
+
+            if u.path == "/api/pressore_su":
+                return self._json(s.alza_pressore())
 
             if u.path == "/api/posiziona":
                 return self._json(s.posiziona(str(d.get("azione", "")),

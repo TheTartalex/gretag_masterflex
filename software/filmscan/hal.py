@@ -211,6 +211,9 @@ class ScannerBackend(abc.ABC):
     def temperatura(self) -> Optional[Dict[str, float]]:
         return None
 
+    def tensioni(self) -> Optional[List[float]]:
+        return None
+
     def numero_bordo(self) -> Optional[str]:
         """Il numero stampato sul bordo del fotogramma in finestra, se la
         macchina lo sa leggere. Mai bloccante: None se non si sa."""
@@ -505,7 +508,7 @@ class PonteSdkBackend(ScannerBackend):
         return os.path.exists(os.path.join(self.root, FILE_EMERGENZA))
 
     def _send(self, comando: str, attesa: Optional[float] = None) -> str:
-        if self._emergenza() and comando not in ("ping", "stato"):
+        if self._emergenza() and comando not in ("ping", "stato", "pressore_su"):
             raise Emergenza("STOP EMERGENZA attivo: '%s' non inviato" % comando)
         # Il contatore evita che due comandi uguali nello stesso millisecondo
         # (due tablet aperti) finiscano sullo stesso file di risposta.
@@ -532,7 +535,7 @@ class PonteSdkBackend(ScannerBackend):
                 if risposta.startswith("errore"):
                     raise ScannerError("l'agente ha risposto: %s" % risposta)
                 return risposta[3:].strip() if risposta.startswith("ok") else risposta
-            if comando not in ("ping", "stato") and self._emergenza():
+            if comando not in ("ping", "stato", "pressore_su") and self._emergenza():
                 # Non si aspetta la fine del comando: chi ha premuto
                 # l'emergenza vuole che il programma smetta adesso. Se il
                 # comando non e' ancora partito si ritira; quello in corso
@@ -803,6 +806,10 @@ class PonteSdkBackend(ScannerBackend):
     def temperatura(self) -> Optional[Dict[str, float]]:
         import json
         return json.loads(self._send("temperatura"))
+
+    def tensioni(self) -> Optional[List[float]]:
+        import json
+        return json.loads(self._send("tensioni"))
 
     RISOLUZIONE_ANTEPRIMA = 3          # 262x175: un quarto di secondo o poco piu'
 

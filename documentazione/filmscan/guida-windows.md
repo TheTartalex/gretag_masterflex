@@ -169,7 +169,10 @@ Nella scheda **Macchina**, *Impostazioni macchina* (si ricordano):
   risale, il rullo si ferma.
 - **Avanzamento automatico** (acceso): il carrello cerca da solo il
   fotogramma. Spento: per ogni fotogramma si apre il video.
-- **Temperatura della testa**, a richiesta.
+- **Stato della testa**: temperature e tensioni di alimentazione, a
+  richiesta.
+- **Alza pressore**: libera la pellicola senza muoverla. Funziona anche con
+  lo STOP EMERGENZA attivo.
 
 **Digital ICE** si sceglie quando si crea il rullo. Acceso, si legge anche
 l'infrarosso e si puliscono polvere e graffi; è più lento. Finché l'IR non è

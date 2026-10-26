@@ -230,6 +230,8 @@ class AgenteSimulato(object):
 
     def temperatura(self): return 34.5, 29.0
 
+    def tensioni(self): return [5.02, 12.1, -11.95, 3.31, 24.2, 5.0, 15.1, -15.0]
+
     def modo_asf(self, acceso): pass
     def espelli(self): self.pellicola_inserita = False
     def espelli_retro(self):
@@ -464,7 +466,9 @@ class Agente(object):
         # STOP EMERGENZA: filmscan ha scritto il file di blocco. Passano solo
         # le domande; ogni comando che muove o acquisisce si rifiuta finche'
         # il tecnico non da' l'ok dall'interfaccia, che toglie il file.
-        if comando != "stato" and os.path.exists(
+        # Alzare il pressore libera la pellicola senza muoverla: e' proprio
+        # quello che serve al tecnico, e resta permesso.
+        if comando not in ("stato", "pressore_su") and os.path.exists(
                 os.path.join(self.condivisa, "EMERGENZA.json")):
             if not getattr(self, "_emergenza_annunciata", False):
                 self._emergenza_annunciata = True
@@ -555,6 +559,9 @@ class Agente(object):
         if comando == "temperatura":
             a, b = self.s.temperatura()
             return json.dumps({"t1": round(a, 2), "t2": round(b, 2)})
+
+        if comando == "tensioni":
+            return json.dumps([round(v, 3) for v in self.s.tensioni()])
 
         if testa == "ice":
             self.s.modo_asf(parti[1] == "on")

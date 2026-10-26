@@ -371,6 +371,9 @@ METODI = [
     ("pressore", "?gi_clamp@DMLScannerAdv@@QAEPAVErrStat@DMLScanner@@_N@Z", VP, [B]),
     # get_temperature(double*, double*): comando 0x31 alla testa
     ("temperatura", "?get_temperature@DMLScannerAdv@@QAEPAVErrStat@DMLScanner@@PAN0@Z", VP, [VP, VP]),
+    # get_voltage(SupplyVoltage**): comando 0x30 alla testa; SupplyVoltage e'
+    # una vtable e 8 double (costruttore 0x1802FA90)
+    ("tensioni", "?get_voltage@DMLScannerAdv@@QAEPAVErrStat@DMLScanner@@PAPAVSupplyVoltage@1@@Z", VP, [VP]),
     # gi_set_asf_mode(bool): comando 0x25 alla testa. ASF = Applied Science
     # Fiction, cioe' Digital ICE
     ("modo_asf", "?gi_set_asf_mode@DMLScanner@@QAEPAVErrStat@1@_N@Z", VP, [B]),
@@ -830,6 +833,16 @@ class Scanner(object):
         self._verifica(self._m["temperatura"](self._obj, ctypes.byref(a),
                                               ctypes.byref(b)), "temperatura")
         return a.value, b.value
+
+    def tensioni(self):
+        """Le 8 tensioni di alimentazione della testa. Quale sia quale non e'
+        scritto da nessuna parte: si leggono in ordine."""
+        p = ctypes.c_void_p()
+        self._verifica(self._m["tensioni"](self._obj, ctypes.byref(p)), "tensioni")
+        if not p.value:
+            return []
+        valori = (ctypes.c_double * 8).from_address(p.value + 8)
+        return [float(v) for v in valori]
 
     def modo_asf(self, acceso):
         self._verifica(self._m["modo_asf"](self._obj, bool(acceso)),

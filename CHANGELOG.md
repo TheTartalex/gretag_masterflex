@@ -39,6 +39,14 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-10-26 — stato della testa, Alza pressore
+
+- `get_voltage`: le 8 tensioni della testa (SupplyVoltage, 8 double);
+  scheda Macchina, "Stato della testa" con temperature e tensioni.
+- "Alza pressore" a mano; vale anche con lo STOP EMERGENZA (ponte e agente
+  lasciano passare solo `pressore_su`).
+- api-sdk.md §9: l'elenco completo dei 119 metodi.
+
 ### 2026-10-26 — esposizione automatica, pressore, Digital ICE, video
 
 - SDK: `calibrate_all`, `get_exp_time` + `operator=`, `gi_clamp`,
