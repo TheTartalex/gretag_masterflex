@@ -722,7 +722,7 @@ class Scanner(object):
 
     def scansiona_canale(self, canale=ColorChannel.G, esposizione=1.0,
                          risoluzione=ImageResolution.PIENA,
-                         x0=None, y0=None, larghezza=0, altezza=0):
+                         x0=None, y0=None, larghezza=0, altezza=0, buio=False):
         """Una lettura grezza di un canale: il cuore di tutto.
 
         Ritorna i campioni a 16 bit cosi' come escono dall'ADC, senza nessuna
@@ -775,9 +775,17 @@ class Scanner(object):
 
         a, b = x0, x0 + larghezza - 1
         c, d = y0, y0 + altezza - 1
-        self._log("scan_raw canale %s, colonne %d-%d, righe %d-%d, risoluzione %d"
-                  % (canale, a, b, c, d, risoluzione))
-        err = chiama(self._obj, buffer_img, canale, valore, True,
+        self._log("scan_raw canale %s, colonne %d-%d, righe %d-%d, risoluzione %d%s"
+                  % (canale, a, b, c, d, risoluzione, ", AL BUIO" if buio else ""))
+        # Il booleano dopo l'ExposureTime arriva fino al comando di scansione
+        # come bit 0x80 (scn_dll 0x1807E2BE). Tutte le acquisizioni d'immagine
+        # dell'SDK lo passano False (DMinScan, FrameDetErr, PreviewJogScan,
+        # ScanCntr 0x180649B4); True compare solo in un percorso a parte di
+        # ScanCntr (0x18064B43). Fino al 26/10/2026 sera si passava True: le
+        # immagini della riserva erano al livello del buio (media 19 su R, G
+        # e B) e non cambiavano con l'esposizione. Il bit e' quindi, con ogni
+        # probabilita', la lettura al buio: si usa solo se chiesta.
+        err = chiama(self._obj, buffer_img, canale, valore, bool(buio),
                      a, b, c, d, risoluzione, 0)
         self._verifica(err, "scansione canale %s" % canale)
         return bytes(memoryview(buffer_img).cast("B")), w, h

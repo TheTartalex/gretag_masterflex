@@ -1798,7 +1798,12 @@ function mostraStato(s){
 
 function mostraSensori(){ get('/api/sensori').then(function(x){
   var e=el('sensori');
-  if(!x.disponibili){ e.textContent='sensori pellicola: ingressi non ancora mappati (collaudo 4 \u2192 2)'; return; }
+  if(!x.disponibili){
+    /* carrello Gretag: la pellicola la vede il carrello e l'SDK lo dice con
+       un evento, dopo Carica. Gli ingressi singoli non servono. */
+    if(x.pellicola_sdk===true){ e.innerHTML='pellicola <b style="color:var(--ok)">inserita</b>'; return; }
+    if(x.pellicola_sdk===false){ e.innerHTML='pellicola <b>non inserita</b> \u00b7 Carica, poi inserirla'; return; }
+    e.textContent='pellicola: premere Carica, poi inserirla'; return; }
   e.innerHTML='ingresso <b style="color:'+(x.ingresso?'var(--ok)':'var(--dim)')+'">'+
     (x.ingresso?'pellicola':'libero')+'</b> · uscita <b style="color:'+
     (x.uscita?'var(--ok)':'var(--dim)')+'">'+(x.uscita?'pellicola':'libero')+'</b>'; }); }
@@ -2063,8 +2068,10 @@ class Handler(BaseHTTPRequestHandler):
 
         if u.path == "/api/sensori":
             sn = s.sensori()
+            leggi = getattr(s.backend, "pellicola_sdk", None)
             return self._json({"ingresso": sn.ingresso, "uscita": sn.uscita,
-                               "disponibili": sn.disponibili})
+                               "disponibili": sn.disponibili,
+                               "pellicola_sdk": leggi() if leggi else None})
 
         if u.path == "/api/rulli":
             oid = q.get("ordine_id", [""])[0]

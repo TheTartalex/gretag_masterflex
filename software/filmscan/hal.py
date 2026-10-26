@@ -603,6 +603,18 @@ class PonteSdkBackend(ScannerBackend):
 
     # --- sensori ----------------------------------------------------------
 
+    def pellicola_sdk(self) -> Optional[bool]:
+        """Pellicola inserita secondo l'SDK (evento EV_FILM_INSERTED), letta
+        dal stato.json dell'agente: con il carrello Gretag e' il carrello a
+        vedere la pellicola, non servono gli ingressi mappati a mano.
+        None = non si sa (agente vecchio, o mai armato con Carica)."""
+        import json
+        try:
+            with open(os.path.join(self.root, "stato.json")) as f:
+                return json.load(f).get("pellicola_inserita")
+        except (IOError, OSError, ValueError):
+            return None
+
     def read_sensors(self) -> FilmSensors:
         if not self.ingressi:
             return FilmSensors(disponibili=False)

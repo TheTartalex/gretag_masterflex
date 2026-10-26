@@ -171,7 +171,7 @@ class AgenteSimulato(object):
         return percorso
 
     def scansiona_canale(self, canale=1, esposizione=1.0, risoluzione=0,
-                         x0=0, y0=0, larghezza=0, altezza=0):
+                         x0=0, y0=0, larghezza=0, altezza=0, buio=False):
         import random
         # come sdk.DIMENSIONI_GREZZE
         dim = {0: (2100, 1400), 1: (1050, 700), 2: (525, 350),
@@ -182,6 +182,9 @@ class AgenteSimulato(object):
         base = [min(65535.0, esposizione * (12000 + 5000 * (x / float(w))
                                             + rnd.randint(-300, 300)))
                 for x in range(w)]
+        if buio:
+            # come la riserva il 26/10/2026 con il bit del buio acceso
+            base = [19.0 + rnd.randint(-2, 2) for x in range(w)]
         # Bande orizzontali che cambiano a ogni lettura: senza un po' di
         # "immagine" il rilevamento di fine pellicola vedeva luce uniforme e
         # chiudeva il rullo simulato dopo il primo fotogramma.
@@ -248,6 +251,7 @@ class Agente(object):
         while True:
             fatti = self.giro()
             self.controlla_alimentazione()
+            self.pubblica_stato()
             if self.pronto_annunciato is not True and time.time() >= self._prossimo_controllo:
                 self._prossimo_controllo = time.time() + 2.0
                 self.annuncia_pronto(self.s.pronto())
@@ -256,6 +260,25 @@ class Agente(object):
 
     pronto_annunciato = None
     _prossimo_controllo = 0.0
+    _stato_pubblicato = None
+
+    def pubblica_stato(self):
+        """Scrive <condivisa>/stato.json quando cambia qualcosa che arriva
+        dagli eventi dell'SDK (pronto, pellicola inserita). L'interfaccia lo
+        legge ogni secondo senza disturbare l'agente ne' la macchina."""
+        stato = {"pronto": self.pronto_annunciato,
+                 "stato_sdk": getattr(self.s, "stato_sdk", None),
+                 "pellicola_inserita": getattr(self.s, "pellicola_inserita", None)}
+        if stato == self._stato_pubblicato:
+            return
+        percorso = os.path.join(self.condivisa, "stato.json")
+        try:
+            with open(percorso + ".tmp", "w") as f:
+                json.dump(stato, f)
+            os.replace(percorso + ".tmp", percorso)
+            self._stato_pubblicato = stato
+        except (IOError, OSError):
+            pass
     _inizio_attesa = None
 
     def annuncia_pronto(self, pronto):
@@ -432,15 +455,22 @@ class Agente(object):
             return nome
 
         if testa == "grab":
-            return self.acquisisci(parti[1], int(parti[2]), float(parti[3]))
+            # grab_<canale>_<risoluzione>_<esposizione>[_buio]
+            buio = len(parti) > 4 and parti[4] == "buio"
+            return self.acquisisci(parti[1], int(parti[2]), float(parti[3]), buio)
 
         raise ValueError("comando sconosciuto: %s" % comando)
 
-    def acquisisci(self, canale, risoluzione, esposizione):
+    def acquisisci(self, canale, risoluzione, esposizione, buio=False):
         if canale not in CANALI:
             raise ValueError("canale sconosciuto: %s" % canale)
         t0 = time.time()
-        dati, w, h = self.s.scansiona_canale(CANALI[canale], esposizione, risoluzione)
+        if buio:
+            dati, w, h = self.s.scansiona_canale(CANALI[canale], esposizione,
+                                                 risoluzione, buio=True)
+        else:
+            dati, w, h = self.s.scansiona_canale(CANALI[canale], esposizione,
+                                                 risoluzione)
         nome = "%d_%s_%dx%d.raw" % (int(t0 * 1000), canale, w, h)
         percorso = os.path.join(self.condivisa, "raw", nome)
         with open(percorso, "wb") as f:
@@ -448,6 +478,7 @@ class Agente(object):
         with open(percorso[:-4] + ".json", "w") as f:
             json.dump({"canale": canale, "larghezza": w, "altezza": h,
                        "esposizione": esposizione, "risoluzione": risoluzione,
+                       "buio": buio,
                        "dtype": "uint16", "ordine": "little",
                        "secondi": round(time.time() - t0, 2)}, f)
         return nome

@@ -117,6 +117,20 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
   anche l'evento `EV_FILM_INSERTED`. Quale dei modi 1 e 2 sia il rullo
   intero va visto sulla macchina.
 
+- **Collaudo colori sullo scanner vero (18:08)**: le immagini erano al
+  livello del buio (media 19 su R, G e B) e non cambiavano con
+  l'esposizione. Ci sono due cause possibili, e vanno provate tutte e due:
+  1. `scan_raw` veniva chiamato con il booleano a `True`, cioè il bit
+     `0x80` del comando, che con ogni probabilità vuol dire lettura al buio
+     (tutte le acquisizioni d'immagine dell'SDK lo passano `False`).
+     Corretto;
+  2. il **tamburo dei formati** fermo fra due posizioni davanti alla luce
+     (segnalato da Alessandro). Prima del collaudo si preme **Carica**, che
+     porta tamburo e guide al formato.
+
+  Il salvataggio delle PNG del collaudo era tanto lento da sembrare
+  bloccato: ora a metà lato e con compressione minima, meno di 5 s.
+
 ## Problemi aperti, in ordine di priorità
 
 1. **Motori delle guide all'avvio.** Le guide sono i motori 3 e 4 del

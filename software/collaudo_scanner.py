@@ -127,8 +127,14 @@ def chiedi(domanda, scelte=None):
 
 
 def salva_png(arr, percorso):
+    """PNG a meta' lato e con compressione minima: sono immagini da guardare,
+    i numeri veri stanno nei .raw dell'agente e in rapporto.json. A piena
+    risoluzione e compressione di serie, sulla CPU della macchina, il
+    salvataggio durava tanto da sembrare bloccato (26/10/2026)."""
     from PIL import Image
-    Image.fromarray(arr).save(percorso)
+    im = Image.fromarray(arr)
+    im = im.resize((max(1, im.width // 2), max(1, im.height // 2)))
+    im.save(percorso, compress_level=1)
     return percorso
 
 

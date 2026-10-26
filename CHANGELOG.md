@@ -39,6 +39,17 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-10-26 — immagini nere, pellicola dall'SDK
+
+- `ponte/sdk.py`: `scan_raw` con il bit del buio spento (prima `True`:
+  immagini al livello del buio). Lettura al buio a richiesta:
+  `grab_<canale>_<res>_<esp>_buio`.
+- `ponte/agente.py`: `stato.json` nel ponte quando cambiano lo stato
+  dell'SDK o la pellicola inserita.
+- Interfaccia: in alto "pellicola inserita / non inserita" dall'evento
+  dell'SDK, invece di "ingressi non mappati".
+- `collaudo_scanner.py`: PNG a metà lato e con compressione minima.
+
 ### 2026-10-26 — carrello in attesa della pellicola
 
 - `ponte/sdk.py`: `arma_carrello(modo)` con `set_scanner_input_mode`;
