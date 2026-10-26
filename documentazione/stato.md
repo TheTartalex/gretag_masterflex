@@ -17,7 +17,7 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
 | Componente | Dove | Stato |
 |---|---|---|
 | Driver **EKframePnP 2.1** | [`driver/EKframePnP/`](../driver/EKframePnP/) | **funziona sulla riserva**: la scheda si avvia e il software la riconosce |
-| Software **filmscan** | [`software/`](../software/) | nel repository dal 26/10, con le correzioni e il menu unico `MASTERFLEX.bat`; **da provare sulla riserva** |
+| Software **filmscan** | [`software/`](../software/) | provato con l'agente simulato; installer unico `INSTALLA.bat`; **da provare sulla riserva** |
 | Carrello **Capri** (COM5) | [carrello-capri.md](hardware/carrello-capri.md) | firmware **1.15** dal 26/10/2026 sulla riserva ([decisione 0006](decisioni/0006-firmware-carrello-1.15.md)) |
 
 ## Fatto il 26 ottobre
@@ -236,6 +236,33 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
   2. Il pressore durante l'anteprima: si sente scendere e salire?
   3. Il verso e la scala dei passi da 1 e 20 mm nel video.
   4. Un rullo con Digital ICE: cosa cambia con l'ASF acceso.
+
+- **Autofocus, video della macchina, finestre Gretag, LUT** (notte):
+  - **autofocus a scelta** in *Impostazioni macchina*: `gi_focus` con
+    ricerca completa (di serie), ricerca breve, lente alla posizione
+    nominale, spento. Si fa sul primo fotogramma di ogni striscia, col
+    pressore giù, e col tasto Fuoco; se fallisce, lente alla nominale e si
+    prosegue. Il nostro "jog" non serve: per il fuoco `gi_focus` è quello
+    del carrello, per il posizionamento i nostri passi da 1 e 20 mm sono
+    già verificati, mentre `preview_jog_*` PhxScanner non lo usa;
+  - il **video del posizionamento a mano** ora viene dal video dell'SDK
+    (`get_video_mode_size` + `perform_video_mode_scan`, come PhxScanner);
+    se non risponde, si torna alla lettura veloce di prima;
+  - **finestre del carrello** (scheda Macchina, per il tecnico):
+    `show_gretag_ui` con i numeri 1, 3, 4, 5, centrate sul monitor della
+    macchina;
+  - **LUT** in fondo alla scheda Colore: `.cube`, `.lut` Discreet 1D,
+    `.3dl`; si applica dopo tutte le altre correzioni, a tutti gli ordini,
+    con l'intensità regolabile. La scelta resta in `impostazioni.json`, i
+    file in `software/lut/` (fuori da git). Lettori provati con file
+    sintetici (1D a una e tre colonne, 10 e 12 bit, 3D 17 punti);
+  - interfaccia sistemata su telefono e tablet verticale (pagina più larga
+    dello schermo, barra sovrapposta); schermate di tutti i formati, 4:3
+    anche col tema chiaro;
+  - README della radice riscritto: era fermo alla prima pubblicazione.
+
+  Da provare sulla macchina: quale finestra è ogni numero; se il video
+  dell'SDK parte a scanner fermo; l'autofocus a motori attivi.
 
 ## Problemi aperti, in ordine di priorità
 

@@ -1081,13 +1081,30 @@ details.sez>div{padding-bottom:10px}
 @media(max-width:860px){
  body{overflow:auto}
  main{display:flex;flex-direction:column;height:auto;overflow:visible}
+ /* in colonna niente si deve restringere sotto il suo contenuto: prima il
+    riquadro centrale si stringeva, e il resto finiva sotto il pannello */
+ main>*{flex:0 0 auto;min-height:auto}
  nav.binario{flex-direction:row;order:-2}
- nav.binario button{flex:1}
+ nav.binario button{flex:1;min-width:0}
  .centro{order:-1}
  .visore{height:52vh;flex:0 0 auto}
  .schede{overflow:visible}
  .comandi{flex-wrap:wrap}
  .comandi .avanz{flex-basis:100%}
+}
+/* Telefono: l'intestazione va a capo (stato sopra, tasti sotto), le schede
+   mostrano solo l'icona, i tasti si dividono la riga. */
+@media(max-width:600px){
+ header{flex-wrap:wrap;height:auto;padding:6px 8px;row-gap:6px}
+ header #stato,header #sensori{flex-basis:100%}
+ header .sp{display:none}
+ header button.stop{flex:1;padding:8px 10px}
+ nav.binario button{font-size:0;padding:8px 2px}
+ nav.binario button svg{width:22px;height:22px}
+ .strumenti .info{flex-basis:100%;margin-left:0}
+ .visore{height:42vh}
+ .comandi button{flex:1 1 40%}
+ .griglia2,.griglia3{grid-template-columns:1fr 1fr}
 }
 </style></head><body>
 
@@ -1257,6 +1274,18 @@ details.sez>div{padding-bottom:10px}
 
   <div class="row"><button class="ghost" onclick="azzeraTutto()">Azzera tutto</button>
    <button onclick="applica(true)">Applica</button></div>
+
+  <details class="sez" open><summary>LUT, applicata per ultima a tutti gli ordini</summary><div>
+   <select id="lut_scelta" onchange="scegliLut()"><option value="">nessuna</option></select>
+   <label>Intensità <span id="v_lut">100%</span></label>
+   <input type="range" id="lut_intensita" min="0" max="100" step="5" value="100"
+     oninput="el('v_lut').textContent=this.value+'%'" onchange="scegliLut()">
+   <div class="row">
+    <input type="file" id="lut_file" accept=".cube,.lut,.3dl" style="display:none" onchange="caricaLut(this)">
+    <button class="sec" onclick="el('lut_file').click()">Aggiungi LUT (.cube, .lut, .3dl)</button>
+   </div>
+   <div id="lut_nota" class="nota-imp" style="margin-left:0">Quella scelta si applica da sola alla fine di ogni elaborazione, dopo tutte le altre correzioni, e resta per tutti gli ordini.</div>
+  </div></details>
  </section>
  </div>
 
@@ -1310,11 +1339,32 @@ details.sez>div{padding-bottom:10px}
    <div class="nota-imp">Giù durante ogni lettura, così la pellicola resta piatta; su prima di muoverla.</div>
    <label><input type="checkbox" id="imp_avanzamento_automatico" style="width:auto" onchange="impostaMacchina()"> Avanzamento automatico</label>
    <div class="nota-imp">Il carrello cerca da solo il fotogramma. Spento: ogni fotogramma si mette in finestra a mano, con il video e i passi da 1 e 20 mm.</div>
+   <label>Autofocus</label>
+   <select id="imp_autofocus" onchange="impostaMacchina()">
+    <option value="gi">gi_focus, ricerca completa (di serie)</option>
+    <option value="rapido">gi_focus, ricerca breve</option>
+    <option value="nominale">posizione nominale della lente</option>
+    <option value="spento">spento</option>
+   </select>
+   <div class="nota-imp">Sul primo fotogramma di ogni striscia, e col tasto Fuoco. Se il fuoco non si trova, la lente torna alla posizione nominale.</div>
    <div class="row">
     <button class="sec" onclick="leggiTesta()">Stato della testa</button>
     <button class="sec" onclick="alzaPressore()" title="Libera la pellicola senza muoverla. Funziona anche con lo STOP EMERGENZA">Alza pressore</button>
    </div>
    <div id="testa" class="nota-imp" style="white-space:pre-line"></div>
+  </section>
+  <section class="pannello">
+   <h2>Finestre del carrello (tecnico)</h2>
+   <div class="griglia2">
+    <select id="finestra_num">
+     <option value="1">Finestra 1</option><option value="3">Finestra 3</option>
+     <option value="4">Finestra 4</option><option value="5">Finestra 5</option>
+    </select>
+    <span></span>
+    <button class="sec" onclick="finestraCarrello(true)">Apri</button>
+    <button class="sec" onclick="finestraCarrello(false)">Chiudi</button>
+   </div>
+   <div class="nota-imp">Le finestre del programma del carrello Gretag: servizio, autofocus, pulizia del lettore DX. Si aprono sul monitor della macchina, non sul tablet; quale numero sia quale finestra si vede aprendole. Da lì si possono muovere i motori senza i nostri limiti.</div>
   </section>
   <section class="pannello">
    <h2>Movimenti a mano</h2>
@@ -1750,7 +1800,8 @@ function muovi(mm){ post('/api/muovi',{mm:mm}).then(mostraStato); }
    finche' nessuno le tocca, poi si salvano al cambio. */
 var IMP=['esposizione_auto','pressore_auto','avanzamento_automatico'];
 function impostaMacchina(){
-  var d={}; IMP.forEach(function(k){ d[k]=el('imp_'+k).checked; });
+  var d={autofocus:val('imp_autofocus')};
+  IMP.forEach(function(k){ d[k]=el('imp_'+k).checked; });
   post('/api/macchina/impostazioni',d).then(function(r){
     if(r && r.errore){ alert(r.errore); }
     /* senza fuoco, al prossimo aggiornamento la spunta torna quella vera */
@@ -1766,6 +1817,41 @@ function leggiTesta(){
                  : ('Tensioni: '+(r.tensioni_errore||'non disponibili su questo collegamento')));
     el('testa').textContent=righe.join('\n');
   });
+}
+/* La LUT: applicata per ultima, ricordata dal programma per tutti gli ordini */
+function mostraLut(r){
+  if(!r || r.errore){ if(r) el('lut_nota').textContent=r.errore; return; }
+  var sel=el('lut_scelta');
+  sel.innerHTML='<option value="">nessuna</option>';
+  (r.lut||[]).forEach(function(n){
+    var o=document.createElement('option'); o.value=n; o.textContent=n.replace(/\.(cube|lut|3dl)$/i,'');
+    sel.appendChild(o); });
+  sel.value=r.scelta||'';
+  var p=Math.round((r.intensita==null?1:r.intensita)*100);
+  el('lut_intensita').value=p; el('v_lut').textContent=p+'%';
+  el('lut_nota').textContent = r.lut && r.lut.length
+    ? 'Quella scelta si applica da sola alla fine di ogni elaborazione, dopo tutte le altre correzioni, e resta per tutti gli ordini.'
+    : 'Nessuna LUT nel programma: aggiungerne una (.cube, .lut, .3dl).';
+}
+function caricaElencoLut(){ get('/api/lut').then(mostraLut).catch(function(){}); }
+function scegliLut(){
+  post('/api/lut',{scelta:val('lut_scelta'),intensita:el('lut_intensita').value/100})
+    .then(function(r){ mostraLut(r); aggiornaImmagini(true); disegnaIstogramma(); });
+}
+function caricaLut(inp){
+  var f=inp.files && inp.files[0]; if(!f) return;
+  var rd=new FileReader();
+  rd.onload=function(){
+    post('/api/lut/carica',{nome:f.name,testo:rd.result}).then(function(r){
+      if(r && r.errore){ el('lut_nota').textContent='LUT non valida: '+r.errore; return; }
+      mostraLut(r); if(r.aggiunta) el('lut_scelta').value=r.aggiunta;
+      scegliLut(); });
+  };
+  rd.readAsText(f); inp.value='';
+}
+function finestraCarrello(apri){
+  post('/api/finestra_carrello',{numero:parseInt(val('finestra_num')),apri:apri})
+    .then(function(r){ if(r && r.errore) alert(r.errore); });
 }
 function alzaPressore(){
   post('/api/pressore_su',{}).then(function(r){
@@ -1901,10 +1987,14 @@ function mostraStato(s){
      qualcuno un backend diverso da quello con cui il server e' partito. */
   ultimoJob = s.job || null;
   mostraPosizionamento(s.job && s.job.running ? s.job.posizionamento : '');
-  if(s.impostazioni_macchina) IMP.forEach(function(k){
-    var c=el('imp_'+k);
-    if(c && document.activeElement!==c) c.checked=!!s.impostazioni_macchina[k];
-  });
+  if(s.impostazioni_macchina){
+    IMP.forEach(function(k){
+      var c=el('imp_'+k);
+      if(c && document.activeElement!==c) c.checked=!!s.impostazioni_macchina[k];
+    });
+    var af=el('imp_autofocus');
+    if(af && document.activeElement!==af) af.value=s.impostazioni_macchina.autofocus;
+  }
   var tr=el('tasto_rullo');
   if(tr){
     var inRullo = !!(s.job && s.job.running && s.job.kind==='rullo');
@@ -2028,7 +2118,7 @@ el('rullo_id').onchange=function(){ provSel=null; caricaStriscia(); };
 el('vaiarchivio').href = url('/archivio');
 var RULLO_CHIESTO = new URLSearchParams(location.search).get('rullo');
 var ORDINE_CHIESTO = new URLSearchParams(location.search).get('ordine');
-get('/api/stato').then(mostraStato); caricaOrdini(); caricaStriscia();
+get('/api/stato').then(mostraStato); caricaOrdini(); caricaStriscia(); caricaElencoLut();
 setInterval(ciclo,1000);
 </script></body></html>
 
@@ -2275,6 +2365,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"fotogrammi": []})
             return self._json({"fotogrammi": s.archivio.fotogrammi(rid)})
 
+        if u.path == "/api/lut":
+            return self._json(s.elenco_lut())
+
         if u.path == "/api/video.jpg":
             return self._immagine(s.video_jpeg() or _mancante())
 
@@ -2462,12 +2555,30 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/api/testa":
                 return self._json(s.stato_testa())
 
+            if u.path == "/api/finestra_carrello":
+                return self._json(s.finestra_carrello(int(d.get("numero", 1)),
+                                                      bool(d.get("apri"))))
+
             if u.path == "/api/pressore_su":
                 return self._json(s.alza_pressore())
 
             if u.path == "/api/posiziona":
                 return self._json(s.posiziona(str(d.get("azione", "")),
                                               float(d.get("mm", 0) or 0)))
+
+            if u.path == "/api/lut":
+                esito = s.scegli_lut(str(d.get("scelta", "")),
+                                     d.get("intensita"))
+                if self.impostazioni:
+                    try:
+                        s.cfg.save(self.impostazioni)
+                    except (IOError, OSError) as exc:
+                        s.log("Impostazioni non salvate: %s" % exc)
+                return self._json(esito)
+
+            if u.path == "/api/lut/carica":
+                return self._json(s.carica_lut(str(d.get("nome", "")),
+                                               str(d.get("testo", ""))))
 
             if u.path == "/api/fine_rullo":
                 return self._json(s.fine_rullo())

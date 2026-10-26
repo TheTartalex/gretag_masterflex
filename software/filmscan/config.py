@@ -282,6 +282,14 @@ class AppConfig:
     # avanzamento automatico: il carrello cerca il fotogramma successivo;
     # spento, ogni fotogramma si mette in finestra a mano col video
     avanzamento_automatico: bool = True
+    # autofocus a inizio striscia e sul tasto Fuoco: "gi" (gi_focus, ricerca
+    # completa), "rapido" (gi_focus modo 0), "nominale" (posizione
+    # nominale della lente), "spento"
+    autofocus: str = "gi"
+    # --- LUT applicata in post-elaborazione a tutti gli ordini ---
+    lut: str = ""                       # nome del .cube nella cartella lut, "" = nessuna
+    lut_intensita: float = 1.0
+    lut_dir: str = ""                   # vuoto = software/lut, accanto al programma
     # sotto questa escursione di densita' (D) un fotogramma e' vuoto: non
     # esposto o tutto opaco. Si salta, si annota e si conserva il grezzo.
     soglia_fotogramma_vuoto_d: float = 0.10
@@ -295,7 +303,10 @@ class AppConfig:
 
     def path(self, which: str) -> str:
         p = {"raw": self.raw_dir, "out": self.out_dir, "calib": self.calib_dir,
-             "archivio": self.archivio_dir or self.out_dir}[which]
+             "archivio": self.archivio_dir or self.out_dir,
+             "lut": self.lut_dir or os.path.join(
+                 os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                 "lut")}[which]
         os.makedirs(p, exist_ok=True)
         return p
 

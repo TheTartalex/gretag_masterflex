@@ -42,7 +42,7 @@
 
 | Documento | Contenuto | Aggiornato |
 |---|---|---|
-| [filmscan/installazione.md](filmscan/installazione.md) | installazione, preset, ciclo automatico, i dati che mancano | 2026-09-03 |
+| [filmscan/installazione.md](filmscan/installazione.md) | storico: preset, memoria, i dati che mancavano. Per installare: `INSTALLA.bat` e la guida | 2026-09-03, nota del 26/10 |
 | [filmscan/guida-windows.md](filmscan/guida-windows.md) | guida per l'operatore: il menu di `MASTERFLEX.bat` | 2026-10-26 |
 | [filmscan/ponte.md](filmscan/ponte.md) | l'agente che comanda la macchina attraverso l'SDK | 2026-09-03 |
 | [filmscan/archivio.md](filmscan/archivio.md) | ordini, consegna, conservazione, WhatsApp | 2026-09-07 |

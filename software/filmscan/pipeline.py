@@ -92,6 +92,12 @@ class ProcessOptions:
     rotate_min_confidence: float = 0.45
     roll_mirror: Optional[orient.RollMirror] = None
 
+    # --- LUT (look) ---
+    # La sceglie il programma, non la singola richiesta: ScanService la mette
+    # in ogni ProcessOptions (vedi ScanService.options). None = nessuna.
+    lut: Optional[object] = None
+    lut_intensita: float = 1.0
+
 
 @dataclass
 class ProcessResult:
@@ -180,7 +186,13 @@ def finiture(base: np.ndarray, opts: ProcessOptions):
             sharpen=opts.sharpen,
             grain_add=opts.grain_add)
 
-    return invert.to_srgb(img), extra_mask
+    img = invert.to_srgb(img)
+    # La LUT per ultima, sull'sRGB finito: e' li' che un look .cube si
+    # aspetta di lavorare, e resta fuori dal grezzo e dalla base.
+    if opts.lut is not None and opts.lut_intensita > 0:
+        from . import lut as _lut
+        img = _lut.applica(img, opts.lut, opts.lut_intensita)
+    return img, extra_mask
 
 
 def process(raw: RawScan, opts: ProcessOptions,

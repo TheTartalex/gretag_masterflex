@@ -1,9 +1,18 @@
 # Gretag Masterflex D1008 — pacchetto di progetto
 
-> Era il `LEGGIMI.md` del pacchetto filmscan (settembre 2026). Dal 26/10/2026
-> i `.bat` di `software\windows\` sono sostituiti da `software\MASTERFLEX.bat`. **Aggiornamento di ottobre:** sulle CPU senza AVX numpy va
-> tenuto alla 1.22.4 ([decisione 0003](../decisioni/0003-numpy-1.22.4-cpu-senza-avx.md)),
-> e sulla macchina di riserva il driver è [EKframePnP](../../driver/EKframePnP/).
+> **Documento storico.** Era il `LEGGIMI.md` del pacchetto filmscan
+> (settembre 2026) e resta per i dati di fondo: preset, memoria, i tre dati
+> mancanti, il ponte. Per installare e usare la macchina oggi:
+>
+> - l'installer unico `INSTALLA.bat`, che fa sia l'installazione nuova sia
+>   l'aggiornamento ([strumenti/](../../strumenti/));
+> - la [guida per l'operatore](guida-windows.md).
+>
+> Sono superati il "Ciclo automatico" a sensori (ora il carrello porta i
+> fotogrammi ed espelle la striscia da solo) e i numeri delle voci del menu.
+> Sulle CPU senza AVX numpy resta alla 1.22.4
+> ([decisione 0003](../decisioni/0003-numpy-1.22.4-cpu-senza-avx.md)), e
+> sulla macchina di riserva il driver è [EKframePnP](../../driver/EKframePnP/).
 
 ## Installazione su Windows 7 x86
 

@@ -173,6 +173,21 @@ Nella scheda **Macchina**, *Impostazioni macchina* (si ricordano):
   richiesta.
 - **Alza pressore**: libera la pellicola senza muoverla. Funziona anche con
   lo STOP EMERGENZA attivo.
+- **Autofocus**: quello del carrello (`gi_focus`) con la ricerca completa,
+  di serie, oppure con la ricerca breve, oppure la lente alla posizione
+  nominale, oppure spento. Si fa sul primo fotogramma di ogni striscia, col
+  pressore giù, e col tasto **Fuoco**. Se il fuoco non si trova, la lente
+  torna alla posizione nominale e il rullo continua.
+
+**Finestre del carrello (tecnico)**, sempre in Macchina: aprono sul monitor
+della macchina, non sul tablet, le finestre del programma Gretag del
+carrello (servizio, autofocus, pulizia del lettore DX). Da lì i motori si
+muovono senza i nostri limiti: solo per il tecnico.
+
+**Il tasto Fotogramma ›** in basso fa muovere la pellicola: il carrello
+porta in finestra lo scatto successivo, come farebbe durante il rullo. Non
+scansiona e non aggiorna l'immagine sullo schermo, che resta l'ultima
+anteprima: per vederlo si preme **Anteprima**.
 
 **Digital ICE** si sceglie quando si crea il rullo. Acceso, si legge anche
 l'infrarosso e si puliscono polvere e graffi; è più lento. Finché l'IR non è
@@ -181,7 +196,8 @@ verificato sulla macchina resta attivo solo l'ASF della macchina.
 **Posizionamento a mano.** Se il carrello non trova il fotogramma (negativo
 sbiadito, interfotogramma che non si vede) o se l'avanzamento automatico è
 spento, si apre da solo il video: un'immagine in bianco e nero, circa una al
-secondo. Coi tasti **‹ 1 mm**, **1 mm ›**, **« 20 mm**, **20 mm »** si porta
+secondo, presa dal video della macchina stessa (lo stesso del programma
+originale). Coi tasti **‹ 1 mm**, **1 mm ›**, **« 20 mm**, **20 mm »** si porta
 il fotogramma in finestra, poi **Acquisisci**. *Fotogramma ›* riprova col
 carrello, *Striscia finita* espelle e aspetta la successiva, *Fine rullo*
 chiude.
@@ -190,6 +206,21 @@ chiude.
 riordinano secondo quei numeri, file compresi: le strisce si possono
 inserire in qualunque ordine. Per ora la macchina non li passa ancora: i
 fotogrammi restano nell'ordine di scansione.
+
+## La LUT, in fondo a Colore
+
+In fondo alla scheda **Colore** si sceglie una LUT. Quella scelta si
+applica da sola alla fine di ogni elaborazione, dopo tutte le altre
+correzioni, a tutti gli ordini, finché non se ne sceglie un'altra o
+*nessuna*. Il cursore *Intensità* la dosa (100% = piena).
+
+- Formati: `.cube` (3D e 1D), `.lut` (Discreet/Autodesk 1D, a una o tre
+  colonne, con o senza intestazione) e `.3dl` (Autodesk/Lustre 3D).
+- *Aggiungi LUT* copia il file nel programma, in `software\lut\`; si
+  possono anche copiare lì a mano. Un file che non si riesce a leggere viene
+  rifiutato con il motivo.
+- La scelta resta in `impostazioni.json`: sopravvive a riavvii e
+  aggiornamenti.
 
 ## Fine rullo e STOP EMERGENZA
 

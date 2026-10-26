@@ -214,6 +214,14 @@ class ScannerBackend(abc.ABC):
     def tensioni(self) -> Optional[List[float]]:
         return None
 
+    def autofocus(self, metodo: str) -> bool:
+        """Autofocus della macchina ("gi", "rapido", "nominale"). False se
+        il backend non ce l'ha."""
+        return False
+
+    def finestra_carrello(self, numero: int, mostra: bool) -> None:
+        raise ScannerError("questo collegamento non ha le finestre del carrello")
+
     def numero_bordo(self) -> Optional[str]:
         """Il numero stampato sul bordo del fotogramma in finestra, se la
         macchina lo sa leggere. Mai bloccante: None se non si sa."""
@@ -812,11 +820,35 @@ class PonteSdkBackend(ScannerBackend):
         return json.loads(self._send("tensioni"))
 
     RISOLUZIONE_ANTEPRIMA = 3          # 262x175: un quarto di secondo o poco piu'
+    ATTESA_FUOCO = 120.0
+    # None = da provare; True/False = il video dell'SDK va / non va
+    _video_sdk: Optional[bool] = None
 
     def anteprima_veloce(self) -> np.ndarray:
+        """Il video del programma originale (perform_video_mode_scan); se
+        la macchina lo rifiuta, una lettura del verde a bassa risoluzione,
+        come prima. Il rifiuto si ricorda: non si riprova a ogni immagine."""
+        if self._video_sdk is not False:
+            try:
+                img = self._leggi(self._send("video", attesa=self.ATTESA_ACQUISIZIONE))
+                self._video_sdk = True
+                return img.astype(np.float32)
+            except Emergenza:
+                raise
+            except ScannerError:
+                self._video_sdk = False
         return self._leggi(self._send(
             "grab_G_%d_1.000" % self.RISOLUZIONE_ANTEPRIMA,
             attesa=self.ATTESA_ACQUISIZIONE)).astype(np.float32)
+
+    def autofocus(self, metodo: str) -> bool:
+        if metodo not in ("gi", "rapido", "nominale"):
+            raise ScannerError("autofocus sconosciuto: %s" % metodo)
+        self._send("fuoco_%s" % metodo, attesa=self.ATTESA_FUOCO)
+        return True
+
+    def finestra_carrello(self, numero: int, mostra: bool) -> None:
+        self._send("finestra_%d_%s" % (int(numero), "on" if mostra else "off"))
 
     def capture_line_block(self, channel: str, lines: int,
                            exposure: float = 1.0) -> np.ndarray:
@@ -860,7 +892,18 @@ class PonteSdkBackend(ScannerBackend):
         with open(meta_path) as f:
             meta = json.load(f)
         w, h = int(meta["larghezza"]), int(meta["altezza"])
-        dati = np.fromfile(percorso, dtype="<u2").reshape(h, w)
+        n = int(meta.get("campioni", w * h))
+        dati = np.fromfile(percorso, dtype="<u2")
+        # Il video dell'SDK dichiara a parte quanti campioni ha: grigio
+        # (w*h), RGB intercalato (3*w*h, si tiene il verde) o altro.
+        if n == w * h:
+            dati = dati.reshape(h, w)
+        elif n == 3 * w * h:
+            dati = dati.reshape(h, w, 3)[:, :, 1]
+        elif w and dati.size % w == 0:
+            dati = dati.reshape(-1, w)
+        else:
+            dati = dati.reshape(1, -1)
         # I grezzi del ponte sono gia' stati letti: tenerli li' riempirebbe il
         # disco di 6 MB per lettura, calibrazioni comprese.
         for p in (percorso, meta_path):

@@ -5,6 +5,12 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## Repository
 
+### 2026-10-26 — README
+
+- `README.md` riscritto: cosa fa filmscan oggi, stato, installer unico,
+  struttura con `strumenti/aggiornamento/`. `installazione.md` segnato come
+  storico.
+
 ### 2026-10-26 — firmware del carrello
 
 - `carrello-capri.md` riscritto dal firmware disassemblato e dai backup del
@@ -38,6 +44,20 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 - `CLAUDE.md` alla radice al posto del file di contesto da allegare a mano.
 
 ## filmscan
+
+### 2026-10-26 — autofocus a scelta, video dell'SDK, finestre Gretag, LUT
+
+- Impostazioni macchina, *Autofocus*: `gi_focus` completo (di serie),
+  breve, posizione nominale, spento; sul primo fotogramma di ogni striscia
+  e col tasto Fuoco.
+- Posizionamento a mano col video dell'SDK (`perform_video_mode_scan`);
+  ripiego sulla lettura veloce.
+- Scheda Macchina: *Finestre del carrello* (`show_gretag_ui`, 1/3/4/5).
+- `filmscan/lut.py`: LUT `.cube`, `.lut` (Discreet 1D), `.3dl`; in fondo
+  alla scheda Colore, applicata per ultima a tutti gli ordini, con
+  intensità; scelta in `impostazioni.json`, file in `software/lut/`.
+- Interfaccia: telefono e tablet verticale senza sovrapposizioni né
+  scorrimento orizzontale.
 
 ### 2026-10-26 — stato della testa, Alza pressore
 

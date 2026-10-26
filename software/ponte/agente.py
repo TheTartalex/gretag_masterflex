@@ -232,6 +232,14 @@ class AgenteSimulato(object):
 
     def tensioni(self): return [5.02, 12.1, -11.95, 3.31, 24.2, 5.0, 15.1, -15.0]
 
+    def fuoco_gi(self, completo=True): time.sleep(0.3)
+
+    def video(self):
+        dati, w, h = self.scansiona_canale(1, 1.0, 3)
+        return dati, w, h, w * h
+
+    def finestra_gretag(self, numero, mostra=True): pass
+
     def modo_asf(self, acceso): pass
     def espelli(self): self.pellicola_inserita = False
     def espelli_retro(self):
@@ -559,6 +567,36 @@ class Agente(object):
         if comando == "temperatura":
             a, b = self.s.temperatura()
             return json.dumps({"t1": round(a, 2), "t2": round(b, 2)})
+
+        if testa == "fuoco" and len(parti) > 1:
+            # fuoco_gi | fuoco_rapido | fuoco_nominale
+            if parti[1] == "gi":
+                self.s.fuoco_gi(True)
+            elif parti[1] == "rapido":
+                self.s.fuoco_gi(False)
+            elif parti[1] == "nominale":
+                self.s.fuoco(0)
+            else:
+                raise ValueError("autofocus sconosciuto: %s" % comando)
+            return "autofocus %s fatto" % parti[1]
+
+        if comando == "video":
+            dati, a, b, n = self.s.video()
+            nome = "%d_video_%dx%d.raw" % (int(time.time() * 1000), a, b)
+            percorso = os.path.join(self.condivisa, "raw", nome)
+            with open(percorso, "wb") as f:
+                f.write(dati)
+            with open(percorso[:-4] + ".json", "w") as f:
+                json.dump({"canale": "video", "larghezza": a, "altezza": b,
+                           "campioni": n, "dtype": "uint16",
+                           "ordine": "little"}, f)
+            return nome
+
+        if testa == "finestra":
+            # finestra_<numero>_on | finestra_<numero>_off
+            self.s.finestra_gretag(int(parti[1]), parti[2] == "on")
+            return "finestra %s del carrello %s" % (
+                parti[1], "aperta" if parti[2] == "on" else "chiusa")
 
         if comando == "tensioni":
             return json.dumps([round(v, 3) for v in self.s.tensioni()])

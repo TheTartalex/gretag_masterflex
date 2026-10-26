@@ -24,6 +24,7 @@ filmscan/
   hal.py              l'unico modulo che sa dell'hardware (MockBackend, PonteSdkBackend)
   acquire.py          calibrazione e acquisizione grezza
   pipeline.py         dal grezzo al file finale
+  lut.py              LUT .cube, .lut (Discreet 1D), .3dl: lettura e applicazione
   service.py          tutta la logica di scansione (un lavoro alla volta)
   webui.py            interfaccia web: traduce HTTP <-> service
   config.py           geometria, formati, preset, impostazioni
@@ -39,8 +40,8 @@ ponte/
 ```
 
 Creati durante il lavoro e fuori da git: `ordini.db`, `impostazioni.json`,
-`scansioni/`, `calibrazione/`, `collaudi/`, `diagnosi/`, `backup/`,
-`pacchetti/`.
+`modo-avvio.txt`, `lut/`, `scansioni/`, `calibrazione/`, `collaudi/`,
+`diagnosi/`, `backup/`, `pacchetti/`.
 
 ## Sviluppo e prove senza la macchina
 

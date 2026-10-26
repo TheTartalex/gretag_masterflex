@@ -96,6 +96,8 @@ class ScanService:
         self.backend: Optional[ScannerBackend] = None
         self.calib: Optional[Calibration] = None
         self.job = JobState()
+        self._lut_cache = None
+        self._lut_errore = ""
         self.options = ProcessOptions()
         self.preview: Optional[np.ndarray] = None
         # il negativo grezzo dello stesso fotogramma, per il confronto prima/dopo
@@ -164,6 +166,84 @@ class ScanService:
                 "ambiente": check_environment(dpi=self.cfg.optical_dpi)}
 
     # ------------------------------------------------------------------
+
+    # --- LUT ------------------------------------------------------------
+
+    @property
+    def options(self) -> ProcessOptions:
+        return self._options
+
+    @options.setter
+    def options(self, valore: ProcessOptions) -> None:
+        # La LUT e' una scelta del programma, valida per tutti gli ordini: ogni
+        # ProcessOptions che arriva (dalla pagina, da un rullo) la riceve qui.
+        valore.lut = self._lut_corrente()
+        valore.lut_intensita = self.cfg.lut_intensita
+        self._options = valore
+
+    def _lut_corrente(self):
+        if not self.cfg.lut:
+            return None
+        percorso = os.path.join(self.cfg.path("lut"), self.cfg.lut)
+        try:
+            chiave = (percorso, os.path.getmtime(percorso))
+        except OSError:
+            if self._lut_errore != percorso:
+                self._lut_errore = percorso
+                self.log("LUT %s non trovata: si lavora senza." % self.cfg.lut)
+            return None
+        if self._lut_cache and self._lut_cache[0] == chiave:
+            return self._lut_cache[1]
+        from . import lut
+        try:
+            l = lut.carica(percorso)
+        except (OSError, ValueError) as exc:
+            self.log("LUT %s non leggibile (%s): si lavora senza." % (self.cfg.lut, exc))
+            return None
+        self._lut_cache = (chiave, l)
+        return l
+
+    def elenco_lut(self) -> Dict[str, object]:
+        from . import lut
+        return {"lut": lut.elenco(self.cfg.path("lut")), "scelta": self.cfg.lut,
+                "intensita": self.cfg.lut_intensita,
+                "cartella": self.cfg.path("lut")}
+
+    def scegli_lut(self, nome: str, intensita: Optional[float] = None) -> Dict[str, object]:
+        """La LUT per tutti gli ordini, da adesso. "" = nessuna."""
+        from . import lut
+        nome = str(nome or "")
+        if nome and nome not in lut.elenco(self.cfg.path("lut")):
+            raise ValueError("LUT sconosciuta: %s" % nome)
+        self.cfg.lut = nome
+        if intensita is not None:
+            self.cfg.lut_intensita = float(min(max(float(intensita), 0.0), 1.0))
+        self.options = self._options          # rimette la LUT nelle opzioni
+        self.log("LUT: %s%s." % (nome or "nessuna",
+                                 (" al %d%%" % round(self.cfg.lut_intensita * 100))
+                                 if nome else ""))
+        if self.base_lineare is not None:
+            try:
+                self.rielabora()
+            except Exception:                           # noqa: BLE001
+                pass
+        return self.elenco_lut()
+
+    def carica_lut(self, nome: str, testo: str) -> Dict[str, object]:
+        """Una LUT nuova dalla pagina: si controlla che sia un .cube valido,
+        poi si salva nella cartella del programma."""
+        from . import lut
+        nome = lut.nome_valido(nome)
+        letta = lut.leggi(testo, nome)                  # ValueError se non va
+        percorso = os.path.join(self.cfg.path("lut"), nome)
+        with open(percorso + ".tmp", "w", encoding="utf-8", newline="\n") as f:
+            f.write(testo)
+        os.replace(percorso + ".tmp", percorso)
+        self.log("LUT %s aggiunta (%s, %s da %d)." % (
+            nome, letta.titolo or "cube", letta.tipo.upper(), letta.dimensione))
+        esito = self.elenco_lut()
+        esito["aggiunta"] = nome
+        return esito
 
     def connetti(self, driver: Optional[str] = None) -> Dict[str, object]:
         if driver:
@@ -575,7 +655,15 @@ class ScanService:
         return self.stato()
 
     def fuoco(self, mm: float) -> Dict[str, object]:
-        self._libera().set_focus(float(mm))
+        """Il tasto Fuoco: l'autofocus scelto (con "spento", quello di serie,
+        perche' chi preme il tasto lo vuole); senza autofocus nel backend, il
+        posizionamento di prima."""
+        backend = self._libera()
+        metodo = self.cfg.autofocus if self.cfg.autofocus != "spento" else "gi"
+        if not backend.autofocus(metodo):
+            backend.set_focus(float(mm))
+        else:
+            self.log("Autofocus (%s) fatto." % metodo)
         return self.stato()
 
     def ferma(self) -> Dict[str, object]:
@@ -808,10 +896,13 @@ class ScanService:
 
     # --- impostazioni della macchina ----------------------------------
 
-    def impostazioni_macchina(self) -> Dict[str, bool]:
+    AUTOFOCUS = ("gi", "rapido", "nominale", "spento")
+
+    def impostazioni_macchina(self) -> Dict[str, object]:
         return {"esposizione_auto": self.cfg.esposizione_auto,
                 "pressore_auto": self.cfg.pressore_auto,
-                "avanzamento_automatico": self.cfg.avanzamento_automatico}
+                "avanzamento_automatico": self.cfg.avanzamento_automatico,
+                "autofocus": self.cfg.autofocus}
 
     def imposta_macchina(self, valori: Dict[str, object]) -> Dict[str, bool]:
         if self.job.running:
@@ -820,7 +911,35 @@ class ScanService:
         for k in ("esposizione_auto", "pressore_auto", "avanzamento_automatico"):
             if k in valori:
                 setattr(self.cfg, k, bool(valori[k]))
+        if "autofocus" in valori:
+            if valori["autofocus"] not in self.AUTOFOCUS:
+                raise ValueError("autofocus sconosciuto: %s" % valori["autofocus"])
+            self.cfg.autofocus = str(valori["autofocus"])
         return self.impostazioni_macchina()
+
+    def _autofocus(self, backend, metodo: Optional[str] = None) -> bool:
+        """L'autofocus scelto nelle impostazioni. Se non trova il fuoco la
+        macchina torna alla posizione nominale: si annota e si va avanti."""
+        metodo = metodo or self.cfg.autofocus
+        if metodo == "spento":
+            return False
+        try:
+            if backend.autofocus(metodo):
+                self.log("Autofocus (%s) fatto." % metodo)
+                return True
+        except (Emergenza, MotoriBloccati):
+            raise
+        except ScannerError as exc:
+            self.log("Autofocus (%s) non riuscito: %s" % (metodo, exc))
+        return False
+
+    def finestra_carrello(self, numero: int, mostra: bool) -> Dict[str, object]:
+        """Una finestra del GateControl sul monitor del PC, per il tecnico."""
+        if numero not in (1, 3, 4, 5):
+            raise ValueError("finestra sconosciuta: %s" % numero)
+        self._libera().finestra_carrello(numero, mostra)
+        self.log("Finestra %d del carrello %s." % (numero, "aperta" if mostra else "chiusa"))
+        return self.stato()
 
     def stato_testa(self) -> Dict[str, object]:
         """Temperature e tensioni della testa: si leggono a richiesta, non a
@@ -1076,6 +1195,8 @@ class ScanService:
             espulsa = False
             strisce = 1
             inizio_striscia = True
+            # l'autofocus si fa sul primo fotogramma vero di ogni striscia
+            fuoco_da_fare = True
             i = 0
             giri = 0
             while i < limite and giri < limite + 50:
@@ -1103,6 +1224,7 @@ class ScanService:
                         if not continua:
                             break
                         strisce += 1
+                        fuoco_da_fare = True
                         continue
 
                 # Le strisce hanno lunghezza variabile: "attesi" e' un massimo,
@@ -1155,6 +1277,12 @@ class ScanService:
                     min(base, 0.97))
 
                 nome = "%s_%s_%03d" % (ordine.codice, rullo.etichetta.replace(" ", "-"), i + 1)
+                # Autofocus a inizio striscia, col pressore giu' come per la
+                # lettura: la pellicola deve stare dove sara' letta.
+                if fuoco_da_fare and self.cfg.autofocus != "spento":
+                    with self._sotto_pressore(backend):
+                        self._autofocus(backend)
+
                 # il numero stampato sul bordo, se la macchina lo sa dire:
                 # mai bloccante, e se manca il rullo va avanti lo stesso
                 try:
@@ -1176,8 +1304,10 @@ class ScanService:
                     inizio_striscia = False
                     if vuoto and primo:
                         # appena caricata, la finestra sta spesso sulla coda
-                        # della striscia: non e' un fotogramma
+                        # della striscia: non e' un fotogramma (e il fuoco
+                        # si rifa' sul prossimo)
                         raise _CodaIniziale()
+                    fuoco_da_fare = False
                     if vuoto:
                         # Non esposto (o tutto opaco): niente export, ma il
                         # grezzo si tiene sempre, cosi' se la soglia ha
@@ -1281,6 +1411,7 @@ class ScanService:
                         break
                     strisce += 1
                     inizio_striscia = True
+                    fuoco_da_fare = True
                 except Emergenza:
                     raise
                 except Exception as exc:                # noqa: BLE001
@@ -1302,6 +1433,7 @@ class ScanService:
                             break
                         strisce += 1
                         inizio_striscia = True
+                        fuoco_da_fare = True
                 if conta:
                     i += 1
 
@@ -1529,6 +1661,7 @@ class ScanService:
 
         from copy import copy
         neutre = copy(self.options)
+        neutre.lut = None       # il grigio si cerca prima del look
         neutre.wb_guadagni = None
         neutre.temperatura_k = 0.0
         neutre.tinta_vm = 0.0
