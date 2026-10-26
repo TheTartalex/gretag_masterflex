@@ -254,3 +254,57 @@ strada se la prima trovasse un muro.
 
 Sono tutte domande che si risolvono **guardando la macchina lavorare**, non
 aprendola e non disassemblando altro.
+
+---
+
+## 7. Errori e stati dell'SDK
+
+Ricavati il 26/10/2026 da `scn_dll.dll` (SDK 27.4.0.0, SHA-256
+`2519fa07…54e8`), che resta fuori dal repository.
+
+**Codici `ScnError`.** La tabella è nello `switch` di
+`ErrStat::formatScnErrorEnum` (`0x18028AE0`, valori 0–0xCE). I più utili:
+
+| Codice | Nome | Codice | Nome |
+|---|---|---|---|
+| 1 | ERR_SDK_SW | 22 | ERR_POSITION_UNKNOWN |
+| 2 | ERR_TIMEOUT | 28 | ERR_FILM_JAM |
+| 3 | ERR_ILLEGAL_IN_THIS_STATE | 31 | ERR_MOVE |
+| 4 | ERR_NO_SCANNER | 33 | ERR_CANCEL_DETECTED |
+| 5 | ERR_COMMAND_PARAMETER | 41 | ERR_NVMEM |
+| 6 | ERR_CALIBRATION_FAILED | 43 | ERR_SCANNER_HW |
+| 10 | ERR_CANT_OPEN_SCANNER | 48 | ERR_NK_GATE_FIRMWARE |
+| 11 | ERR_NOT_CALIBRATED | 200 | EV_FILM_INSERTED |
+| 12 | ERR_NO_FILM_LOADED | 202 | EV_GATE_CHANGE |
+| 14 | ERR_NO_GATE_INSTALLED | 203 | EV_STATE_CHANGE |
+| 16 | ERR_NO_CALIB_DATA | 204 | EV_SCAN_COMPLETE |
+
+I valori da 100 a 143 sono qualificatori (`QUAL_…`) e compaiono come
+dettaglio. La lista completa, con i nomi, sta in `ponte/sdk.py`
+(`NOMI_ERRORI_SDK`).
+
+**Lo stato interno.** È una variabile globale (`0x180BF92C`), che vale 7 al
+caricamento della DLL. Prima di ogni comando `ScnState` (`0x18079E40`) la
+confronta con l'identificativo del comando (per esempio `0x16` =
+`get_gate_type`):
+
+- **stato 10**: quasi ogni comando risponde `ERR_NO_SCANNER` più
+  `ERR_ILLEGAL_IN_THIS_STATE` con dettaglio 10;
+- **stato 0**: quasi tutto è ammesso.
+
+Il cambio arriva al callback d'errore come `EV_STATE_CHANGE`, nella forma
+`(203, nuovo, vecchio)` (`0x1807AAB2`). Sulla riserva lo scanner passa da 10
+a 0 circa 40 s dopo l'apertura. L'agente aspetta quel momento prima di
+accettare comandi.
+
+**Come lo usa il programma originale.** `PhxScanner.exe` importa 36 funzioni
+di `DMLScanner`:
+
+- per acquisire: `calibrate_all`, `get_calibration_status`,
+  `add_image_buffer`, `capture`, `import_image`, `get_device_status`;
+- per il carrello: `select_film_format`, `gretag_NextFrame`,
+  `frame_detect_*`, `show_gretag_ui`.
+
+Non usa mai `DMLScannerAdv::scan_raw`, che usiamo noi: la sequenza di
+`PhxScanner` è il riferimento per capire cosa va fatto prima di
+un'acquisizione.

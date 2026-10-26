@@ -39,6 +39,15 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-10-26 — stato dell'SDK
+
+- `ponte/sdk.py`: nomi dei codici `ScnError` letti in `scn_dll.dll`; stato
+  interno dell'SDK seguito dagli eventi `EV_STATE_CHANGE`; `pronto()`.
+- `ponte/agente.py`: finché l'SDK non è pronto (stato 10, circa 40 s dopo
+  l'apertura) rifiuta i comandi con un messaggio chiaro, poi scrive
+  "scanner pronto dopo N s". Il simulatore imita l'attesa.
+- `filmscan/hal.py`: `connect()` aspetta lo scanner pronto, fino a 120 s.
+
 ### 2026-10-26 — dopo la prima prova dell'agente sulla riserva
 
 - `ponte/agente.py`: lo "stato" legge ogni voce per conto suo (sulla

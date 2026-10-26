@@ -102,6 +102,8 @@ class Rapporto(object):
 
 def collega(ponte, risoluzione=0, ir=False, r=print):
     b = PonteSdkBackend(ponte, risoluzione=risoluzione, ir=ir)
+    print("Collegamento all'agente. Se lo scanner si e' appena aperto, l'SDK")
+    print("impiega circa 40 secondi a essere pronto: si aspetta qui.")
     b.connect()
     info = b._info
     r("Agente: scanner %s, tipo %s, motori %s%s"

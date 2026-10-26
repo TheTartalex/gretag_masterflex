@@ -134,6 +134,21 @@ class AgenteSimulato(object):
     un motore del 1995.
     """
 
+    # Come l'SDK vero, all'inizio non e' pronto: sulla riserva ci mette una
+    # quarantina di secondi (stato 10 -> 0). Qui pochi secondi, per provare
+    # l'attesa del ponte senza aspettare davvero.
+    RITARDO_PRONTO = 3.0
+    _pronto_da = None
+
+    def pronto(self):
+        if self._pronto_da is None:
+            self._pronto_da = time.time() + self.RITARDO_PRONTO
+        return time.time() >= self._pronto_da
+
+    @property
+    def stato_sdk(self):
+        return 0 if self.pronto() else 10
+
     def tipo_scanner(self): return 3
     def id_scanner(self): return 60210
     def tipo_gate(self): return 0
@@ -224,11 +239,33 @@ class Agente(object):
         self.log("agente in ascolto su %s (motori %s, max %d passi)"
                  % (self.condivisa, "attivi" if self.motori else "BLOCCATI",
                     self.max_passi))
+        self.annuncia_pronto(self.s.pronto())
         while True:
             fatti = self.giro()
             self.controlla_alimentazione()
+            if self.pronto_annunciato is not True and time.time() >= self._prossimo_controllo:
+                self._prossimo_controllo = time.time() + 2.0
+                self.annuncia_pronto(self.s.pronto())
             if not fatti:
                 time.sleep(pausa)
+
+    pronto_annunciato = None
+    _prossimo_controllo = 0.0
+    _inizio_attesa = None
+
+    def annuncia_pronto(self, pronto):
+        """Una riga nel registro quando lo scanner diventa pronto, o smette."""
+        if pronto == self.pronto_annunciato:
+            return
+        if pronto:
+            attesa = ("dopo %.0f s" % (time.time() - self._inizio_attesa)
+                      if self._inizio_attesa else "")
+            self.log("scanner pronto %s" % attesa)
+        else:
+            self._inizio_attesa = self._inizio_attesa or time.time()
+            self.log("attendo che l'SDK colleghi lo scanner (stato %s): sulla "
+                     "riserva servono circa 40 s" % getattr(self.s, "stato_sdk", "?"))
+        self.pronto_annunciato = pronto
 
     def giro(self):
         """Esegue i comandi in attesa.
@@ -292,20 +329,30 @@ class Agente(object):
         if comando == "ping":
             return "vivo"
 
+        # Finche' l'SDK non ha finito di collegare lo scanner rifiuta quasi
+        # tutto con ERR_NO_SCANNER (stato 10, vedi sdk.py): meglio dirlo
+        # chiaro che far fallire il comando con codici incomprensibili.
+        pronto = self.s.pronto()
+        if not pronto:
+            self.annuncia_pronto(False)
+
         if comando == "stato":
             # Ogni voce per conto suo: sulla riserva get_gate_type risponde
             # con due errori (codici 4 e 3, 26/10/2026), e prima questo
             # faceva fallire tutto lo stato, anche le voci che funzionano.
             stato = {
+                "pronto": pronto,
+                "stato_sdk": getattr(self.s, "stato_sdk", None),
                 "simulato": isinstance(self.s, AgenteSimulato),
                 "motori": self.motori,
                 "max_passi": self.max_passi,
                 "apertura": self.apertura,
             }
             errori = {}
-            for voce, leggi in (("tipo_scanner", self.s.tipo_scanner),
-                                ("id", self.s.id_scanner),
-                                ("gate", self.s.tipo_gate)):
+            letture = (("tipo_scanner", self.s.tipo_scanner),
+                       ("id", self.s.id_scanner),
+                       ("gate", self.s.tipo_gate))
+            for voce, leggi in (letture if pronto else ()):
                 try:
                     stato[voce] = leggi()
                 except Exception as e:
@@ -314,6 +361,12 @@ class Agente(object):
             if errori:
                 stato["errori"] = errori
             return json.dumps(stato)
+
+        if not pronto:
+            raise ValueError(
+                "scanner non ancora pronto: l'SDK lo sta ancora collegando "
+                "(stato %s). Riprovare tra qualche secondo."
+                % getattr(self.s, "stato_sdk", "?"))
 
         if testa in MOVIMENTI and not self.motori:
             raise ValueError("motori bloccati (--senza-motori): '%s' rifiutato"

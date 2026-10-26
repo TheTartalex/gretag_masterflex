@@ -396,6 +396,8 @@ class PonteSdkBackend(ScannerBackend):
     # l'operatore resta a guardare una pagina bloccata. Un'acquisizione invece
     # dura davvero, e li' serve pazienza.
     ATTESA_COMANDO = 15.0
+    # quanto aspettare che l'SDK finisca di collegare lo scanner (riserva: ~40 s)
+    ATTESA_PRONTO = 120.0
     ATTESA_MOVIMENTO = 60.0
     ATTESA_ACQUISIZIONE = 180.0
 
@@ -485,10 +487,24 @@ class PonteSdkBackend(ScannerBackend):
                 "MASTERFLEX.bat; se si e' chiusa subito, l'SDK non ha trovato la "
                 "scheda (vedi Scanner\\SDKCacheDir\\log_0000.txt)." % self.root)
         import json
-        try:
-            self._info = json.loads(self._send("stato"))
-        except (ScannerError, ValueError):
-            self._info = {}
+        # Appena aperto, l'SDK collega lo scanner in sottofondo (sulla
+        # riserva circa 40 s) e intanto rifiuta i comandi: si aspetta qui,
+        # invece di far fallire la prima calibrazione o il primo collaudo.
+        scadenza = time.time() + self.ATTESA_PRONTO
+        while True:
+            try:
+                self._info = json.loads(self._send("stato"))
+            except (ScannerError, ValueError):
+                self._info = {}
+            if self._info.get("pronto", True) or time.time() > scadenza:
+                break
+            time.sleep(2.0)
+        if self._info.get("pronto") is False:
+            raise ScannerError(
+                "lo scanner non e' pronto dopo %.0f s: l'SDK e' ancora nello "
+                "stato %s (10 = scanner non collegato). Guardare la finestra "
+                "dell'agente e Scanner\\SDKCacheDir\\log_0000.txt."
+                % (self.ATTESA_PRONTO, self._info.get("stato_sdk")))
         self._connesso = True
 
     def disconnect(self) -> None:

@@ -131,6 +131,46 @@ class ErroreScanner(RuntimeError):
         self.codici = list(codici)
 
 
+# I codici ScnError, dalla tabella di ErrStat::formatScnErrorEnum
+# (scn_dll.dll, 0x18028AE0, switch su 0..0xCE). Solo quelli che servono a
+# leggere i messaggi; per il resto si stampa il numero.
+NOMI_ERRORI_SDK = {
+    1: "ERR_SDK_SW", 2: "ERR_TIMEOUT", 3: "ERR_ILLEGAL_IN_THIS_STATE",
+    4: "ERR_NO_SCANNER", 5: "ERR_COMMAND_PARAMETER", 6: "ERR_CALIBRATION_FAILED",
+    7: "ERR_SENSOR_CAL_FAILED", 8: "ERR_NO_NK_GATE", 9: "ERR_NOT_IMPLEMENTED",
+    10: "ERR_CANT_OPEN_SCANNER", 11: "ERR_NOT_CALIBRATED", 12: "ERR_NO_FILM_LOADED",
+    13: "ERR_FILM_LOADED", 14: "ERR_NO_GATE_INSTALLED", 15: "ERR_FOCUS_FAILED",
+    16: "ERR_NO_CALIB_DATA", 18: "ERR_BUFFER_NOT_ACCEPTED", 19: "ERR_NO_IMAGE_BUFFER",
+    22: "ERR_POSITION_UNKNOWN", 24: "ERR_OS", 25: "ERR_OS_LAST_ERR",
+    26: "ERR_MEMORY_ALLOCATION", 28: "ERR_FILM_JAM", 31: "ERR_MOVE",
+    32: "ERR_END_OF_FILM", 33: "ERR_CANCEL_DETECTED", 39: "ERR_FILM_UNKNOWN",
+    40: "ERR_NK_GATE", 41: "ERR_NVMEM", 42: "ERR_GENERAL_FW", 43: "ERR_SCANNER_HW",
+    46: "ERR_SW_SCANNER_IFC", 48: "ERR_NK_GATE_FIRMWARE", 56: "ERR_DIAG_MOTOR",
+    57: "ERR_TEST_ADV_FAILED", 58: "ERR_FEED_ON_FAILED", 59: "ERR_FEED_OFF_FAILED",
+    67: "ERR_NK_SENSOR_CAL_REQUIRED",
+    200: "EV_FILM_INSERTED", 201: "EV_VOLTAGE_RANGE", 202: "EV_GATE_CHANGE",
+    203: "EV_STATE_CHANGE", 204: "EV_SCAN_COMPLETE",
+    205: "EV_SCAN_COMPLETE_FILM_TOO_LONG", 206: "EV_SCANNER_CHANGED",
+}
+ERR_ILLEGAL_IN_THIS_STATE = 3
+ERR_NO_SCANNER = 4
+EV_STATE_CHANGE = 203
+
+# Lo stato interno dell'SDK (variabile globale a 0x180BF92C, controllata da
+# ScnState a 0x18079E40 prima di ogni comando). Vale 7 al caricamento della
+# DLL. Nello stato 10 quasi ogni comando risponde ERR_NO_SCANNER piu'
+# ERR_ILLEGAL_IN_THIS_STATE(10); nello stato 0 quasi tutti sono ammessi.
+# Sulla riserva, il 26/10/2026, dopo l'apertura l'SDK e' rimasto nello stato
+# 10 per una quarantina di secondi (collegamento, LED, firmware) prima di
+# passare a 0: i comandi dati in quel tempo fallivano tutti.
+# Il cambio arriva come EV_STATE_CHANGE (203) con (nuovo, vecchio):
+# ErrStat(0xCB, nuovo, 2, vecchio, 2) a 0x1807AAB2.
+STATO_SDK_PRONTO = 0
+STATO_SDK_NON_COLLEGATO = 10
+NOMI_STATI_SDK = {0: "pronto", 7: "appena caricato",
+                  10: "scanner non ancora collegato"}
+
+
 # Messaggi del carrello Capri (UserErrorDescriptionV1.0x.html del pacchetto
 # CapriFirmware). Non si sa ancora se l'SDK li riporta con questi numeri:
 # se uno dei valori di un errore coincide, il messaggio lo dice.
@@ -384,6 +424,7 @@ class Scanner(object):
         self._cb_errore = CALLBACK_ERRORE(self._su_errore)
         self._cb_evento = CALLBACK_EVENTO(self._su_evento)
         self.eventi = []          # (ora, numero) degli eventi asincroni
+        self.stato_sdk = None     # dagli eventi EV_STATE_CHANGE; None = non noto
         if apri_subito:
             self.apri()
 
@@ -442,6 +483,8 @@ class Scanner(object):
         def descrivi(v):
             noti = [MESSAGGI_CARRELLO[x] for x in v if x in MESSAGGI_CARRELLO]
             base = "codice %s (%s, %s)" % v
+            if v[0] in NOMI_ERRORI_SDK:
+                base += " " + NOMI_ERRORI_SDK[v[0]]
             return base + (" = " + "; ".join(noti) if noti else "")
         testo = ", ".join(descrivi(v) for v in voci)
         raise ErroreScanner("%s: l'SDK segnala %d error%s: %s"
@@ -451,9 +494,36 @@ class Scanner(object):
     def _su_errore(self, err_ptr):
         try:
             voci = self._leggi_errori(err_ptr) if err_ptr else []
+            for codice, nuovo, vecchio in (voci or []):
+                if codice == EV_STATE_CHANGE:
+                    self.stato_sdk = nuovo
+                    self._log("SDK: stato %s -> %s (%s)"
+                              % (vecchio, nuovo, NOMI_STATI_SDK.get(nuovo, "?")))
+                    return
             self._log("SDK, errore asincrono: %s" % (voci or "senza dettaglio"))
         except Exception:
             pass
+
+    def pronto(self):
+        """True quando l'SDK accetta i comandi (stato 0).
+
+        Lo stato arriva con gli eventi EV_STATE_CHANGE. Se non ne e' ancora
+        arrivato nessuno, lo si chiede con get_gate_type, che non muove
+        niente: nello stato 10 risponde ERR_NO_SCANNER.
+        """
+        if self.stato_sdk is not None:
+            return self.stato_sdk == STATO_SDK_PRONTO
+        try:
+            self.tipo_gate()
+        except ErroreScanner as exc:
+            if any(c == ERR_NO_SCANNER or
+                   (c == ERR_ILLEGAL_IN_THIS_STATE and a == STATO_SDK_NON_COLLEGATO)
+                   for c, a, b in exc.codici):
+                self.stato_sdk = STATO_SDK_NON_COLLEGATO
+                return False
+        # da qui in poi bastano gli eventi
+        self.stato_sdk = STATO_SDK_PRONTO
+        return True
 
     def _su_evento(self, numero):
         try:
