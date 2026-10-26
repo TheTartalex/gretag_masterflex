@@ -20,13 +20,15 @@ Il progetto ha due parti:
 | Componente | Stato |
 |---|---|
 | [Driver EKframePnP 2.1](driver/EKframePnP/) | funziona sulla macchina di riserva; correttezza delle immagini da confermare |
-| [filmscan](software/) | codice ancora da importare nel repository |
+| [filmscan](software/) | nel repository dal 26/10 con le correzioni; si usa da `software/MASTERFLEX.bat`; da provare sulla riserva |
+| Carrello Capri (COM5) | firmware 1.13 dal 2/8/2025, deve tornare alla 1.15: [carrello-capri.md](documentazione/hardware/carrello-capri.md) |
 
 Problemi aperti e prossimi passi: **[documentazione/stato.md](documentazione/stato.md)**.
 
-> ⚠️ **Non usare filmscan in modalità "macchina vera"**: l'autotest all'avvio
-> spinge i motori delle guide oltre il fine corsa. La simulazione si può
-> usare.
+> ⚠️ **Non usare filmscan in modalità "macchina vera"**: all'avvio i motori
+> delle guide del carrello vanno a fine corsa e continuano a spingere. Si
+> possono usare la simulazione e la modalità "motori bloccati". Ipotesi e
+> prove in [carrello-capri.md](documentazione/hardware/carrello-capri.md#5-procedura-consigliata-per-il-problema-delle-guide).
 
 ## Struttura del repository
 
@@ -48,8 +50,8 @@ documentazione/         tutta la documentazione, con indice e regole
 driver/                 un driver per cartella
   EKframePnP/           pacchetto/ (pronto) · sorgenti/ · verifica/
 
-software/               filmscan (da importare) e le sue regole in CLAUDE.md
-strumenti/              script di servizio: diagnosi, correzione numpy
+software/               filmscan: MASTERFLEX.bat (l'unico file da lanciare), codice, regole in CLAUDE.md
+strumenti/              script di servizio futuri (diagnosi e numpy ora sono nel menu)
 ```
 
 ## Piattaforma
@@ -66,7 +68,8 @@ I vincoli non sono negoziabili, e il perché sta in
 ## File proprietari
 
 Il repository **non contiene** software Kodak/Gretag: niente driver
-originale, SDK, firmware, manuali o programmi di servizio. La documentazione
+originale, SDK, firmware, pacchetto CapriFirmware, backup del Parameter
+Flash, manuali o programmi di servizio. La documentazione
 li cita con percorsi e indirizzi, per chi ne ha una copia legittima. Il
 codice in questo repository è sotto licenza [MIT](LICENSE).
 

@@ -127,13 +127,13 @@ Su quel PC noi **leggiamo** soltanto.
 L'operatore sta in piedi davanti alla macchina, con la pellicola in mano. Il
 monitor del PC e' scomodo e a volte lontano; il tablet no.
 
-    windows\avvia.bat
+    MASTERFLEX.bat, voce 1
 
 stampa l'indirizzo vero da aprire, non "localhost":
 
     http://192.168.1.42:8080/?t=Xk3p9wQ
 
-Il token nell'indirizzo e' la sola chiave, e cambia a ogni avvio. `avvia.bat`
+Il token nell'indirizzo e' la sola chiave, e cambia a ogni avvio. `MASTERFLEX.bat`
 prova anche ad aprire la porta 8080 sul firewall di Windows, che e' la ragione
 per cui nove volte su dieci il tablet non si collega; per riuscirci vuole
 "Esegui come amministratore" la prima volta.

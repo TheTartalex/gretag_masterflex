@@ -10,6 +10,7 @@
 | come funziona la scheda di acquisizione | [hardware/scheda-iaq.md](hardware/scheda-iaq.md) |
 | installare il driver | [driver/EKframePnP](../driver/EKframePnP/) |
 | usare la macchina tutti i giorni | [filmscan/guida-windows.md](filmscan/guida-windows.md) |
+| capire il problema delle guide del carrello | [hardware/carrello-capri.md](hardware/carrello-capri.md) |
 
 ## Indice
 
@@ -19,7 +20,7 @@
 |---|---|---|
 | [stato.md](stato.md) | macchine, componenti, problemi aperti, prossimi passi | 2026-10-26 |
 | [piano-lavori.md](piano-lavori.md) | le fasi dal software originale alla macchina che scansiona | 2026-09-03, note di ottobre |
-| [decisioni/](decisioni/) | le scelte che orientano il progetto, una per file | 2026-10-25 |
+| [decisioni/](decisioni/) | le scelte che orientano il progetto, una per file | 2026-10-26 |
 
 ### Hardware
 
@@ -27,6 +28,7 @@
 |---|---|---|
 | [hardware/scheda-iaq.md](hardware/scheda-iaq.md) | **riferimento** della scheda: PLX 9080, FPGA, ARCNET, IOCTL, DMA, difetto su Win7 | 2026-10-26 |
 | [hardware/scheda-acquisizione.md](hardware/scheda-acquisizione.md) | i due canali (COM5 e PCI), soglie dei sensori, offset, firmware, manuale di servizio. Superato dove contraddice `scheda-iaq.md` | 2026-09-03 |
+| [hardware/carrello-capri.md](hardware/carrello-capri.md) | carrello Capri (COM5): motori delle guide, firmware 1.15/1.13, flag, selftest di servizio, errori, protocollo | 2026-10-26 |
 | [hardware/note-macchina.md](hardware/note-macchina.md) | scheda dati della macchina, da compilare man mano | 2026-09-03 |
 
 ### Software originale (Kodak / Gretag)
@@ -41,7 +43,7 @@
 | Documento | Contenuto | Aggiornato |
 |---|---|---|
 | [filmscan/installazione.md](filmscan/installazione.md) | installazione, preset, ciclo automatico, i dati che mancano | 2026-09-03 |
-| [filmscan/guida-windows.md](filmscan/guida-windows.md) | guida per l'operatore | 2026-10-26 |
+| [filmscan/guida-windows.md](filmscan/guida-windows.md) | guida per l'operatore: il menu di `MASTERFLEX.bat` | 2026-10-26 |
 | [filmscan/ponte.md](filmscan/ponte.md) | l'agente che comanda la macchina attraverso l'SDK | 2026-09-03 |
 | [filmscan/archivio.md](filmscan/archivio.md) | ordini, consegna, conservazione, WhatsApp | 2026-09-07 |
 
@@ -75,6 +77,7 @@ accanto al codice.
    (`README.md`, `CLAUDE.md`, `CHANGELOG.md`) e quelli che girano su Windows
    per chi sta alla macchina (`LEGGIMI.txt`, `INSTALLA.bat`).
 6. **Mai nel repository**: i file proprietari Kodak/Gretag (driver, SDK,
-   firmware, manuale di servizio), i log delle macchine, i dati dei clienti.
+   firmware, pacchetto CapriFirmware, backup del Parameter Flash, manuale di
+   servizio), i log delle macchine, i dati dei clienti.
    Il software originale si cita, non si copia.
 7. Quando si aggiunge un documento lo si mette nell'indice qui sopra.

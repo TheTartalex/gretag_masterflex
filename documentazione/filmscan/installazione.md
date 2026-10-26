@@ -1,29 +1,27 @@
 # Gretag Masterflex D1008 — pacchetto di progetto
 
-> Era il `LEGGIMI.md` del pacchetto filmscan (settembre 2026). I percorsi
-> `software\windows\...` si riferiscono alla cartella `software/` del
-> repository. **Aggiornamento di ottobre:** sulle CPU senza AVX numpy va
+> Era il `LEGGIMI.md` del pacchetto filmscan (settembre 2026). Dal 26/10/2026
+> i `.bat` di `software\windows\` sono sostituiti da `software\MASTERFLEX.bat`. **Aggiornamento di ottobre:** sulle CPU senza AVX numpy va
 > tenuto alla 1.22.4 ([decisione 0003](../decisioni/0003-numpy-1.22.4-cpu-senza-avx.md)),
 > e sulla macchina di riserva il driver è [EKframePnP](../../driver/EKframePnP/).
 
 ## Installazione su Windows 7 x86
 
-1. **Python 3.8.10**, *Windows x86 executable installer*:
-   https://www.python.org/downloads/release/python-3810/
-   Spuntare **Add Python 3.8 to PATH** e **tcl/tk and IDLE**.
+Tutto passa da `software\MASTERFLEX.bat` (la prima volta: tasto destro,
+*Esegui come amministratore*):
 
-2. Doppio clic su `software\windows\installa.bat`
+1. voce **7**, *Installa / ripara*: scarica e installa Python 3.8.10 a 32 bit
+   se manca, le librerie alle versioni giuste, le cartelle e il firewall;
+2. voce **5**: collaudo di tutta la catena su uno scanner simulato, senza la
+   macchina.
 
-3. Doppio clic su `software\windows\collaudo.bat` — collauda tutta la catena su
-   uno scanner simulato, senza la macchina.
-
-Senza internet: `scarica-offline.bat` su un altro PC con lo stesso Python 3.8 a
-32 bit, poi `installa-offline.bat`. Dettagli in `LEGGIMI-WINDOWS.txt`.
+Senza internet: voce **11** su un altro PC, poi voce 7 sulla macchina.
+Dettagli nella [guida per l'operatore](guida-windows.md).
 
 ## Uso quotidiano
 
-    software\windows\avvia.bat        interfaccia a finestra
-    software\windows\avvia-web.bat    interfaccia web sulla rete locale
+Voce **1** (macchina vera), **2** (motori bloccati) o **3** (simulazione).
+Si comanda dal tablet con l'indirizzo che compare all'avvio.
 
 Flusso: crea ordine cliente → aggiungi rullo → scansiona.
 **Non esporre l'interfaccia web su internet.**
@@ -95,7 +93,7 @@ Della macchina originale teniamo **driver e comandi**, che funzionano e che
 nessuno rifara' meglio. Dell'interfaccia del 2001 — quella che salva su floppy e
 butta via i pixel — non teniamo niente.
 
-Sul PC originale gira `software/ponte/agente.py`, senza dipendenze, che carica
+Sul PC della macchina gira `software/ponte/agente.py`, senza dipendenze, che carica
 l'SDK Kodak (`scn_dll.dll`) e obbedisce ai comandi lasciati in una cartella
 condivisa. Interfaccia, ordini, pipeline ed export girano dove ci pare.
 

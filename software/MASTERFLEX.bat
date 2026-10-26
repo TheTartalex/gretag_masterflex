@@ -375,7 +375,7 @@ echo    oppure = percorso di uno zip scaricato da GitHub o di una cartella
 echo.
 set "SORG="
 set /p "SORG=  Sorgente: "
-"%PY%" manutenzione.py aggiorna !SORG! || exit /b 1
+"%PY%" manutenzione.py aggiorna "!SORG!" || exit /b 1
 "%PY%" manutenzione.py librerie
 REM  Questo file non si puo' sovrascrivere mentre gira: manutenzione.py ha
 REM  scritto la versione nuova accanto. Il blocco fra parentesi viene letto

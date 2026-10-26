@@ -17,8 +17,12 @@ Le parti del progetto:
 
 - **filmscan** ([`software/`](software/)): Python 3.8, Windows 7 x86. Un
   agente che parla all'SDK Kodak `scn_dll.dll` via ctypes, più
-  un'interfaccia web per il tablet. Le sue regole stanno in
+  un'interfaccia web per il tablet. Sulla macchina si usa solo
+  `software/MASTERFLEX.bat`. Le regole del codice stanno in
   [`software/CLAUDE.md`](software/CLAUDE.md).
+- **Carrello Capri** (Gretag, COM5): guide, trasporto, lente, CCD, sensori.
+  Non lo comandiamo direttamente; riferimento in
+  [carrello-capri.md](documentazione/hardware/carrello-capri.md).
 - **EKframePnP** ([`driver/EKframePnP/`](driver/EKframePnP/)): driver nuovo
   per la scheda di acquisizione, perché il vecchio `EKframe.sys` non funziona
   sulla macchina di riserva.
@@ -43,8 +47,8 @@ Le parti del progetto:
 3. **Niente motori in modalità reale** finché l'autotest delle guide non ha
    limiti di passi o di tempo.
 4. **Mai committare file Kodak/Gretag** (driver originale, SDK, firmware,
-   manuali), log delle macchine o dati di clienti. `.gitignore` li esclude;
-   non forzarlo.
+   pacchetto CapriFirmware, backup del Parameter Flash, manuali), log delle
+   macchine o dati di clienti. `.gitignore` li esclude; non forzarlo.
 5. **A fine sessione** aggiornare [stato.md](documentazione/stato.md) e,
    se si è deciso qualcosa, aggiungere una scheda in
    [decisioni/](documentazione/decisioni/). Le regole sui documenti sono in
@@ -67,6 +71,15 @@ Le parti del progetto:
 - **Settembre.** Si era indicato numpy 1.24.4 perché la wheel esisteva, ma
   usa AVX senza controllare la CPU. Una wheel che esiste non è detto che
   giri.
+- **Settembre.** filmscan passava al fotogramma successivo con la
+  regolazione fine (`regola_3800`) e calibrava a una risoluzione diversa da
+  quella di scansione. Errori del genere si trovano solo provando il
+  percorso SDK con l'agente simulato: farlo a ogni modifica di `hal.py`,
+  `acquire.py` o `service.py` (vedi `software/README.md`).
+- **Ottobre.** Il problema delle guide era attribuito all'"autotest di
+  filmscan", ma le guide le muove il carrello Capri quando si inizializza.
+  Prima di cercare la causa nel nostro codice, chiedersi quale pezzo
+  della macchina fa davvero quel movimento.
 
 ## La scheda IAQ in breve
 
@@ -89,6 +102,10 @@ pip install pefile capstone unicorn --break-system-packages
 cd driver/EKframePnP/sorgenti && sh build.sh       # EKframePnP.sys + ektest.exe
 python3 confronta.py EKframePnP.sys ../pacchetto/EKframePnP.sys
 ```
+
+Per filmscan: Python 3.8 con `uv python install 3.8` e le librerie senza
+impronte (vedi `software/README.md`), poi `python selftest.py` e la prova con
+l'agente simulato.
 
 La verifica di equivalenza ha bisogno del driver originale (in locale,
 mai nel repository) e del banco di prova C, che non è ancora stato

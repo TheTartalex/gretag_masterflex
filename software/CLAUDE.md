@@ -5,10 +5,13 @@ cartella. Leggere prima di modificare qualsiasi cosa. Il contesto generale
 del progetto (macchine, driver, stato) sta nel [CLAUDE.md](../CLAUDE.md) alla
 radice del repository.
 
-> Scritto a settembre 2026. **Aggiornato a ottobre 2026** su due punti:
-> numpy va tenuto alla **1.22.4**, non alla 1.24.4 (vedi *Trappole*), e la
-> scheda di acquisizione ora è documentata del tutto in
-> [scheda-iaq.md](../documentazione/hardware/scheda-iaq.md).
+> Scritto a settembre 2026. **Aggiornato a ottobre 2026**: numpy va tenuto
+> alla **1.22.4** (vedi *Trappole*); la scheda di acquisizione è documentata
+> in [scheda-iaq.md](../documentazione/hardware/scheda-iaq.md) e il carrello in
+> [carrello-capri.md](../documentazione/hardware/carrello-capri.md); i `.bat`
+> sono diventati `MASTERFLEX.bat` e `ui.py` non c'è più (vedi *Trappole della
+> macchina vera*). Struttura dei file e prove senza macchina:
+> [README.md](README.md).
 
 ---
 
@@ -27,6 +30,32 @@ radice del repository.
   Ogni dipendenza nuova va verificata su quel target prima di aggiungerla.
 
 `python run.py --controllo` stampa il verdetto sulla macchina reale.
+
+### Trappole della macchina vera (ottobre 2026)
+
+Trovate rileggendo il codice dopo le prime prove sulla riserva. Non
+reintrodurle.
+
+- **Niente movimenti grandi con la regolazione fine.** `advance(mm)` passa
+  da `frame_detect_fine_adjust`, una correzione di pochi millimetri. Per il
+  fotogramma successivo si usa `prossimo_fotogramma(fmt)`, che sulla
+  macchina vera e' *advance_one_frame* dell'SDK. Limiti: 3 mm in
+  `PonteSdkBackend`, 300 passi nell'agente.
+- **I movimenti passano dal lock dei lavori.** `ScanService.muovi()` e
+  `fuoco()` rifiutano mentre un lavoro e' in corso.
+- **Una sola risoluzione per macchina.** Calibrazione e scansione devono
+  avere la stessa larghezza; `PonteSdkBackend` acquisisce sempre alla sua
+  risoluzione e restituisce il fotogramma intero.
+- **Niente dark finto.** Se il backend non controlla la lampada
+  (`controlla_lampada = False`) la calibrazione non legge il dark.
+- **I dpi veri sono quelli della macchina** (`cfg.optical_dpi`), non quelli
+  del preset: finiscono nei metadati e li usa il ritaglio.
+- **Scambio file con l'agente in due tempi**: scrivere su `.tmp`, poi
+  `os.replace`. Senza, l'altro processo legge file vuoti.
+- **Canali**: l'IR sull'SDK non e' verificato; si salta finche'
+  `sdk_ir_verificato` e' False (`canali_disponibili`).
+- **Lo stato non interroga la macchina.** L'interfaccia lo chiede ogni
+  secondo: `status()` risponde con lo stato locale.
 
 ## Cos'è questo progetto
 
@@ -175,8 +204,8 @@ strada dell'aggiornamento non esiste, e comunque servirebbe un compilatore C e
 Fortran che su quella macchina non c'e'.
 
 Regola: **installare sempre con `--only-binary=:all:`**, cosi' pip dice subito
-"la wheel non esiste" invece di tentare di costruirla. Gli script in `windows/`
-lo fanno gia'.
+"la wheel non esiste" invece di tentare di costruirla. `manutenzione.py` lo fa
+gia', e `requirements.txt` porta l'impronta di ogni wheel win32.
 
 Versioni da usare: **numpy 1.22.4** · scipy 1.9.1 (la 1.9.2 smette di
 pubblicare wheel a 32 bit) · Pillow 10.4.0 · tifffile 2023.7.10 (pura Python).
@@ -422,10 +451,9 @@ serve a chi scansiona duecento fotogrammi.
 anteprima, scansione rullo, stato del lavoro. Le interfacce sono solo traduttori.
 
 - `webui.py` traduce fra HTTP e `ScanService`. Nessuna logica dentro.
-- `ui.py` (tkinter) **ha ancora una propria copia della logica**. È debito noto,
-  non una scelta: va portato su `ScanService` come `webui.py`. Finché resta così,
-  una funzione nuova aggiunta solo in una delle due interfacce non esiste
-  nell'altra.
+- `ui.py` (tkinter) aveva una propria copia della logica, e muoveva i motori
+  senza passare dal lock dei lavori: e' stato tolto a ottobre 2026.
+  L'interfaccia e' una sola.
 
 Se serve una funzione nuova, va in `service.py`.
 

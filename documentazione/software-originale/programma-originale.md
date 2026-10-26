@@ -35,7 +35,7 @@ Quindi ci mettiamo una pagina: titolo, un tasto grande, e soprattutto
 **l'indirizzo scritto in chiaro e in grande**, che e' quello che serve davvero
 perche' il lavoro si fa dal tablet.
 
-La pagina si riscrive **a ogni avvio** di `avvia.bat`, con l'indirizzo e il
+La pagina si riscrive **a ogni avvio** dell'interfaccia, con l'indirizzo e il
 token del momento: un collegamento con il token di ieri sarebbe peggio di
 nessun collegamento.
 
@@ -69,7 +69,7 @@ Le due funzioni hanno un interruttore proprio, ed e' reversibile:
     python strumenti\originale.py --alleggerisci
     python strumenti\originale.py --ripristina
 
-oppure `windows\originale.bat`, che fa le stesse cose con un menu.
+oppure `MASTERFLEX.bat`, voce 10, che fa le stesse cose con un menu.
 
 Di ogni file toccato resta una copia intatta con il suffisso `.prima-di-noi`,
 piu' una copia datata a ogni passaggio successivo. Si torna indietro quando si

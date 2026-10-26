@@ -1,9 +1,9 @@
 # Masterflex D1008 — la macchina che fa tutto
 
 > Guida per chi usa la macchina tutti i giorni. Era `LEGGIMI-WINDOWS.txt`
-> del pacchetto filmscan (settembre 2026). I percorsi `windows\...` sono
-> relativi alla cartella [`software/`](../../software/) del repository.
-> Aggiornata a ottobre 2026 su driver e numpy.
+> del pacchetto filmscan (settembre 2026). Aggiornata il 26/10/2026: i dodici
+> `.bat` della cartella `windows\` sono diventati un solo file,
+> **`MASTERFLEX.bat`**, nella cartella [`software/`](../../software/).
 
 Una macchina sola: il PC con Windows 7 a 32 bit. Dentro c'è la scheda
 originale dello scanner, e sopra gira tutto: l'agente che parla alla macchina
@@ -15,13 +15,15 @@ e né il driver Kodak del 2001 né il nostro EKframePnP lo sono. La versione a
 
 ## Cosa serve
 
-1. **Python 3.8.10**, *Windows x86 executable installer*, a 32 bit:
-   <https://www.python.org/downloads/release/python-3810/>.
-   Spuntare **Add Python 3.8 to PATH** e **tcl/tk and IDLE**.
-   I 32 bit sono obbligatori: l'SDK dello scanner è a 32 bit e un processo a
-   64 bit non può caricarlo.
+1. **Python 3.8.10 a 32 bit.** Non serve installarlo a mano: la voce
+   *Installa / ripara* di `MASTERFLEX.bat` lo scarica da python.org, ne
+   controlla l'impronta e lo installa. Se la macchina non riesce a scaricare
+   (su Windows 7 capita, per il TLS), si prepara il pacchetto su un altro PC
+   (vedi *Senza internet*). I 32 bit sono obbligatori: l'SDK dello scanner è
+   a 32 bit e un processo a 64 bit non può caricarlo.
 2. Il software originale copiato in `C:\MasterflexD\`. Serve almeno la
-   cartella `Scanner` (SDK, IniFiles, Firmware).
+   cartella `Scanner` (SDK, IniFiles, Firmware). Per i controlli del carrello,
+   anche `C:\MasterflexD\CapriFirmware`.
 3. Il driver della scheda installato e in esecuzione (servizio `EKFrame`):
    - sulla **macchina di produzione** resta l'originale, che si installa con
      `INSTALL.BAT` del software originale, cartella
@@ -29,22 +31,38 @@ e né il driver Kodak del 2001 né il nostro EKframePnP lo sono. La versione a
    - sulla **macchina di riserva** l'originale non funziona e si usa
      [EKframePnP](../../driver/EKframePnP/).
 
+## Il menu
+
+Doppio clic su **`MASTERFLEX.bat`** (la prima volta: tasto destro, *Esegui
+come amministratore*, per il firewall):
+
+```
+ AVVIO          1  macchina vera
+                2  macchina vera, motori BLOCCATI (solo acquisizione)
+                3  simulazione (nessuna macchina)
+ COLLAUDI       4  scanner: colori, intensita', trascinamento, strumenti Gretag
+                5  programma (senza macchina)
+                6  diagnosi: un file da inviare
+               13  firmware del carrello (richiesta 1.15)
+ MANUTENZIONE   7  installa / ripara
+                8  aggiorna
+                9  avvio automatico
+               10  programma originale: stampa e densitometro
+               11  pacchetto per installare senza internet
+               12  disinstalla
+```
+
 ## Installazione
 
-```
-windows\installa.bat
-```
-
-Installa le librerie, controlla l'ambiente e dice cosa manca. Alla fine
-controlla anche il driver e l'SDK, e lo scrive chiaro.
+Voce **7**. Installa Python se manca, le librerie alle versioni giuste
+(numpy 1.22.4: la 1.24.4 fa cadere Python su questa CPU), crea le cartelle,
+apre la porta 8080 sul firewall, controlla driver, scheda, SDK e firmware del
+carrello, e dice cosa manca.
 
 ## Tutti i giorni
 
-```
-windows\avvia.bat        <- questo, e nient'altro
-```
-
-Fa partire due cose:
+Voce **1** (o **2** finché il problema delle guide non è risolto). Fa
+partire due cose:
 
 1. l'agente, che parla allo scanner con l'SDK originale;
 2. l'interfaccia web, pubblicata sulla rete locale.
@@ -84,20 +102,22 @@ giudicare colore e densità.
 
 ## La prima volta, in quest'ordine
 
-1. `windows\collaudo.bat` — controlla ambiente ed elaborazione. Non tocca la
-   macchina.
-2. `windows\avvia-simulazione.bat` — fa partire tutto con uno scanner finto.
-   Serve a collegare il tablet e prendere confidenza **senza muovere un
-   motore**. Farlo davvero.
-3. Percorso pellicola **vuoto**, poi `windows\avvia.bat`. Primo comando
-   dall'interfaccia: il backup del Parameter Flash. Dentro ci sono le
-   tarature fatte una volta sola da un tecnico, con pellicole di prova che
-   oggi non si comprano più.
+1. Voce **5** — collaudo del programma: ambiente ed elaborazione. Non tocca
+   la macchina.
+2. Voce **3** — tutto con uno scanner finto. Serve a collegare il tablet e
+   prendere confidenza **senza muovere un motore**. Farlo davvero.
+3. Voce **13** e voce **4 → 5** (selftest di servizio del carrello), con il
+   percorso pellicola **vuoto**.
+4. Voce **2** (motori bloccati) e voce **4 → 1** (collaudo colori e
+   intensità): le immagini arrivano giuste?
+5. Solo dopo, voce **1**. Primo comando dall'interfaccia: il backup del
+   Parameter Flash. Dentro ci sono le tarature fatte una volta sola da un
+   tecnico, con pellicole di prova che oggi non si comprano più.
 
-> **Ottobre 2026:** il passo 3 è sospeso. L'autotest all'avvio porta i
-> motori delle guide a fine corsa e continua a spingere. Finché non è
-> corretto si usa solo la simulazione. Vedi
-> [stato.md](../stato.md#problemi-aperti-in-ordine-di-priorità).
+> **Ottobre 2026:** il passo 5 è sospeso. All'avvio i motori delle guide sono
+> andati a fine corsa continuando a spingere. Vedi
+> [stato.md](../stato.md#problemi-aperti-in-ordine-di-priorità) e
+> [carrello-capri.md](../hardware/carrello-capri.md).
 
 ## Il tasto STOP
 
@@ -150,34 +170,26 @@ Dettagli in [archivio.md](archivio.md).
 
 ## Se il tablet non si collega
 
-- Nove volte su dieci è il firewall. `avvia.bat` prova ad aprire la porta
-  8080 da solo, ma la prima volta va lanciato con il tasto destro, *Esegui
-  come amministratore*.
+- Nove volte su dieci è il firewall. `MASTERFLEX.bat` prova ad aprire la
+  porta 8080 da solo, ma la prima volta va lanciato con il tasto destro,
+  *Esegui come amministratore*.
 - Tablet e PC devono stare sulla stessa rete. Il wifi per gli ospiti spesso
   isola i dispositivi fra loro: usare la rete normale.
 - L'indirizzo giusto è quello stampato all'avvio, non `localhost`.
 
 ## Avvio automatico
 
-```
-windows\avvio-automatico.bat
-```
-
-Mette `avvia.bat` fra i programmi che partono all'accensione. Si rilancia
-per toglierlo.
+Voce **9**: si sceglie cosa far partire all'accensione (motori bloccati,
+motori attivi o simulazione), oppure lo si toglie. Mette un piccolo `.bat`
+in Esecuzione automatica, che si può aprire con il Blocco note.
 
 ## Il programma originale
 
-A ogni avvio `avvia.bat` scrive una pagina di collegamento dentro l'aiuto
+A ogni avvio l'interfaccia scrive una pagina di collegamento dentro l'aiuto
 del programma originale (`C:\MasterflexD\PhxHelp\Data`), con l'indirizzo e
 il PIN del momento. Dal programma originale si apre con il pulsante Aiuto.
 
-Per spegnere stampa e densitometro nel programma originale:
-
-```
-windows\originale.bat
-```
-
+Per spegnere stampa e densitometro nel programma originale: voce **10**.
 Non toglie componenti e non tocca eseguibili: cambia due voci di
 configurazione. Di ogni file tiene una copia intatta con il suffisso
 `.prima-di-noi`. Dallo stesso menu si riaccende tutto.
@@ -193,17 +205,12 @@ Il perché di ogni scelta sta in
 
 | File | Cosa fa |
 |---|---|
-| `avvia.bat` | tutto: agente + interfaccia in rete |
-| `avvia-simulazione.bat` | come sopra, ma con scanner finto |
-| `avvia-web.bat` | solo interfaccia (agente già avviato) |
-| `finestra.bat` | interfaccia sul monitor della macchina |
-| `collaudo.bat` | controllo di ambiente ed elaborazione |
-| `installa.bat` | installazione |
-| `installa-offline.bat` | installazione senza internet |
-| `scarica-offline.bat` | prepara le wheel su un PC con internet |
-| `avvio-automatico.bat` | attiva/disattiva l'avvio all'accensione |
-| `originale.bat` | spegne stampa e densitometro nell'originale |
-| `_python.bat` | interno: trova Python |
+| `MASTERFLEX.bat` | il menu: l'unico file da lanciare |
+| `manutenzione.py` | il lavoro dietro al menu (installazione, aggiornamento, diagnosi...) |
+| `collaudo_scanner.py` | i collaudi dello scanner vero |
+| `run.py` | l'interfaccia web |
+| `selftest.py` | il collaudo del programma senza macchina |
+| `ponte\agente.py` | l'agente che comanda lo scanner |
 
 ## Se pip dice "mesonpy requires at least Python 3.10"
 
@@ -223,7 +230,7 @@ pip install --only-binary=:all: -r requirements.txt
 ```
 
 Così pip dice subito "questa wheel non esiste" invece di provarci.
-`installa.bat` lo fa già.
+`MASTERFLEX.bat` lo fa già.
 
 Se il messaggio esce lo stesso, qualcuno ha alzato una versione in
 `requirements.txt` oltre l'ultima disponibile come wheel a 32 bit. Le
@@ -236,25 +243,18 @@ versioni da usare sono:
 | Pillow | 10.4.0 | |
 | tifffile | 2023.7.10 | pura Python |
 
-Sono scritte in `requirements.txt` con il perché di ciascuna. La cartella
-`.\pacchetti\` le contiene già tutte: se `installa.bat` la trova, installa
-da lì senza usare la rete.
+Sono scritte in `requirements.txt` con il perché di ciascuna e con
+l'impronta del file: pip installa esattamente quelle wheel o si ferma. Se c'è
+la cartella `.\pacchetti\`, *Installa / ripara* installa da lì senza usare
+la rete.
 
 ## Senza internet
 
-Le wheel sono già in `.\pacchetti\` e `installa.bat` le usa da solo. Per
-rifarle basta **qualsiasi** PC con Python e connessione, anche moderno e a 64
-bit, perché le wheel si chiedono per l'altra macchina:
-
-```
-windows\scarica-offline.bat
-```
-
-Poi si copia l'intera cartella sulla macchina e si lancia:
-
-```
-windows\installa-offline.bat
-```
+Su **qualsiasi** PC con Python e internet, anche moderno e a 64 bit: copiare
+la cartella `software`, lanciare `MASTERFLEX.bat` e scegliere la voce **11**.
+Scarica in `pacchetti\` l'installer di Python 3.8.10 e le wheel per Windows a
+32 bit, tutti con l'impronta controllata. Poi si copia l'intera cartella sulla
+macchina e si sceglie la voce **7**: non servirà la rete.
 
 ## Avvertenze
 

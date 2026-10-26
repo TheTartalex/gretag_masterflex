@@ -64,10 +64,10 @@ partono — ed e' anche l'ultimo su cui gira Python 3.8. Le due cose combaciano.
 | # | Attivita' | Stato | Riferimento |
 |---|---|---|---|
 | 1.6 | Python 3.8.10 **a 32 bit**, con PATH e tcl/tk | **[da fare]** | a 64 bit l'SDK non si carica |
-| 1.7 | `windows\installa.bat` | **[da fare]** | verifica anche driver e SDK, e dice cosa manca |
-| 1.8 | `windows\collaudo.bat` | **[da fare]** | ambiente ed elaborazione, senza macchina |
-| 1.9 | `windows\avvia-simulazione.bat` e collegarsi dal tablet | **[da fare]** | rete e interfaccia, senza muovere motori |
-| 1.10 | Regola firewall per la porta 8080 | **[fatto nel codice]** | `avvia.bat` la crea da amministratore |
+| 1.7 | `MASTERFLEX.bat` voce 7, installa / ripara | **[da fare]** | Python, librerie, firewall; verifica driver, SDK e firmware |
+| 1.8 | `MASTERFLEX.bat` voce 5, collaudo del programma | **[da fare]** | ambiente ed elaborazione, senza macchina |
+| 1.9 | `MASTERFLEX.bat` voce 3, simulazione, e collegarsi dal tablet | **[da fare]** | rete e interfaccia, senza muovere motori |
+| 1.10 | Regola firewall per la porta 8080 | **[fatto nel codice]** | `MASTERFLEX.bat` la crea da amministratore |
 | 1.11 | `windows\avvio-automatico.bat` | **[da fare]** | la macchina si accende e c'e' tutto |
 
 ### 1c — Diagnosi con il programma di servizio originale
@@ -184,8 +184,8 @@ saranno buone o solo grandi.
 |---|---|---|---|
 | 6.1 | Calibrare le matrici colore con un target fotografato su pellicola | **[da fare]** | oggi partono dall'identità — `software/README.md` |
 | 6.2 | Tarare le soglie di stacco e bordo sul materiale vero | **[da fare]** | oggi tarate sul simulatore |
-| 6.3 | Verificare il budget di memoria a 4000 dpi sulla macchina reale | **[da fare]** | `windows\collaudo.bat` |
-| 6.4 | Togliere il debito noto: `ui.py` deve usare `service.py` | **[da fare]** | `software/README.md`, nota finale |
+| 6.3 | Verificare il budget di memoria a 4000 dpi sulla macchina reale | **[da fare]** | `MASTERFLEX.bat` voce 5 |
+| 6.4 | Togliere il debito noto: `ui.py` deve usare `service.py` | **[superata]** | `ui.py` tolto il 26/10/2026, decisione 0005 |
 | 6.5 | Valutare i parametri colore dell'originale come punto di partenza | **[da fare]** | `AO\Scanner\IniFiles\KLTMAT.INI`, `CORMAT.INI`, `KLTPAR.INI` |
 
 Il **6.5** è un'occasione da non perdere: i file KLT/CORMAT contengono le matrici
@@ -230,3 +230,11 @@ In compenso e' emersa una correzione scomoda e utile: la macchina legge
   La decisione 5.5 non cambia: l'immagine passa ancora dall'SDK originale.
 - **Prima di 3.14** viene il problema dell'autotest dei motori, che spinge
   le guide oltre il fine corsa: vedi [stato.md](stato.md).
+- **Fase 1c.** Il pacchetto `CapriFirmware` ha il selftest di servizio del
+  carrello (prove HOME e PRECISION di guide, CCD, lente, tamburo) e gli
+  strumenti Compad e SensorTest: [carrello-capri.md](hardware/carrello-capri.md).
+  Il carrello va riportato al firmware 1.15 ([decisione 0006](decisioni/0006-firmware-carrello-1.15.md)).
+- **3.12 e 3.13** hanno uno strumento: `collaudo_scanner.py sensori` e
+  `passi` (`MASTERFLEX.bat` voce 4).
+- **Fase 4.** Il protocollo COM5 non va piu' osservato da zero: i comandi
+  di Compad lo descrivono in buona parte ([carrello-capri.md §6](hardware/carrello-capri.md#6-il-protocollo-per-un-uso-futuro)).
