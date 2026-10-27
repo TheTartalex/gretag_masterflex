@@ -45,6 +45,16 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-10-27 — esposizione misurata sul primo fotogramma vero
+
+- La misura dell'esposizione per canale si fa sul primo fotogramma con
+  luce, non sulla coda annerita (che chiedeva x12): soglia
+  `soglia_misura_esposizione` (15%), lettura a x1 delle zone opache, x1 con
+  avviso alla terza.
+- Niente autofocus sulle zone opache; la coda lunga piu' posizioni non
+  prende numeri.
+- Agente: `log/crash-*.txt` (faulthandler) per i crash dentro l'SDK.
+
 ### 2026-10-26 — autofocus a scelta, video dell'SDK, finestre Gretag, LUT
 
 - Impostazioni macchina, *Autofocus*: `gi_focus` completo (di serie),

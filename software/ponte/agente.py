@@ -76,6 +76,7 @@ Avvio sul PC della macchina:
 from __future__ import annotations
 
 import argparse
+import faulthandler
 import json
 import os
 import sys
@@ -128,6 +129,33 @@ class Registro(object):
                 print("  ATTENZIONE: non riesco a scrivere il registro in %s (%s)."
                       % (self.cartella, exc))
                 print("  Controllare i permessi della cartella del ponte.")
+
+
+    def registra_crash(self, tieni=10):
+        """Se l'agente muore dentro l'SDK (una violazione d'accesso in
+        scn_dll.dll non e' un'eccezione Python: la finestra si chiude e
+        basta), faulthandler scrive lo stack di tutti i thread in
+        log/crash-AAAAMMGG-HHMMSS.txt. Un file per avvio, perche' quello del
+        crash non lo sovrascriva il riavvio; si tengono gli ultimi 'tieni'.
+        Su Windows annota anche le eccezioni C++ che l'SDK poi gestisce da
+        solo: in quel file conta l'ultima voce prima della fine."""
+        try:
+            vecchi = sorted(n for n in os.listdir(self.cartella)
+                            if n.startswith("crash-") and n.endswith(".txt"))
+            for n in vecchi[:max(0, len(vecchi) - tieni + 1)]:
+                os.remove(os.path.join(self.cartella, n))
+            nome = os.path.join(self.cartella, "crash-%s.txt"
+                                % time.strftime("%Y%m%d-%H%M%S"))
+            # il file resta aperto per tutta la vita del processo: e' li'
+            # che faulthandler scrive quando non c'e' piu' niente di vivo
+            self._crash = open(nome, "w")
+            self._crash.write("Agente avviato %s. Se l'agente si e' chiuso "
+                              "da solo, qui sotto c'e' dove.\n\n"
+                              % time.strftime("%Y-%m-%d %H:%M:%S"))
+            self._crash.flush()
+            faulthandler.enable(file=self._crash, all_threads=True)
+        except (IOError, OSError, ValueError) as exc:
+            self("registro dei crash non attivo: %s" % exc)
 
 
 class ErroreSimulato(RuntimeError):
@@ -757,6 +785,7 @@ def principale(argv=None):
     if not os.path.isdir(a.condivisa):
         os.makedirs(a.condivisa)
     log = Registro(a.condivisa)
+    log.registra_crash()
 
     def banner_simulazione(motivo=""):
         print("")

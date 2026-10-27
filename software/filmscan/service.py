@@ -971,6 +971,43 @@ class ScanService:
         self.log("Pressore alzato a mano.")
         return self.stato()
 
+    def _misura_esposizione(self, backend, preset,
+                            ultima: bool = False) -> Optional[Dict[str, float]]:
+        """L'esposizione per canale misurata sul fotogramma in finestra.
+        None se nemmeno il canale piu' chiaro passa la soglia
+        (cfg.soglia_misura_esposizione): la finestra e' sulla coda o su un
+        fotogramma tutto opaco, e una misura li' chiederebbe tempi che la
+        macchina rifiuta. All'ultima prova non si rinuncia: x1 su tutto, e
+        lo si dice."""
+        self.progress("Misura esposizione per canale", 0.0)
+        avvisi: List[str] = []
+        livelli: Dict[str, float] = {}
+        with self._sotto_pressore(backend):
+            gains = measure_channel_exposure(backend, preset.channels,
+                                             self.calib,
+                                             annulla=self.annullato,
+                                             avvisi=avvisi, livelli=livelli)
+        luce = max(livelli.values()) if livelli else 1.0
+        soglia = self.cfg.soglia_misura_esposizione
+        if luce < soglia:
+            dettaglio = ", ".join("%s %.1f%%" % (k, v * 100)
+                                  for k, v in livelli.items())
+            if not ultima:
+                self.log("Misura dell'esposizione su una zona opaca (%s): "
+                         "non vale, si riprova sul fotogramma dopo." % dettaglio)
+                return None
+            gains = dict((c, 1.0) for c in gains)
+            avviso = ("esposizione non misurabile: tre zone opache di fila "
+                      "(%s). Si scansiona a x1 su tutti i canali." % dettaglio)
+            self.job.errors.append(avviso)
+            self.log("Attenzione: " + avviso)
+        else:
+            for a in avvisi:
+                self.log("Attenzione: " + a)
+        self.log("Esposizioni: " + ", ".join(
+            "%s x%.2f" % (k, v) for k, v in gains.items()))
+        return gains
+
     def _esposizione_fissa(self, preset) -> Optional[Dict[str, float]]:
         """Con l'esposizione automatica spenta: x1 su tutti i canali, senza
         misura. Accesa: None, e decide la misura per canale."""
@@ -1164,19 +1201,12 @@ class ScanService:
             # oscillare il colore da un fotogramma all'altro.
             coda = None      # fotogrammi ancora davanti alla finestra
             gains = self._esposizione_fissa(preset)
-            if (gains is None and preset.auto_exposure
-                    and preset.channel_exposure is None):
-                self.progress("Misura esposizione per canale", 0.0)
-                avvisi: List[str] = []
-                with self._sotto_pressore(backend):
-                    gains = measure_channel_exposure(backend, preset.channels,
-                                                     self.calib,
-                                                     annulla=self.annullato,
-                                                     avvisi=avvisi)
-                for a in avvisi:
-                    self.log("Attenzione: " + a)
-                self.log("Esposizioni: " + ", ".join(
-                    "%s x%.2f" % (k, v) for k, v in gains.items()))
+            # La misura si fa sul primo fotogramma vero, non qui: appena
+            # caricata, in finestra c'e' quasi sempre la coda annerita, e la
+            # misura fatta li' chiedeva x12 a tutti i canali (riserva, 27/10).
+            da_misurare = (gains is None and preset.auto_exposure
+                           and preset.channel_exposure is None)
+            misure_opache = 0
 
             # Quanti fotogrammi ha la striscia non lo sa nessuno prima di
             # leggerla, e chiederlo all'operatore vuol dire farglielo indovinare.
@@ -1277,9 +1307,26 @@ class ScanService:
                     min(base, 0.97))
 
                 nome = "%s_%s_%03d" % (ordine.codice, rullo.etichetta.replace(" ", "-"), i + 1)
+                # Esposizione per canale, sul primo fotogramma che porta luce.
+                # Se la finestra e' su una zona opaca la misura non vale: il
+                # fotogramma si legge a x1, senza autofocus (su una zona
+                # senza immagine fallisce comunque). Se era la coda lo scarta
+                # fotogramma_vuoto, se era un fotogramma denso resta salvato:
+                # saltarlo senza leggerlo poteva perderne uno vero.
+                opaca = False
+                if da_misurare:
+                    gains = self._misura_esposizione(
+                        backend, preset, ultima=misure_opache >= 2)
+                    if gains is None:
+                        opaca = True
+                        misure_opache += 1
+                    else:
+                        da_misurare = False
+
                 # Autofocus a inizio striscia, col pressore giu' come per la
                 # lettura: la pellicola deve stare dove sara' letta.
-                if fuoco_da_fare and self.cfg.autofocus != "spento":
+                if (fuoco_da_fare and not opaca
+                        and self.cfg.autofocus != "spento"):
                     with self._sotto_pressore(backend):
                         self._autofocus(backend)
 
@@ -1295,19 +1342,25 @@ class ScanService:
                     with self._sotto_pressore(backend):
                         raw = scan_frame(backend, self.cfg, preset, fmt,
                                          self.calib, frame_index=i,
-                                         channel_exposure=gains,
+                                         channel_exposure=gains if not opaca
+                                         else dict((c, 1.0) for c in preset.channels),
                                          annulla=self.annullato)
 
                     vuoto, escursione = fotogramma_vuoto(
                         raw, self.cfg.soglia_fotogramma_vuoto_d)
                     primo = inizio_striscia
                     inizio_striscia = False
-                    if vuoto and primo:
+                    if vuoto and (primo or opaca):
                         # appena caricata, la finestra sta spesso sulla coda
                         # della striscia: non e' un fotogramma (e il fuoco
-                        # si rifa' sul prossimo)
+                        # si rifa' sul prossimo). La coda annerita puo'
+                        # occupare piu' di una posizione: finche' non si e'
+                        # visto un fotogramma con luce (opaca), un vuoto e'
+                        # ancora coda e non prende un numero.
+                        inizio_striscia = True
                         raise _CodaIniziale()
-                    fuoco_da_fare = False
+                    if not opaca:
+                        fuoco_da_fare = False
                     if vuoto:
                         # Non esposto (o tutto opaco): niente export, ma il
                         # grezzo si tiene sempre, cosi' se la soglia ha

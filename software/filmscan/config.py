@@ -293,6 +293,12 @@ class AppConfig:
     # sotto questa escursione di densita' (D) un fotogramma e' vuoto: non
     # esposto o tutto opaco. Si salta, si annota e si conserva il grezzo.
     soglia_fotogramma_vuoto_d: float = 0.10
+    # La misura dell'esposizione non vale se anche il canale piu' chiaro
+    # passa meno di questa frazione della luce: la finestra e' sulla coda
+    # annerita. Sulla riserva (27/10) la coda dava il rosso sotto il 7% e la
+    # misura chiedeva x12; su un negativo vero la base arancione passa oltre
+    # il 30% del rosso.
+    soglia_misura_esposizione: float = 0.15
 
     # --- elaborazione ---
     auto_crop: bool = True

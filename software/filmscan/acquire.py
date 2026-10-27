@@ -195,7 +195,9 @@ def measure_channel_exposure(backend: ScannerBackend, channels: List[str],
                              limits: Tuple[float, float] = (0.25, 12.0),
                              progress: Progress = None,
                              annulla=None,
-                             avvisi: Optional[List[str]] = None) -> Dict[str, float]:
+                             avvisi: Optional[List[str]] = None,
+                             livelli: Optional[Dict[str, float]] = None
+                             ) -> Dict[str, float]:
     """Misura quanto esporre ciascun canale, con una pre-scansione veloce.
 
     Perche' serve: la maschera arancione del negativo assorbe molto il blu.
@@ -211,6 +213,10 @@ def measure_channel_exposure(backend: ScannerBackend, channels: List[str],
     scala. Il target sta sotto 1 di proposito: si lascia margine perche' il
     fotogramma vero puo' essere piu' chiaro del punto campionato, e saturare
     significa perdere informazione in modo irreversibile.
+
+    In 'livelli', se c'e', finisce la luce misurata per canale: chi chiama
+    decide se la finestra era su un'immagine (vedi
+    ScanService._misura_esposizione).
     """
     gains: Dict[str, float] = {}
     lo, hi = limits
@@ -229,6 +235,8 @@ def measure_channel_exposure(backend: ScannerBackend, channels: List[str],
         backend.lamp(ch, False)
 
         level = float(np.percentile(cal, 99.0))
+        if livelli is not None:
+            livelli[ch] = level
         if level < 0.03:
             # Meno del 3% della luce anche nei punti piu' chiari: la finestra
             # e' su una zona opaca (la coda iniziale, annerita, o un

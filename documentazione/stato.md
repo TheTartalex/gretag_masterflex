@@ -1,6 +1,6 @@
 # Stato del progetto
 
-**Aggiornato al 26 ottobre 2026.** Questo è il documento da aggiornare a fine
+**Aggiornato al 27 ottobre 2026.** Questo è il documento da aggiornare a fine
 di ogni sessione di lavoro: stato, problemi aperti e prossimi passi stanno
 qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.md).
 
@@ -263,6 +263,27 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
 
   Da provare sulla macchina: quale finestra è ogni numero; se il video
   dell'SDK parte a scanner fermo; l'autofocus a motori attivi.
+
+## Fatto il 27 ottobre
+
+- **Prova a campo del rullo** (foto del registro dell'agente, 09:23):
+  - la misura dell'esposizione era fatta a inizio rullo, con in finestra
+    la **coda annerita**: R chiedeva x12 (rifiutato, poi x6) e G e B x6.
+    Il controllo del 3% non scattava, perche' la coda passava fra il 3 e
+    il 7% della luce. Ora la misura si fa sul primo fotogramma con luce:
+    se nemmeno il canale piu' chiaro passa il 15%
+    (`soglia_misura_esposizione`) la misura non vale, il fotogramma si
+    legge a x1 (se e' coda si scarta, se e' un fotogramma denso resta) e
+    si riprova sul successivo; alla terza zona opaca, x1 su tutto con
+    avviso. Una coda annerita lunga piu' posizioni non prende numeri;
+  - `gi_focus` sulla coda: `ERR_FOCUS_FAILED` (15) in 3 s, gestito (la
+    lente torna alla nominale da sola). Ora l'autofocus si salta sulle zone
+    opache e si fa sul primo fotogramma vero;
+  - **l'agente si chiude con l'autofocus `gi`**: la causa non si vede dal
+    registro. L'agente ora scrive `ponte\log\crash-*.txt` con lo stack di
+    tutti i thread quando muore dentro l'SDK. Servono quel file e le
+    ultime righe di `agente-*.log`; intanto si puo' usare "posizione
+    nominale" o "spento".
 
 ## Problemi aperti, in ordine di priorità
 
