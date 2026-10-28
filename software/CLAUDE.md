@@ -75,6 +75,12 @@ reintrodurle.
 - **La base d'esposizione e' nella calibrazione.** Il flat letto con i tempi
   calibrati non vale per i tempi di fabbrica: la nota della calibrazione
   porta `TAG_ESPOSIZIONE` e `_serve_calibrazione` la confronta.
+- **Il rullo elabora in sottofondo.** Il ciclo del rullo legge e mostra
+  l'anteprima rapida; `process`, export e registro li fa
+  `_ElaborazioneInFondo` in un thread suo. Tutto cio' che segue il rullo
+  (riordino, stato, conteggio) va dopo `_chiudi_elaborazione()`, che
+  aspetta la coda; il `finally` di `_avvia` la chiude anche dopo
+  un'emergenza. Il thread di elaborazione non tocca mai la macchina.
 - **La fine della striscia la dice il carrello** (`ERR_MOVE` →
   `FinePellicola`). Un fotogramma uniforme non e' fine pellicola: puo'
   essere non esposto, e ne capitano 3-4 di fila (`fotogramma_vuoto`).

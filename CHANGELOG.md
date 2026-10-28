@@ -52,6 +52,9 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
   subito.
 - Tasto *Diretta*: il video della macchina nel visore (`/api/diretta.jpg`),
   negativo o positivo.
+- Rullo: anteprima ridotta subito dopo la lettura (`anteprima_rapida`) ed
+  elaborazione completa in sottofondo (`_ElaborazioneInFondo`); la pagina
+  aggiorna visore e striscia a rullo in corso (`job.anteprime`).
 
 ### 2026-10-27 — esposizione misurata sul primo fotogramma vero
 

@@ -970,6 +970,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .prov .s.ok{background:var(--ok)} .prov .s.avviso{background:var(--avviso)}
 .prov .s.errore{background:var(--male)}
 .prov .s.vuoto{background:var(--dim)}
+.prov .s.lavoro{background:var(--acc)}
 
 /* --- la barra dei comandi principali: sempre visibile, tasti grandi --- */
 .comandi{flex:0 0 auto;display:flex;gap:8px;align-items:center;
@@ -1672,7 +1673,8 @@ function caricaStriscia(){
       im.src=url('/api/provino.jpg?id='+x.id); im.alt='';
       var n=document.createElement('div'); n.className='n'; n.textContent=x.numero;
       var st=document.createElement('div');
-      st.className='s '+(x.stato==='ok'?(x.avvisi?'avviso':'ok'):(x.stato==='vuoto'?'vuoto':'errore'));
+      st.className='s '+(x.stato==='ok'?(x.avvisi?'avviso':'ok'):
+        (x.stato==='vuoto'?'vuoto':(x.stato==='elaborazione'?'lavoro':'errore')));
       d1.appendChild(im); d1.appendChild(n); d1.appendChild(st);
       d1.onclick=function(){
         provSel=x.id; caricaStriscia();
@@ -2095,7 +2097,7 @@ function mostraSensori(){ get('/api/sensori').then(function(x){
     (x.uscita?'var(--ok)':'var(--dim)')+'">'+(x.uscita?'pellicola':'libero')+'</b>'; }); }
 
 /* ---------- ciclo ---------- */
-var ultimo=0, eraInCorso=false;
+var ultimo=0, eraInCorso=false, ultimeAnteprime=-1;
 function ciclo(){
   mostraSensori();
   get('/api/stato').then(function(s){
@@ -2109,7 +2111,16 @@ function ciclo(){
         el('tela').style.display='block'; el('vuoto').style.display='none';
         aggiornaImmagini(true); disegnaIstogramma(); caricaStriscia();
       }
-    } else if(j && j.running){ eraInCorso=true; }
+    } else if(j && j.running){
+      eraInCorso=true;
+      /* a rullo in corso: l'anteprima rapida di ogni fotogramma appena
+         letto, e la striscia che si riempie, senza aspettare la fine */
+      if(j.anteprime && j.anteprime!==ultimeAnteprime){
+        ultimeAnteprime=j.anteprime; hoAnteprima=true;
+        el('tela').style.display='block'; el('vuoto').style.display='none';
+        aggiornaImmagini(true); caricaStriscia();
+      }
+    }
   }).catch(function(){});
 }
 
@@ -2416,8 +2427,14 @@ class Handler(BaseHTTPRequestHandler):
             except (TypeError, ValueError):
                 fid = 0
             percorso = ""
+            rapida = b""
             for f in s.archivio.fotogrammi_per_id(fid):
                 percorso = f.get("file_out") or ""
+                if not percorso:
+                    # ancora in elaborazione: la miniatura rapida
+                    rapida = s.provino_rapido(f)
+            if rapida:
+                return self._immagine(rapida)
             try:
                 return self._immagine(s.provino_jpeg(percorso))
             except (ValueError, OSError):

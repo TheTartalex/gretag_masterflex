@@ -237,6 +237,14 @@ pellicola e parte da solo appena il carrello la sente. Se la pellicola era
 già stata inserita dopo un *Carica*, parte subito. Con i motori bloccati il
 carrello non si prepara e si scansiona quello che c'è in finestra.
 
+Durante il rullo ogni fotogramma compare subito dopo la lettura, in
+anteprima ridotta, nel visore e nella striscia (pallino del colore
+d'accento: *in elaborazione*). L'elaborazione completa, con allineamento,
+pulizia IR, ritaglio e file finale, va avanti in sottofondo mentre la
+macchina legge il fotogramma successivo; quando è pronta il pallino diventa
+verde. A fine rullo il programma aspetta gli ultimi fotogrammi in
+elaborazione prima di chiudere ed espellere.
+
 Mentre il rullo gira, o aspetta la pellicola, diventa **Fine rullo**,
 rosso: chiude il rullo appena finito il fotogramma in corso, espelle la
 pellicola e lo segna completato. Il tasto resta `Chiusura...` finché il

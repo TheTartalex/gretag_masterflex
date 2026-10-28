@@ -293,6 +293,14 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
   partenza da sola. Già inserita: si parte subito; agente che non lo sa
   (None): come prima. Da vedere sulla macchina: se un agente riavviato con
   la pellicola dentro la crede assente e riarma il carrello.
+- **Anteprime subito, elaborazione in sottofondo**: dopo la lettura
+  ogni fotogramma va nel visore e nella striscia in versione ridotta
+  (`anteprima_rapida`: decimata a ~700 px, inversione e colore, senza
+  allineamento, IR, ritaglio e orientamento) e l'elaborazione completa la
+  fa un thread suo (`_ElaborazioneInFondo`, coda di 2 grezzi) mentre la
+  macchina legge il successivo. Prima la pagina aggiornava immagine e
+  striscia solo a lavoro finito. Da vedere sulla macchina: tempi e memoria
+  con la lettura e l'elaborazione insieme.
 - **Anteprima in diretta** (tasto *Diretta* sopra l'immagine): il video
   dell'SDK a richiesta della pagina, una lettura alla volta, solo senza
   lavori in corso.

@@ -334,6 +334,46 @@ def process(raw: RawScan, opts: ProcessOptions,
                          _riduci_per_schermo(negativo), base)
 
 
+def anteprima_rapida(raw: RawScan, opts: ProcessOptions, lato: int = 700):
+    """L'anteprima che si vede subito durante il rullo, mentre l'elaborazione
+    completa lavora in sottofondo: (immagine, negativo per lo schermo, base).
+
+    Stessa inversione e stesso colore dell'elaborazione vera, ma su una copia
+    decimata a circa 'lato' pixel e senza i passi che costano: allineamento
+    dei canali (a questa scala lo scarto e' sotto il pixel), IR, ritaglio,
+    raddrizzamento, orientamento. La specchiatura del rullo si', perche' e'
+    gratis e un'anteprima specchiata confonde. Non si salva: il file vero lo
+    fa process().
+    """
+    exposures = raw.meta.exposures or [1.0]
+    piani = dict((c, s) for c, s in raw.planes.items() if c != "IR")
+    if not piani:
+        raise ValueError("nessun canale visibile nel grezzo")
+    h, w = next(iter(piani.values()))[0].shape[:2]
+    passo = max(1, int(max(h, w) / float(lato)))
+    piccoli: Dict[str, np.ndarray] = {}
+    for ch, stack in piani.items():
+        ridotti = [np.ascontiguousarray(s[::passo, ::passo]) for s in stack]
+        piccoli[ch] = (registration.merge_exposures(ridotti, exposures[:len(ridotti)])
+                       if len(ridotti) > 1 else ridotti[0])
+
+    negativo = _negativo_rgb(piccoli)
+    img = invert.invert_negative(piccoli, opts.profile)
+    if opts.auto_wb > 0:
+        img = invert.auto_white_balance(img, opts.auto_wb)
+    if opts.auto_levels:
+        img = invert.auto_levels(img)
+    if opts.curve:
+        img = invert.apply_curve(img, opts.curve)
+    if opts.roll_mirror is not None and opts.roll_mirror.flip_h:
+        img = img[:, ::-1]
+        if negativo is not None:
+            negativo = negativo[:, ::-1]
+    base = np.ascontiguousarray(img)
+    finita, _ = finiture(base, opts)
+    return finita, _riduci_per_schermo(negativo), base
+
+
 # --------------------------------------------------------------------------
 # Export
 # --------------------------------------------------------------------------

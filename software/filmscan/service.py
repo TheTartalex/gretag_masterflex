@@ -25,7 +25,7 @@ import threading
 import time
 import traceback
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -41,8 +41,8 @@ from . import colore
 from .invert import PROFILES
 from .orders import Archivio
 from .orient import RollMirror
-from .pipeline import (ProcessOptions, export, export_mask, finiture,
-                       process)
+from .pipeline import (ProcessOptions, anteprima_rapida, export, export_mask,
+                       finiture, process)
 
 
 @dataclass
@@ -62,6 +62,11 @@ class JobState:
     chiusura: bool = False
     # il rullo aspetta che il fotogramma si metta in finestra a mano
     posizionamento: str = ""
+    # cresce a ogni anteprima nuova (rapida o finita): la pagina aggiorna
+    # immagine e striscia anche a rullo in corso
+    anteprime: int = 0
+    # fotogrammi letti e non ancora elaborati
+    in_elaborazione: int = 0
 
     def as_dict(self) -> Dict[str, object]:
         return {"running": self.running, "kind": self.kind,
@@ -70,7 +75,60 @@ class JobState:
                 "errors": self.errors[-10:], "log": self.log[-40:],
                 "attesa_striscia": self.attesa_striscia,
                 "chiusura": self.chiusura,
-                "posizionamento": self.posizionamento}
+                "posizionamento": self.posizionamento,
+                "anteprime": self.anteprime,
+                "in_elaborazione": self.in_elaborazione}
+
+
+class _ElaborazioneInFondo(object):
+    """L'elaborazione completa dei fotogrammi in un thread suo, mentre la
+    macchina legge il successivo.
+
+    Prima ogni fotogramma veniva letto, elaborato ed esportato prima di
+    passare al prossimo: sul PC della macchina l'elaborazione costa piu'
+    della lettura, e l'immagine compariva solo alla fine. Ora la lettura va
+    avanti e l'anteprima ridotta compare subito.
+
+    La coda e' corta di proposito: ogni grezzo in attesa sono ~40 MB in un
+    processo a 32 bit. Piena, chi legge aspetta (metti); l'elaborazione non
+    tocca la macchina, quindi non c'e' nulla da fermare a meta'.
+    """
+
+    def __init__(self, lavora: Callable, coda_max: int = 2) -> None:
+        self._coda: "queue.Queue" = queue.Queue(maxsize=coda_max)
+        self._lavora = lavora
+        self._chiusa = False
+        self._thread = threading.Thread(target=self._giro, name="elaborazione",
+                                        daemon=True)
+        self._thread.start()
+
+    def metti(self, compito, attesa: Callable[[], None]) -> None:
+        while True:
+            try:
+                self._coda.put(compito, timeout=0.5)
+                return
+            except queue.Full:
+                attesa()
+
+    def _giro(self) -> None:
+        while True:
+            compito = self._coda.get()
+            if compito is None:
+                return
+            # gli errori li gestisce 'lavora' fotogramma per fotogramma: qui
+            # una rete, perche' un thread morto lascerebbe il rullo appeso
+            try:
+                self._lavora(compito)
+            except Exception:                           # noqa: BLE001
+                traceback.print_exc()
+
+    def chiudi(self) -> None:
+        """Aspetta che i fotogrammi in coda siano elaborati."""
+        if self._chiusa:
+            return
+        self._chiusa = True
+        self._coda.put(None)
+        self._thread.join()
 
 
 # Nella nota della calibrazione: con quale base d'esposizione e' stata fatta
@@ -131,6 +189,11 @@ class ScanService:
         # a chi chiede mentre la successiva e' in corso
         self._lock_diretta = threading.Lock()
         self._diretta: bytes = b""
+        # elaborazione in sottofondo del rullo in corso, e le miniature
+        # rapide dei fotogrammi che aspettano la loro: (rullo, numero) -> jpeg
+        self._elab: Optional[_ElaborazioneInFondo] = None
+        self._provini_rapidi: Dict[Tuple[int, int], bytes] = {}
+        self._ultima_rapida: Optional[Tuple[int, int]] = None
         # mentre la connessione automatica aspetta lo scanner, cosa aspetta
         self.attesa_connessione: Optional[str] = None
         # Disconnetti ferma anche la connessione automatica: altrimenti si
@@ -785,6 +848,12 @@ class ScanService:
                 self.log("ERRORE: %s" % exc)
                 self.log(traceback.format_exc(limit=2).strip().replace("\n", " | "))
             finally:
+                # i fotogrammi gia' letti si elaborano e si salvano anche
+                # dopo uno STOP EMERGENZA: non toccano la macchina
+                try:
+                    self._chiudi_elaborazione()
+                except Exception as exc:                # noqa: BLE001
+                    self.log("Elaborazione in sottofondo: %s" % exc)
                 if self._stop.is_set():
                     self._a_riposo()
                 self.job.running = False
@@ -792,6 +861,44 @@ class ScanService:
                 self._lock.release()
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def _chiudi_elaborazione(self) -> None:
+        elab, self._elab = self._elab, None
+        if elab is None:
+            return
+        if self.job.in_elaborazione:
+            self.progress("Elaborazione degli ultimi %d fotogramm%s"
+                          % (self.job.in_elaborazione,
+                             "o" if self.job.in_elaborazione == 1 else "i"), 0.98)
+        elab.chiudi()
+
+    def _mostra_rapida(self, raw, opts, chiave: Tuple[int, int]) -> None:
+        """L'anteprima ridotta di un fotogramma appena letto, nel visore e
+        nella striscia, in attesa di quella vera."""
+        from PIL import Image
+        try:
+            img, neg, base = anteprima_rapida(raw, opts)
+        except Exception as exc:                        # noqa: BLE001
+            self.log("Anteprima rapida non riuscita: %s" % exc)
+            return
+        self.preview = img
+        self.preview_neg = neg
+        self.base_lineare = base
+        self.preview_ridotta = False
+        self.ultimo_raw = raw
+        self._ultima_rapida = chiave
+        pil = Image.fromarray((np.clip(img, 0, 1) * 255).astype(np.uint8))
+        pil.thumbnail((150, 150))
+        buf = io.BytesIO()
+        pil.save(buf, format="JPEG", quality=78)
+        self._provini_rapidi[chiave] = buf.getvalue()
+        self.job.anteprime += 1
+
+    def provino_rapido(self, fotogramma: Dict[str, object]) -> bytes:
+        """La miniatura rapida di un fotogramma ancora in elaborazione."""
+        return self._provini_rapidi.get(
+            (int(fotogramma.get("rullo_id") or 0),
+             int(fotogramma.get("numero") or 0)), b"")
 
     def _a_riposo(self) -> None:
         """Dopo uno STOP: lampade spente, niente altri movimenti.
@@ -1261,6 +1368,55 @@ class ScanService:
             self._rullo_in_corso = rullo_id
             fatti = 0
             vuoti = 0
+            elaborati = {"ok": 0}
+
+            def elabora(compito):
+                """Un fotogramma letto: elaborazione completa, file, registro.
+                Gira nel thread di elaborazione; un errore qui perde il
+                fotogramma (il grezzo resta), non il rullo."""
+                raw, raw_path, nome, numero, bordo = compito
+                try:
+                    res = process(raw, opts)
+                    ext = {"tiff16": ".tif", "tiff8": ".tif",
+                           "png": ".png", "jpeg": ".jpg"}.get(self.cfg.export_format, ".tif")
+                    out_path = os.path.join(dest, nome + ext)
+                    export(res.image, out_path, self.cfg.export_format,
+                           self.cfg.jpeg_quality)
+
+                    mask_path = ""
+                    if self.cfg.export_ir_mask and res.mask is not None:
+                        mask_path = export_mask(res.mask,
+                                                os.path.join(dest, nome + "_maschera.png"))
+
+                    self.archivio.fotogramma_registra(
+                        rullo_id, numero, file_out=out_path, file_raw=raw_path,
+                        file_maschera=mask_path,
+                        rotazione=res.orientation.rotation if res.orientation else 0,
+                        stato="ok", avvisi=" | ".join(res.warnings),
+                        numero_bordo=bordo)
+                    elaborati["ok"] += 1
+                    # nel visore la versione finita, se e' ancora l'ultimo
+                    # fotogramma letto: uno piu' nuovo non si copre
+                    if self._ultima_rapida == (rullo_id, numero):
+                        self.ultimo_raw = raw
+                        self.preview = res.image
+                        self.base_lineare = res.base
+                        self.preview_ridotta = False
+                        self.preview_neg = res.negativo
+                    for w in res.warnings:
+                        self.log("Fotogramma %d: %s" % (numero, w))
+                except Exception as exc:                # noqa: BLE001
+                    self.job.errors.append("fotogramma %d: %s" % (numero, exc))
+                    self.log("Fotogramma %d non elaborato: %s" % (numero, exc))
+                    self.archivio.fotogramma_registra(
+                        rullo_id, numero, file_raw=raw_path, stato="errore",
+                        avvisi=str(exc), numero_bordo=bordo)
+                finally:
+                    self._provini_rapidi.pop((rullo_id, numero), None)
+                    self.job.in_elaborazione = max(0, self.job.in_elaborazione - 1)
+                    self.job.anteprime += 1
+
+            elab = self._elab = _ElaborazioneInFondo(elabora)
             # L'esposizione per canale si misura UNA volta per rullo, non a
             # ogni fotogramma: dipende dall'emulsione e dalla lampada, che nel
             # corso di un rullo non cambiano. Misurarla ogni volta farebbe
@@ -1447,32 +1603,22 @@ class ScanService:
                     if self.cfg.keep_raw:
                         raw_path = raw.save(self.cfg.path("raw"), nome)
 
-                    res = process(raw, opts)
-                    ext = {"tiff16": ".tif", "tiff8": ".tif",
-                           "png": ".png", "jpeg": ".jpg"}.get(self.cfg.export_format, ".tif")
-                    out_path = os.path.join(dest, nome + ext)
-                    export(res.image, out_path, self.cfg.export_format,
-                           self.cfg.jpeg_quality)
-
-                    mask_path = ""
-                    if self.cfg.export_ir_mask and res.mask is not None:
-                        mask_path = export_mask(res.mask,
-                                                os.path.join(dest, nome + "_maschera.png"))
-
+                    # Subito l'anteprima ridotta, e il fotogramma in striscia
+                    # come "in elaborazione"; quella vera la fa il thread di
+                    # elaborazione, mentre la macchina passa al successivo.
+                    self._mostra_rapida(raw, opts, (rullo_id, i + 1))
                     self.archivio.fotogramma_registra(
-                        rullo_id, i + 1, file_out=out_path, file_raw=raw_path,
-                        file_maschera=mask_path,
-                        rotazione=res.orientation.rotation if res.orientation else 0,
-                        stato="ok", avvisi=" | ".join(res.warnings),
-                        numero_bordo=bordo)
-                    self.ultimo_raw = raw
-                    self.preview = res.image
-                    self.base_lineare = res.base
-                    self.preview_ridotta = False
-                    self.preview_neg = res.negativo
-                    fatti += 1
-                    for w in res.warnings:
-                        self.log("Fotogramma %d: %s" % (i + 1, w))
+                        rullo_id, i + 1, file_raw=raw_path,
+                        stato="elaborazione", numero_bordo=bordo)
+                    self.job.in_elaborazione += 1
+                    numero = i + 1
+
+                    def in_attesa(numero=numero):
+                        self.job.message = ("Fotogramma %d letto: aspetto "
+                                            "l'elaborazione dei precedenti"
+                                            % numero)
+                    elab.metti((raw, raw_path, nome, numero, bordo), in_attesa)
+                    del raw
 
                 except _FotogrammaVuoto:
                     pass
@@ -1555,6 +1701,12 @@ class ScanService:
                         fuoco_da_fare = True
                 if conta:
                     i += 1
+
+            # gli ultimi fotogrammi letti possono essere ancora in
+            # elaborazione: il rullo si chiude (e si riordina) quando ci sono
+            # tutti i file
+            self._chiudi_elaborazione()
+            fatti = elaborati["ok"]
 
             # una striscia piu' corta del previsto non e' un problema: e' la
             # normalita' con pellicole di lunghezza variabile
