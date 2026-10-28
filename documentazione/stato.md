@@ -305,6 +305,34 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
   dell'SDK a richiesta della pagina, una lettura alla volta, solo senza
   lavori in corso.
 
+- **Velocità del rullo** (obiettivo: il programma originale faceva 36
+  fotogrammi in 60 s). Il 27/10 un fotogramma costava R 2,3 s + G 2,6 s +
+  B 2,9 s di letture, più il trasporto, più l'elaborazione e il
+  salvataggio del grezzo compresso nello stesso ciclo. Cambiato:
+  - **lettura unica**: `scan_raw` col canale 4 legge R, G e B insieme
+    (maschera 7, tre piani: `0x18078A67`), e
+    `ExposureTime::operator*=(const double*)` (`0x18030310`) dà a ogni LED
+    il suo fattore. Comando `grabm` dell'agente. La disposizione dei piani
+    nel buffer si riconosce dalla ruvidezza delle immagini e va nel
+    registro; sul primo fotogramma i livelli si confrontano con la misura
+    per canale e, se non tornano (ordine dei LED diverso da R, G, B), si
+    torna da soli a un canale per volta. **Da vedere sulla macchina:** che
+    il canale 4 sia accettato, la disposizione, il tempo dell'SDK (nel
+    registro dell'agente: "lettura unica 3 piani: SDK x s, file y s");
+  - grezzo compresso salvato dal thread di elaborazione, non dal ciclo di
+    lettura;
+  - coda dell'elaborazione a tetto di memoria (`memoria_elaborazione_mb`,
+    700 MB, una ventina di fotogrammi) invece di 2 posti: la lettura non
+    aspetta l'elaborazione;
+  - a fine rullo prima si espelle, poi si aspetta l'elaborazione;
+  - attese del protocollo col ponte da 50 a 10 ms (agente e filmscan);
+  - nel registro, per ogni fotogramma, i secondi di lettura e trasporto, e
+    a fine rullo il totale.
+
+  Se non basta ancora, il prossimo passo è la risoluzione 1 (1052x700,
+  2x2 sul CCD, un quarto dei dati) come modo "veloce", con la sua
+  calibrazione.
+
 ## Problemi aperti, in ordine di priorità
 
 1. **Motori delle guide all'avvio.** Le guide sono i motori 3 e 4 del

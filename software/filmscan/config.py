@@ -230,6 +230,11 @@ class AppConfig:
     # rullo tagliato in strisce: dopo ogni striscia il carrello si riarma e
     # aspetta la successiva per questo tempo (o fino a "Fine rullo")
     attesa_striscia_s: float = 600.0
+    # Memoria per i fotogrammi letti che aspettano l'elaborazione (MB). Il
+    # processo a 32 bit ne ha ~1800 in tutto; un grezzo RGB a piena
+    # risoluzione ne occupa ~35: 700 MB sono una ventina di fotogrammi di
+    # vantaggio della lettura sull'elaborazione.
+    memoria_elaborazione_mb: int = 700
     eject_max_mm: float = 400.0  # corsa massima in espulsione, per non tirare a vuoto
 
     # --- archivio degli ordini gia' fatti ---

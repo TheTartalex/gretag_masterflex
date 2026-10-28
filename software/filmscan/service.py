@@ -80,6 +80,11 @@ class JobState:
                 "in_elaborazione": self.in_elaborazione}
 
 
+def _peso(raw) -> int:
+    """La memoria che un grezzo tiene occupata finche' non e' elaborato."""
+    return int(sum(p.nbytes for piani in raw.planes.values() for p in piani))
+
+
 class _ElaborazioneInFondo(object):
     """L'elaborazione completa dei fotogrammi in un thread suo, mentre la
     macchina legge il successivo.
@@ -89,38 +94,52 @@ class _ElaborazioneInFondo(object):
     della lettura, e l'immagine compariva solo alla fine. Ora la lettura va
     avanti e l'anteprima ridotta compare subito.
 
-    La coda e' corta di proposito: ogni grezzo in attesa sono ~40 MB in un
-    processo a 32 bit. Piena, chi legge aspetta (metti); l'elaborazione non
-    tocca la macchina, quindi non c'e' nulla da fermare a meta'.
+    La coda non ha un numero fisso di posti ma un tetto di memoria
+    (cfg.memoria_elaborazione_mb): un processo a 32 bit ha ~1,8 GB, e un
+    grezzo RGB a piena risoluzione ne occupa ~35. Finche' c'e' posto la
+    lettura non aspetta mai, e la pellicola corre; l'elaborazione recupera
+    durante l'espulsione e il cambio di striscia. Pieno, chi legge aspetta
+    (metti). L'elaborazione non tocca la macchina: non c'e' nulla da fermare
+    a meta'.
     """
 
-    def __init__(self, lavora: Callable, coda_max: int = 2) -> None:
-        self._coda: "queue.Queue" = queue.Queue(maxsize=coda_max)
+    def __init__(self, lavora: Callable, budget: int = 600 * 1024 * 1024) -> None:
+        self._coda: "queue.Queue" = queue.Queue()
         self._lavora = lavora
+        self._budget = max(int(budget), 1)
+        self._in_memoria = 0
+        self._cond = threading.Condition()
         self._chiusa = False
         self._thread = threading.Thread(target=self._giro, name="elaborazione",
                                         daemon=True)
         self._thread.start()
 
-    def metti(self, compito, attesa: Callable[[], None]) -> None:
-        while True:
-            try:
-                self._coda.put(compito, timeout=0.5)
-                return
-            except queue.Full:
+    def metti(self, compito, peso: int, attesa: Callable[[], None]) -> None:
+        with self._cond:
+            # uno alla volta passa sempre, anche se pesa piu' del tetto
+            while self._in_memoria and self._in_memoria + peso > self._budget:
                 attesa()
+                self._cond.wait(0.5)
+            self._in_memoria += peso
+        self._coda.put((compito, peso))
 
     def _giro(self) -> None:
         while True:
-            compito = self._coda.get()
-            if compito is None:
+            voce = self._coda.get()
+            if voce is None:
                 return
+            compito, peso = voce
             # gli errori li gestisce 'lavora' fotogramma per fotogramma: qui
             # una rete, perche' un thread morto lascerebbe il rullo appeso
             try:
                 self._lavora(compito)
             except Exception:                           # noqa: BLE001
                 traceback.print_exc()
+            finally:
+                del compito, voce
+                with self._cond:
+                    self._in_memoria -= peso
+                    self._cond.notify_all()
 
     def chiudi(self) -> None:
         """Aspetta che i fotogrammi in coda siano elaborati."""
@@ -1151,6 +1170,7 @@ class ScanService:
                                              self.calib,
                                              annulla=self.annullato,
                                              avvisi=avvisi, livelli=livelli)
+        self._livelli_misura = dict(livelli)
         luce = max(livelli.values()) if livelli else 1.0
         soglia = self.cfg.soglia_misura_esposizione
         if luce < soglia:
@@ -1171,6 +1191,33 @@ class ScanService:
         self.log("Esposizioni: " + ", ".join(
             "%s x%.2f" % (k, v) for k, v in gains.items()))
         return gains
+
+    def _lettura_unica_torna(self, raw) -> bool:
+        """La lettura unica ha dato a ogni canale il suo tempo? Si confronta
+        il livello di ogni piano con quello misurato a x1 sullo stesso
+        fotogramma, per il fattore chiesto. L'ordine dei LED nell'
+        ExposureTime (R, G, B, IR) e' supposto, non verificato: se e'
+        diverso, i tempi finiscono sui canali sbagliati e qui si vede."""
+        scarti = {}
+        for c, livello in (self._livelli_misura or {}).items():
+            if c not in raw.planes:
+                continue
+            fattore = float(raw.meta.channel_exposure.get(c, 1.0))
+            atteso = livello * fattore
+            if not (0.05 < atteso < 0.9):
+                continue            # al buio o in saturazione non si giudica
+            visto = float(np.percentile(raw.planes[c][0][::4, ::4], 99.0))
+            scarti[c] = visto / atteso
+        if not scarti:
+            return True
+        dettaglio = ", ".join("%s %.2f" % kv for kv in sorted(scarti.items()))
+        if any(abs(r - 1.0) > 0.35 for r in scarti.values()):
+            self.log("Lettura unica disattivata: i livelli non tornano con i "
+                     "tempi chiesti (visto/atteso %s). Probabile ordine dei "
+                     "LED diverso: si legge un canale per volta." % dettaglio)
+            return False
+        self.log("Lettura unica verificata (visto/atteso %s)." % dettaglio)
+        return True
 
     def _esposizione_fissa(self, preset) -> Optional[Dict[str, float]]:
         """Con l'esposizione automatica spenta: x1 su tutti i canali, senza
@@ -1374,8 +1421,19 @@ class ScanService:
                 """Un fotogramma letto: elaborazione completa, file, registro.
                 Gira nel thread di elaborazione; un errore qui perde il
                 fotogramma (il grezzo resta), non il rullo."""
-                raw, raw_path, nome, numero, bordo = compito
+                raw, nome, numero, bordo, vuoto = compito
+                raw_path = ""
                 try:
+                    # Il grezzo si salva qui e non nel ciclo di lettura: la
+                    # compressione di ~35 MB costa secondi sul PC della
+                    # macchina, e la pellicola intanto va avanti.
+                    if self.cfg.keep_raw or vuoto:
+                        raw_path = raw.save(self.cfg.path("raw"), nome)
+                    if vuoto:
+                        self.archivio.fotogramma_registra(
+                            rullo_id, numero, file_raw=raw_path, stato="vuoto",
+                            avvisi=vuoto, numero_bordo=bordo)
+                        return
                     res = process(raw, opts)
                     ext = {"tiff16": ".tif", "tiff8": ".tif",
                            "png": ".png", "jpeg": ".jpg"}.get(self.cfg.export_format, ".tif")
@@ -1408,6 +1466,8 @@ class ScanService:
                 except Exception as exc:                # noqa: BLE001
                     self.job.errors.append("fotogramma %d: %s" % (numero, exc))
                     self.log("Fotogramma %d non elaborato: %s" % (numero, exc))
+                    if vuoto:
+                        return
                     self.archivio.fotogramma_registra(
                         rullo_id, numero, file_raw=raw_path, stato="errore",
                         avvisi=str(exc), numero_bordo=bordo)
@@ -1416,7 +1476,10 @@ class ScanService:
                     self.job.in_elaborazione = max(0, self.job.in_elaborazione - 1)
                     self.job.anteprime += 1
 
-            elab = self._elab = _ElaborazioneInFondo(elabora)
+            elab = self._elab = _ElaborazioneInFondo(
+                elabora, int(self.cfg.memoria_elaborazione_mb) * 1024 * 1024)
+            letti = {"n": 0}
+            t_rullo = {"inizio": 0.0}
             # L'esposizione per canale si misura UNA volta per rullo, non a
             # ogni fotogramma: dipende dall'emulsione e dalla lampada, che nel
             # corso di un rullo non cambiano. Misurarla ogni volta farebbe
@@ -1429,6 +1492,9 @@ class ScanService:
             da_misurare = (gains is None and preset.auto_exposure
                            and preset.channel_exposure is None)
             misure_opache = 0
+            # la prima lettura unica dopo la misura si confronta con la misura
+            verifica_unica = True
+            self._livelli_misura = {}
 
             # Quanti fotogrammi ha la striscia non lo sa nessuno prima di
             # leggerla, e chiederlo all'operatore vuol dire farglielo indovinare.
@@ -1519,6 +1585,9 @@ class ScanService:
                         break
                     coda -= 1
                 self.job.frame = i + 1
+                if not t_rullo["inizio"]:
+                    t_rullo["inizio"] = time.time()
+                tempi = {}
                 base = i / float(max(limite, 1))
                 # In automatico non si scrive "di 72": sarebbe un numero
                 # inventato. Si scrive quello che si sa, cioe' a che fotogramma
@@ -1561,12 +1630,28 @@ class ScanService:
                 except Exception:                       # noqa: BLE001
                     bordo = ""
                 try:
+                    t_lettura = time.time()
                     with self._sotto_pressore(backend):
                         raw = scan_frame(backend, self.cfg, preset, fmt,
                                          self.calib, frame_index=i,
                                          channel_exposure=gains if not opaca
                                          else dict((c, 1.0) for c in preset.channels),
                                          annulla=self.annullato)
+                    tempi["lettura"] = time.time() - t_lettura
+                    nota = getattr(backend, "log_disposizione", None)
+                    if nota:
+                        self.log(nota)
+                        backend.log_disposizione = None
+                    if (verifica_unica and not opaca and gains
+                            and getattr(backend, "_lettura_unica", None) is True):
+                        verifica_unica = False
+                        if not self._lettura_unica_torna(raw):
+                            backend._lettura_unica = False
+                            with self._sotto_pressore(backend):
+                                raw = scan_frame(backend, self.cfg, preset, fmt,
+                                                 self.calib, frame_index=i,
+                                                 channel_exposure=gains,
+                                                 annulla=self.annullato)
 
                     vuoto, escursione = fotogramma_vuoto(
                         raw, self.cfg.soglia_fotogramma_vuoto_d)
@@ -1589,35 +1674,33 @@ class ScanService:
                         # sbagliato il fotogramma si rielabora senza
                         # rimettere la pellicola. Il numero resta quello
                         # della striscia, come lo conta il cliente.
-                        raw_path = raw.save(self.cfg.path("raw"), nome)
-                        self.archivio.fotogramma_registra(
-                            rullo_id, i + 1, file_raw=raw_path, stato="vuoto",
-                            avvisi="non esposto: escursione %.2f D" % escursione,
-                            numero_bordo=bordo)
+                        elab.metti((raw, nome, i + 1, bordo,
+                                    "non esposto: escursione %.2f D" % escursione),
+                                   _peso(raw), lambda: None)
+                        self.job.in_elaborazione += 1
                         vuoti += 1
                         self.log("Fotogramma %d vuoto (escursione %.2f D): "
                                  "saltato, grezzo conservato." % (i + 1, escursione))
                         raise _FotogrammaVuoto()
 
-                    raw_path = ""
-                    if self.cfg.keep_raw:
-                        raw_path = raw.save(self.cfg.path("raw"), nome)
-
                     # Subito l'anteprima ridotta, e il fotogramma in striscia
-                    # come "in elaborazione"; quella vera la fa il thread di
-                    # elaborazione, mentre la macchina passa al successivo.
+                    # come "in elaborazione"; quella vera (e il salvataggio
+                    # del grezzo) la fa il thread di elaborazione, mentre la
+                    # macchina passa al successivo.
                     self._mostra_rapida(raw, opts, (rullo_id, i + 1))
                     self.archivio.fotogramma_registra(
-                        rullo_id, i + 1, file_raw=raw_path,
-                        stato="elaborazione", numero_bordo=bordo)
+                        rullo_id, i + 1, stato="elaborazione",
+                        numero_bordo=bordo)
                     self.job.in_elaborazione += 1
+                    letti["n"] += 1
                     numero = i + 1
 
                     def in_attesa(numero=numero):
-                        self.job.message = ("Fotogramma %d letto: aspetto "
-                                            "l'elaborazione dei precedenti"
-                                            % numero)
-                    elab.metti((raw, raw_path, nome, numero, bordo), in_attesa)
+                        self.job.message = ("Fotogramma %d letto: memoria "
+                                            "piena, aspetto l'elaborazione "
+                                            "dei precedenti" % numero)
+                    elab.metti((raw, nome, numero, bordo, ""), _peso(raw),
+                               in_attesa)
                     del raw
 
                 except _FotogrammaVuoto:
@@ -1665,7 +1748,13 @@ class ScanService:
                                  "%s x%.2f" % kv for kv in gains.items())))
                 try:
                     if self.cfg.avanzamento_automatico:
+                        t_trasporto = time.time()
                         backend.prossimo_fotogramma(fmt)
+                        tempi["trasporto"] = time.time() - t_trasporto
+                        if "lettura" in tempi:
+                            self.log("Fotogramma %d: lettura %.1f s, trasporto "
+                                     "%.1f s." % (i + 1, tempi["lettura"],
+                                                  tempi["trasporto"]))
                 except FinePellicola:
                     self.log("Fine della striscia %d: il carrello non trova "
                              "altri fotogrammi dopo il %d."
@@ -1702,6 +1791,39 @@ class ScanService:
                 if conta:
                     i += 1
 
+            # Prima la macchina: ASF spento e pellicola fuori subito, senza
+            # aspettare l'elaborazione, che non la riguarda.
+            if ice_sdk:
+                try:
+                    backend.digital_ice(False)
+                except Exception as exc:                # noqa: BLE001
+                    self.log("Digital ICE (ASF) non spento: %s" % exc)
+            if (self.cfg.auto_eject and letti["n"] > 0 and not espulsa
+                    and not self._stop.is_set()):
+                try:
+                    if getattr(backend, "supports_eject", False):
+                        verso = self.cfg.verso_espulsione_fine_rullo
+                        esito = backend.eject(verso)
+                        self.log(esito or ("Pellicola espulsa dal %s." % verso))
+                    else:
+                        sens = backend.read_sensors()
+                        percorso = 0.0
+                        passo = min(10.0, getattr(backend, "max_regola_mm", 10.0))
+                        while sens.disponibili and sens.uscita and \
+                                percorso < self.cfg.eject_max_mm:
+                            backend.advance(passo)
+                            percorso += passo
+                            sens = backend.read_sensors()
+                        if percorso:
+                            self.log("Pellicola espulsa dopo %.0f mm." % percorso)
+                except Exception as exc:                # noqa: BLE001
+                    self.log("Espulsione non riuscita: %s" % exc)
+            if t_rullo["inizio"]:
+                durata = time.time() - t_rullo["inizio"]
+                self.log("Lettura del rullo: %d fotogrammi in %.0f s (%.1f s "
+                         "l'uno)." % (letti["n"], durata,
+                                      durata / max(letti["n"], 1)))
+
             # gli ultimi fotogrammi letti possono essere ancora in
             # elaborazione: il rullo si chiude (e si riordina) quando ci sono
             # tutti i file
@@ -1722,31 +1844,6 @@ class ScanService:
                 self._riordina_per_bordo(rullo_id)
             except Exception as exc:                    # noqa: BLE001
                 self.log("Riordino per numeri del bordo saltato: %s" % exc)
-            if ice_sdk:
-                try:
-                    backend.digital_ice(False)
-                except Exception as exc:                # noqa: BLE001
-                    self.log("Digital ICE (ASF) non spento: %s" % exc)
-            if (self.cfg.auto_eject and fatti > 0 and not espulsa
-                    and not self._stop.is_set()):
-                try:
-                    if getattr(backend, "supports_eject", False):
-                        verso = self.cfg.verso_espulsione_fine_rullo
-                        esito = backend.eject(verso)
-                        self.log(esito or ("Pellicola espulsa dal %s." % verso))
-                    else:
-                        sens = backend.read_sensors()
-                        percorso = 0.0
-                        passo = min(10.0, getattr(backend, "max_regola_mm", 10.0))
-                        while sens.disponibili and sens.uscita and \
-                                percorso < self.cfg.eject_max_mm:
-                            backend.advance(passo)
-                            percorso += passo
-                            sens = backend.read_sensors()
-                        if percorso:
-                            self.log("Pellicola espulsa dopo %.0f mm." % percorso)
-                except Exception as exc:                # noqa: BLE001
-                    self.log("Espulsione non riuscita: %s" % exc)
 
             self.archivio.rullo_stato(rullo_id, stato)
             self.archivio.ordine_stato(ordine.id, "in_lavorazione")

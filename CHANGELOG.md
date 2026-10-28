@@ -45,6 +45,15 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-10-28 — rullo veloce
+
+- Lettura unica di R, G e B (`grabm`, `scan_raw` canale 4, un tempo per LED
+  con `operator*=(const double*)`), disposizione dei piani riconosciuta da
+  sola, verifica sul primo fotogramma e ritorno al canale per volta.
+- Grezzo salvato e elaborato in sottofondo, coda a tetto di memoria
+  (`memoria_elaborazione_mb`), espulsione prima di aspettare l'elaborazione.
+- Protocollo col ponte a 10 ms; tempi di lettura e trasporto nel registro.
+
 ### 2026-10-28 — Scansiona rullo con Carica, anteprima in diretta
 
 - Scansiona rullo prepara il carrello e parte da solo quando la pellicola

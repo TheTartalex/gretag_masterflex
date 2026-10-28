@@ -433,6 +433,24 @@ def scan_frame(backend: ScannerBackend, cfg: AppConfig, preset: ScanPreset,
         if abs(delta) > 1e-9:
             backend.advance(delta)
 
+    # Strada veloce: R, G e B (e IR) in una lettura sola, ognuno col suo
+    # tempo, se la macchina lo sa fare e il preset non chiede ripetizioni o
+    # esposizioni multiple. Altrimenti, o se la macchina la rifiuta, un
+    # canale per volta come prima.
+    unica = getattr(backend, "capture_frame", None)
+    if (unica is not None and preset.passes_per_channel == 1
+            and list(preset.multi_exposure) == [1.0]):
+        _controlla(annulla)
+        piani = unica(channels, dict((c, gains.get(c, 1.0)) for c in channels))
+        if piani is not None:
+            usate = getattr(backend, "esposizioni_usate", None) or {}
+            for ch in channels:
+                scan.add(ch, apply_calibration(piani[ch], ch, calib).astype(np.float32))
+                if ch in usate:
+                    scan.meta.channel_exposure[ch] = usate[ch]
+            _tick(progress, "Lettura unica %s" % "".join(channels), 1.0)
+            return scan
+
     for ch in channels:
         backend.lamp(ch, True)
         for exp in preset.multi_exposure:

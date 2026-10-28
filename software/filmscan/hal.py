@@ -553,7 +553,7 @@ class PonteSdkBackend(ScannerBackend):
                 except OSError:
                     pass
                 raise Emergenza("STOP EMERGENZA durante '%s'" % comando)
-            time.sleep(0.05)
+            time.sleep(0.01)
 
         # Il comando non e' stato raccolto da nessuno: si toglie di mezzo,
         # altrimenti l'agente lo eseguirebbe quando riparte - e un motore che
@@ -823,6 +823,10 @@ class PonteSdkBackend(ScannerBackend):
     ATTESA_FUOCO = 120.0
     # None = da provare; True/False = il video dell'SDK va / non va
     _video_sdk: Optional[bool] = None
+    # Lettura unica di R, G, B: None = da provare, True = va, False = la
+    # macchina la rifiuta o i piani non tornano (si legge un canale per volta)
+    _lettura_unica: Optional[bool] = None
+    _disposizione: Optional[str] = None     # come stanno i piani nel buffer
 
     def anteprima_veloce(self) -> np.ndarray:
         """Il video del programma originale (perform_video_mode_scan); se
@@ -878,12 +882,109 @@ class PonteSdkBackend(ScannerBackend):
         # se c'e' ancora pellicola.
         return self._leggi(nome)
 
+    def capture_frame(self, canali: List[str],
+                      esposizioni: Dict[str, float]) -> Optional[Dict[str, np.ndarray]]:
+        """R, G e B in una lettura sola (grabm), ognuno col suo tempo.
+
+        Un canale per volta erano tre scan_raw da 1,2-2,9 s l'uno, ciascuno
+        con la sua preparazione della testa; il programma originale non legge
+        cosi'. None se la lettura unica non si puo' usare: chi chiama torna a
+        un canale per volta (e da li' in poi non la si riprova)."""
+        if self._lettura_unica is False:
+            return None
+        if [c for c in canali if c != "IR"] != ["R", "G", "B"]:
+            return None
+        con_ir = "IR" in canali
+        tetto = self.max_esposizione
+        fattori = [float(esposizioni.get(c, 1.0)) for c in
+                   (("R", "G", "B", "IR") if con_ir else ("R", "G", "B"))]
+        if tetto is not None:
+            fattori = [min(f, tetto) for f in fattori]
+        while True:
+            try:
+                nome = self._send("grabm_%d_%s" % (self.risoluzione, "_".join(
+                    "%.3f" % f for f in fattori)), attesa=self.ATTESA_ACQUISIZIONE)
+                break
+            except ScannerError as exc:
+                testo = str(exc)
+                if "codice 47" in testo and max(fattori) > 1.0:
+                    # come capture_line_block: il firmware rifiuta il tempo
+                    # piu' lungo, si dimezza e si impara il tetto
+                    tetto = max(1.0, max(fattori) / 2.0)
+                    self.max_esposizione = tetto
+                    fattori = [min(f, tetto) for f in fattori]
+                    continue
+                if self._lettura_unica is None:
+                    self._lettura_unica = False
+                    return None
+                raise
+        dati, w, h, piani = self._leggi_piani(nome)
+        separati = self._separa_piani(dati, w, h, piani)
+        if separati is None:
+            self._lettura_unica = False
+            return None
+        self._lettura_unica = True
+        self.ultima_esposizione = None
+        self.esposizioni_usate = dict(zip(("R", "G", "B", "IR"), fattori))
+        return dict(zip(("R", "G", "B", "IR")[:piani], separati))
+
+    def _leggi_piani(self, nome: str):
+        """Il grezzo di una lettura unica: (dati 1D, larghezza, altezza,
+        piani)."""
+        import json
+        percorso = os.path.join(self.root, "raw", nome)
+        with open(percorso[:-4] + ".json") as f:
+            meta = json.load(f)
+        dati = np.fromfile(percorso, dtype="<u2")
+        for p in (percorso, percorso[:-4] + ".json"):
+            try:
+                os.remove(p)
+            except OSError:
+                pass
+        return dati, int(meta["larghezza"]), int(meta["altezza"]), int(meta["piani"])
+
+    def _separa_piani(self, dati: np.ndarray, w: int, h: int, piani: int):
+        """I piani di una lettura unica, uno per canale.
+
+        Come l'SDK li metta nel buffer non e' scritto: uno dopo l'altro, a
+        pixel alterni o a righe alterne. La disposizione giusta e' quella in
+        cui ogni piano e' un'immagine liscia: le altre mescolano canali
+        diversi fra pixel vicini e saltano. Si decide la prima volta e lo si
+        scrive nel registro. None se i piani non tornano (vuoti o uguali)."""
+        if dati.size < w * h * piani:
+            return None
+        dati = dati[:w * h * piani]
+        modi = {
+            "piani": lambda: dati.reshape(piani, h, w),
+            "pixel": lambda: np.moveaxis(dati.reshape(h, w, piani), 2, 0),
+            "righe": lambda: np.moveaxis(dati.reshape(h, piani, w), 1, 0),
+        }
+
+        def ruvidezza(cubo):
+            c = cubo[:, h // 3:h // 3 + 128, w // 3:w // 3 + 128].astype(np.float32)
+            return float(np.abs(np.diff(c, axis=2)).mean()
+                         + np.abs(np.diff(c, axis=1)).mean())
+
+        if self._disposizione is None:
+            stime = dict((k, ruvidezza(f())) for k, f in modi.items())
+            self._disposizione = min(stime, key=stime.get)
+            self.log_disposizione = ("lettura unica: piani disposti a '%s' "
+                                     "(ruvidezza %s)" % (self._disposizione, ", ".join(
+                                         "%s %.1f" % kv for kv in sorted(stime.items()))))
+        cubo = modi[self._disposizione]()
+        for k in range(piani):
+            if not cubo[k].any():
+                return None
+        if piani > 1 and np.array_equal(cubo[0][::16, ::16], cubo[1][::16, ::16]):
+            return None
+        return [np.ascontiguousarray(cubo[k]) for k in range(piani)]
+
     def _leggi(self, nome: str) -> np.ndarray:
         """Il grezzo che l'agente ha depositato in <ponte>/raw, poi via."""
         percorso = os.path.join(self.root, "raw", nome)
         scadenza = time.time() + self.timeout
         while time.time() < scadenza and not os.path.exists(percorso):
-            time.sleep(0.05)
+            time.sleep(0.01)
         if not os.path.exists(percorso):
             raise ScannerError("l'agente non ha depositato %s" % nome)
 

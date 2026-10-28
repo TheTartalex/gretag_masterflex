@@ -46,6 +46,9 @@ COMANDI
                                 al massimo --max-passi per comando
     fuoco                       autofocus
     grab_<canale>_<ris>_<exp>   acquisisce un canale (canale R|G|B|IR)
+    grabm_<ris>_<eR>_<eG>_<eB>[_<eIR>]
+                                R, G, B (e IR) in una lettura sola, un tempo
+                                per LED
     flash_backup                salva il Parameter Flash in raw/
     offsetxy_<formato>          legge gli offset XY dal flash
 
@@ -299,8 +302,19 @@ class AgenteSimulato(object):
         return percorso
 
     def scansiona_canale(self, canale=1, esposizione=1.0, risoluzione=0,
-                         x0=0, y0=0, larghezza=0, altezza=0, buio=False):
+                         x0=0, y0=0, larghezza=0, altezza=0, buio=False,
+                         per_led=None):
         import random
+        if canale in (4, 5):
+            # lettura unica: i piani uno dopo l'altro, come si suppone li
+            # metta la macchina (chi legge lo verifica comunque)
+            piani = []
+            fattori = list(per_led or [1.0] * 4)[:3 if canale == 4 else 4]
+            for k, f in enumerate(fattori):
+                d, w, h = self.scansiona_canale(k, esposizione * f, risoluzione,
+                                                x0, y0, larghezza, altezza, buio)
+                piani.append(d)
+            return b"".join(piani), w, h
         if esposizione > self.MAX_ESPOSIZIONE:
             raise ErroreSimulato(
                 "scansione canale %d: l'SDK segnala 3 errori: codice 46 (0, 0) "
@@ -385,7 +399,7 @@ class Agente(object):
 
     # -- protocollo --------------------------------------------------------
 
-    def gira(self, pausa=0.05):
+    def gira(self, pausa=0.01):
         self.log("agente in ascolto su %s (motori %s, max %d passi)"
                  % (self.condivisa, "attivi" if self.motori else "BLOCCATI",
                     self.max_passi))
@@ -687,12 +701,44 @@ class Agente(object):
             self.s.salva_parametri_flash(os.path.join(self.condivisa, "raw", nome))
             return nome
 
+        if testa == "grabm":
+            # grabm_<risoluzione>_<eR>_<eG>_<eB>[_<eIR>]
+            return self.acquisisci_insieme(int(parti[1]),
+                                           [float(x) for x in parti[2:6]])
+
         if testa == "grab":
             # grab_<canale>_<risoluzione>_<esposizione>[_buio]
             buio = len(parti) > 4 and parti[4] == "buio"
             return self.acquisisci(parti[1], int(parti[2]), float(parti[3]), buio)
 
         raise ValueError("comando sconosciuto: %s" % comando)
+
+    def acquisisci_insieme(self, risoluzione, esposizioni):
+        """R, G, B (e IR se c'e' il quarto tempo) in una lettura sola, ogni
+        LED col suo tempo: tre chiamate a scan_raw diventano una."""
+        canale = 5 if len(esposizioni) >= 4 else 4
+        piani = 4 if canale == 5 else 3
+        t0 = time.time()
+        dati, w, h = self.s.scansiona_canale(canale, 1.0, risoluzione,
+                                             per_led=list(esposizioni)[:piani])
+        t1 = time.time()
+        nome = "%d_RGB%s_%dx%d.raw" % (int(t0 * 1000), "I" if piani == 4 else "",
+                                       w, h)
+        percorso = os.path.join(self.condivisa, "raw", nome)
+        with open(percorso, "wb") as f:
+            f.write(dati)
+        with open(percorso[:-4] + ".json", "w") as f:
+            json.dump({"canale": "RGBI"[:piani] if piani == 4 else "RGB",
+                       "larghezza": w, "altezza": h, "piani": piani,
+                       "campioni": len(dati) // 2,
+                       "esposizioni": list(esposizioni)[:piani],
+                       "risoluzione": risoluzione,
+                       "dtype": "uint16", "ordine": "little",
+                       "secondi_sdk": round(t1 - t0, 2),
+                       "secondi": round(time.time() - t0, 2)}, f)
+        self.log("lettura unica %d piani: SDK %.2f s, file %.2f s"
+                 % (piani, t1 - t0, time.time() - t1))
+        return nome
 
     def acquisisci(self, canale, risoluzione, esposizione, buio=False):
         if canale not in CANALI:

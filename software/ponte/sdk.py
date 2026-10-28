@@ -352,6 +352,9 @@ METODI = [
     ("exp_costruttore", "??0ExposureTime@DMLScannerAdv@@QAE@XZ", VP, []),
     ("exp_default", "?set_to_default_texp@ExposureTime@DMLScannerAdv@@QAEXXZ", None, []),
     ("exp_moltiplica", "??XExposureTime@DMLScannerAdv@@QAEXN@Z", None, [ctypes.c_double]),
+    # operator*=(const double*): un fattore per LED (0x18030310 moltiplica i
+    # 12 tempi del LED i per fattori[i], per i < numero di LED)
+    ("exp_moltiplica_led", "??XExposureTime@DMLScannerAdv@@QAEXQAN@Z", None, [VP]),
     ("exp_positiva", "?is_positive@ExposureTime@DMLScannerAdv@@QBE_NXZ", B, []),
     ("exp_leggi_file", "?read_file@ExposureTime@DMLScannerAdv@@QAEPAVErrStat@DMLScanner@@PBGPAVEvLog@@@Z", VP, [VP, VP]),
     ("exp_scrivi_file", "?write_file@ExposureTime@DMLScannerAdv@@QBEPAVErrStat@DMLScanner@@PBGPAVEvLog@@@Z", VP, [VP, VP]),
@@ -826,12 +829,24 @@ class Scanner(object):
             self._m["exp_moltiplica"](this, ctypes.c_double(moltiplicatore))
         return buf
 
-    def esposizione(self, moltiplicatore=1.0):
+    def esposizione(self, moltiplicatore=1.0, per_led=None):
+        """L'ExposureTime per una lettura: base (calibrata o di fabbrica)
+        per il moltiplicatore e, se c'e', per un fattore per LED nell'ordine
+        R, G, B, IR. E' cosi' che una lettura sola di tre piani da' a ogni
+        canale il suo tempo."""
+        buf = None
         if self.tempi_calibrati:
             buf = self.esposizione_calibrata(moltiplicatore)
-            if buf is not None:
-                return buf
-        return self.esposizione_default(moltiplicatore)
+        if buf is None:
+            buf = self.esposizione_default(moltiplicatore)
+        if per_led:
+            # il numero di LED lo sa l'SDK (0x180B69C4): l'array e' lungo
+            # abbastanza, e i LED in piu' restano a 1
+            fattori = list(per_led) + [1.0] * (8 - len(per_led))
+            arr = (ctypes.c_double * 8)(*fattori[:8])
+            self._m["exp_moltiplica_led"](ctypes.cast(buf, ctypes.c_void_p).value,
+                                          ctypes.cast(arr, ctypes.c_void_p).value)
+        return buf
 
     def pressore(self, giu):
         self._verifica(self._m["pressore"](self._obj, bool(giu)),
@@ -905,7 +920,8 @@ class Scanner(object):
 
     def scansiona_canale(self, canale=ColorChannel.G, esposizione=1.0,
                          risoluzione=ImageResolution.PIENA,
-                         x0=None, y0=None, larghezza=0, altezza=0, buio=False):
+                         x0=None, y0=None, larghezza=0, altezza=0, buio=False,
+                         per_led=None):
         """Una lettura grezza di un canale: il cuore di tutto.
 
         Ritorna i campioni a 16 bit cosi' come escono dall'ADC, senza nessuna
@@ -930,8 +946,13 @@ class Scanner(object):
         altezza -= altezza % passo
         w, h = larghezza >> risoluzione, altezza >> risoluzione
 
-        buffer_img = (ctypes.c_uint16 * (w * h))()
-        exp = self.esposizione(esposizione)
+        # Canale 4 = R, G e B in una lettura sola (maschera 7, tre piani), 5 =
+        # anche l'IR (0xF, quattro piani): scan_raw lo dice a 0x18078A67. Come
+        # i piani stiano nel buffer non e' scritto: lo capisce chi legge
+        # (PonteSdkBackend._separa_piani). Il buffer ha un piano di margine.
+        piani = {4: 3, 5: 4}.get(int(canale), 1)
+        buffer_img = (ctypes.c_uint16 * (w * h * (piani + 1 if piani > 1 else 1)))()
+        exp = self.esposizione(esposizione, per_led)
 
         # firma: (ushort*, int canale, ExposureTime valore, bool,
         #         int col_inizio, int col_fine, int riga_inizio, int riga_fine,
@@ -971,7 +992,7 @@ class Scanner(object):
         err = chiama(self._obj, buffer_img, canale, valore, bool(buio),
                      a, b, c, d, risoluzione, 0)
         self._verifica(err, "scansione canale %s" % canale)
-        return bytes(memoryview(buffer_img).cast("B")), w, h
+        return bytes(memoryview(buffer_img).cast("B")[:w * h * piani * 2]), w, h
 
     def salva_parametri_flash(self, percorso):
         """Copia il Parameter Flash della macchina in un file.

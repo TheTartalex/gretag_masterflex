@@ -81,6 +81,11 @@ reintrodurle.
   (riordino, stato, conteggio) va dopo `_chiudi_elaborazione()`, che
   aspetta la coda; il `finally` di `_avvia` la chiude anche dopo
   un'emergenza. Il thread di elaborazione non tocca mai la macchina.
+- **Lettura unica.** `scan_frame` prova prima `capture_frame` (R, G, B in
+  una `scan_raw`, canale 4, un tempo per LED). La disposizione dei piani
+  la decide `_separa_piani`; se la macchina rifiuta, o se la verifica del
+  primo fotogramma (`_lettura_unica_torna`) non torna, `_lettura_unica`
+  diventa False e si legge un canale per volta. Non togliere il ritorno.
 - **La fine della striscia la dice il carrello** (`ERR_MOVE` →
   `FinePellicola`). Un fotogramma uniforme non e' fine pellicola: puo'
   essere non esposto, e ne capitano 3-4 di fila (`fotogramma_vuoto`).
