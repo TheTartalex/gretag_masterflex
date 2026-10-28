@@ -45,7 +45,7 @@ Le parti del progetto:
 2. **Niente sulla produzione** finché la riserva non ha provato tutto,
    immagini comprese.
 3. **Motori in modalità reale**: per il 135 sì, il problema delle guide è
-   risolto (28/10/2026). Per APS e 110 non ancora provati: la prima volta
+   risolto (28/10/2026, firmware del carrello 1.15: con la 1.13 torna). Per APS e 110 non ancora provati: la prima volta
    con la mano sull'interruttore.
 4. **Mai committare file Kodak/Gretag** (driver originale, SDK, firmware,
    pacchetto CapriFirmware, backup del Parameter Flash, manuali), log delle
@@ -81,10 +81,14 @@ Le parti del progetto:
   filmscan", ma le guide le muove il carrello Capri quando si inizializza.
   Prima di cercare la causa nel nostro codice, chiedersi quale pezzo
   della macchina fa davvero quel movimento.
-- **Ottobre.** Il firmware 1.13 era stato messo come prima causa delle guide
-  guardando solo i nomi dei backup. Decodificati i backup e disassemblato il
-  firmware, l'ipotesi è caduta. Il firmware del carrello (H8/300H) si legge
-  con `binutils-h8300-hms`: si guarda lì prima di formulare ipotesi.
+- **Ottobre.** Il firmware 1.13 era stato messo come prima causa delle guide;
+  poi, decodificati i backup e disassemblato il firmware, la si era
+  declassata a "improbabile" perché il formato del flash era lo stesso. Il
+  28/10 è stata proprio la 1.15 a risolvere. Un formato compatibile dice
+  che un firmware *può* lavorare con quel flash, non che si comporti come
+  l'altro. Quando una prova sulla macchina costa poco (rimettere un
+  firmware), la si fa prima di declassare un'ipotesi a tavolino. Il
+  firmware del carrello (H8/300H) si legge con `binutils-h8300-hms`.
 
 ## La scheda IAQ in breve
 

@@ -5,6 +5,13 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## Repository
 
+### 2026-10-28 — guide del carrello risolte col firmware 1.15
+
+- Il problema delle guide all'avvio è risolto (135, riserva) tornando al
+  firmware 1.15. Decisione 0006 confermata con l'esito; corretti
+  carrello-capri.md §2 (il firmware era la causa), stato, README e la
+  lezione in `CLAUDE.md`.
+
 ### 2026-10-26 — README
 
 - `README.md` riscritto: cosa fa filmscan oggi, stato, installer unico,

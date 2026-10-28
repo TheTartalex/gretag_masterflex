@@ -56,14 +56,16 @@ verticale) e su telefono.
 |---|---|
 | [Driver EKframePnP 2.1](driver/EKframePnP/) | funziona sulla macchina di riserva; correttezza delle immagini da confermare |
 | [filmscan](software/) | provato con l'agente simulato; **da provare sulla riserva** |
-| Carrello Capri (COM5) | firmware 1.15 sulla riserva dal 26/10/2026 ([carrello-capri.md](documentazione/hardware/carrello-capri.md)) |
+| Carrello Capri (COM5) | firmware 1.15 sulla riserva: guide a posto col 135 dal 28/10/2026 ([carrello-capri.md](documentazione/hardware/carrello-capri.md)) |
 
 Problemi aperti e prossimi passi: **[documentazione/stato.md](documentazione/stato.md)**.
 
-> ✅ **Guide del carrello: problema risolto per il 135** (28/10/2026).
-> Con APS e 110 la modalità "macchina vera" non è ancora provata: la prima
-> volta, mano sull'interruttore. Storia del problema in
-> [carrello-capri.md](documentazione/hardware/carrello-capri.md#6-procedura-consigliata-per-il-problema-delle-guide).
+> ✅ **Guide del carrello: problema risolto per il 135** (28/10/2026)
+> riportando il carrello al **firmware 1.15**. Se il programma originale
+> riscarica la 1.13 il problema torna: la voce 13 di `MASTERFLEX.bat` lo
+> controlla. Con APS e 110 la modalità "macchina vera" non è ancora
+> provata: la prima volta, mano sull'interruttore. Storia in
+> [decisione 0006](documentazione/decisioni/0006-firmware-carrello-1.15.md#esito-del-28102026).
 
 ## Installazione
 

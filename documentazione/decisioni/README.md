@@ -41,6 +41,6 @@ Cosa diventa più facile, cosa più difficile, cosa resta da verificare.
 | [0003](0003-numpy-1.22.4-cpu-senza-avx.md) | numpy 1.22.4 sulle macchine senza AVX | 2026-10-25 | Accettata |
 | [0004](0004-compilazione-mingw-linux.md) | Compilare il driver su Linux con MinGW-w64 | 2026-10-25 | Accettata |
 | [0005](0005-masterflex-bat-unico.md) | Un solo script, MASTERFLEX.bat, per tutto quello che si fa sulla macchina | 2026-10-26 | Accettata |
-| [0006](0006-firmware-carrello-1.15.md) | Il carrello Capri va tenuto al firmware 1.15 | 2026-10-26 | Accettata |
+| [0006](0006-firmware-carrello-1.15.md) | Il carrello Capri va tenuto al firmware 1.15 | 2026-10-26 | Accettata, confermata il 28/10 (risolve le guide) |
 | [0007](0007-osservatore-programma-originale.md) | Immagini dal programma originale con un osservatore esterno | 2026-10-26 | Proposta |
 | [0008](0008-avvio-automatico-e-modi.md) | Avvio da amministratore, chiusura del programma originale, due modi di lavoro | 2026-10-26 | Proposta |

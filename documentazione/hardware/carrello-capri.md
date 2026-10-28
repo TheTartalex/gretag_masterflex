@@ -79,7 +79,14 @@ qualcosa di comune: alimentazione delle fotocellule, connettore o cavo verso
 la scheda master. Un guasto su **una sola guida** fa pensare alla sua
 fotocellula, sporca, spostata o guasta.
 
-## 2. Il firmware: 1.15, ma non è lui la causa probabile
+## 2. Il firmware: la 1.15, ed era lui la causa
+
+> **28/10/2026: con la 1.15 il problema delle guide è risolto** (135, sulla
+> riserva). La "correzione" qui sotto, che declassava il firmware a ipotesi
+> improbabile, era sbagliata: resta per memoria, con l'esito in
+> [decisione 0006](../decisioni/0006-firmware-carrello-1.15.md#esito-del-28102026).
+> L'ini deve restare a `UpdateToVersion=00000073`, altrimenti il programma
+> originale riscarica la 1.13.
 
 | Data | Fatto | Fonte |
 |---|---|---|
@@ -109,7 +116,7 @@ tutto:
 
 La 1.15 resta la versione da tenere: è l'ultima di Gretag, e le note della
 1.0x elencano correzioni sull'espulsione e sul rilevamento dei fotogrammi.
-Però non spiega le guide
+~~Però non spiega le guide~~ (smentito il 28/10: le spiegava)
 ([decisione 0006](../decisioni/0006-firmware-carrello-1.15.md)).
 
 Controllo: `MASTERFLEX.bat`, voce 13, oppure `python manutenzione.py
@@ -243,9 +250,9 @@ Da `MASTERFLEX.bat`: voce 4, poi 5.
 
 ## 6. Procedura consigliata per il problema delle guide
 
-> **28/10/2026: risolto per il 135** sulla riserva. Causa e rimedio da
-> scrivere qui; per APS e 110 la procedura resta valida finché non sono
-> provati.
+> **28/10/2026: risolto per il 135** sulla riserva, tornando al firmware
+> 1.15 (§2). Questa procedura serve se il problema ricompare (prima cosa:
+> la versione del firmware, voce 13) e per APS e 110, non ancora provati.
 
 In quest'ordine, con il percorso pellicola vuoto e la mano sull'interruttore:
 

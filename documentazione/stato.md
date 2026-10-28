@@ -335,11 +335,14 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
 
 ## Problemi aperti, in ordine di priorità
 
-1. **Motori delle guide all'avvio: RISOLTO per il 135** (28/10/2026,
-   segnalato da Alessandro dalla riserva). La causa e il rimedio vanno
-   ancora scritti qui e in [carrello-capri.md §6](hardware/carrello-capri.md#6-procedura-consigliata-per-il-problema-delle-guide).
-   Per APS e 110 non è ancora provato: la prima volta, mano
-   sull'interruttore. Resta sotto, per riferimento, l'analisi fatta prima.
+1. **Motori delle guide all'avvio: RISOLTO per il 135** (28/10/2026, dalla
+   riserva) **con il firmware 1.15** del carrello. Era la terza ipotesi
+   della lista qui sotto, quella data per "improbabile": vedi
+   [decisione 0006, esito](decisioni/0006-firmware-carrello-1.15.md#esito-del-28102026).
+   L'ini del carrello deve restare a `UpdateToVersion=00000073`, altrimenti
+   il programma originale riscarica la 1.13. Per APS e 110 non è ancora
+   provato: la prima volta, mano sull'interruttore. Resta sotto, per
+   riferimento, l'analisi fatta prima.
 
    Le guide sono i motori 3 e 4 del
    carrello Capri. Lo zero lo fa il firmware: ogni guida va verso la sua
@@ -401,7 +404,8 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
    all'aggiornamento toglie i vecchi `.bat`.
 2. Copiare `CapriFirmware` in `C:\MasterflexD\CapriFirmware`, poi voce 13
    (firmware) e voce 4 → 5 → 1 (selftest di servizio).
-3. Cercare la 1.15 sulla produzione e reinstallarla con la voce 13.
+3. Sulla produzione, quando sarà il momento: versione del carrello e ini
+   prima di tutto (voce 13), perché con la 1.13 tornano le guide.
 4. Voce 2 (motori bloccati) e collaudo colori: le immagini sono giuste?
 
 ## Avvertenze operative
