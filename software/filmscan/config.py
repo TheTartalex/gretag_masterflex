@@ -235,6 +235,10 @@ class AppConfig:
     # risoluzione ne occupa ~35: 700 MB sono una ventina di fotogrammi di
     # vantaggio della lettura sull'elaborazione.
     memoria_elaborazione_mb: int = 700
+    # Il negativo lineare per altri programmi, accanto a ogni fotogramma:
+    # "" = no, "tiff" = TIFF RGB 16 bit, "dng" = DNG lineare (Lightroom e
+    # Negative Lab Pro lo trattano da RAW)
+    negativo_lineare: str = ""
     eject_max_mm: float = 400.0  # corsa massima in espulsione, per non tirare a vuoto
 
     # --- archivio degli ordini gia' fatti ---

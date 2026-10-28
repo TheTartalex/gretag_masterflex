@@ -52,6 +52,15 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-10-28 — riaprire i fotogrammi, Stampa/Scarta, metadati, DNG
+
+- Striscia: un fotogramma si riapre dal grezzo; barra con Stampa, Scarta,
+  Salva, Applica al rullo, Chiudi.
+- Archivio: voto per fotogramma (`voto`), zip delle foto da stampare e dei
+  negativi lineari.
+- Metadati dentro TIFF e JPEG (descrizione, data, dpi, Make/Model, Software).
+- Negativo lineare in DNG (LinearRaw) o TIFF 16 bit (`negativo_lineare`).
+
 ### 2026-10-28 — rullo veloce
 
 - Lettura unica di R, G e B (`grabm`, `scan_raw` canale 4, un tempo per LED

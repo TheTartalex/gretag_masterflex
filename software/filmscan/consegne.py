@@ -84,7 +84,8 @@ def voci_ordine(arch, ordine_id: int) -> List[dict]:
         for f in arch.fotogrammi(rullo.id):
             for campo, gruppo in (("file_raw", "grezzi"),
                                   ("file_out", "esportati"),
-                                  ("file_maschera", "maschere")):
+                                  ("file_maschera", "maschere"),
+                                  ("file_negativo", "negativi")):
                 p = f.get(campo)
                 if p:
                     voci.append({"id": f["id"], "campo": campo,
@@ -117,16 +118,21 @@ def file_ordine(arch, ordine_id: int) -> Dict[str, List[str]]:
     I grezzi stanno a parte perche' hanno un peso diverso in ogni senso:
     occupano quasi tutto lo spazio, e sono l'unica cosa che non si rifa'.
     """
-    grezzi, esportati, maschere = [], [], []
+    grezzi, esportati, maschere, negativi, selezionati = [], [], [], [], []
     for rullo in arch.rulli(ordine_id):
         for f in arch.fotogrammi(rullo.id):
             if f.get("file_raw"):
                 grezzi.append(f["file_raw"])
             if f.get("file_out"):
                 esportati.append(f["file_out"])
+                if (f.get("voto") or 0) > 0:
+                    selezionati.append(f["file_out"])
             if f.get("file_maschera"):
                 maschere.append(f["file_maschera"])
-    return {"grezzi": grezzi, "esportati": esportati, "maschere": maschere}
+            if f.get("file_negativo"):
+                negativi.append(f["file_negativo"])
+    return {"grezzi": grezzi, "esportati": esportati, "maschere": maschere,
+            "negativi": negativi, "selezionati": selezionati}
 
 
 def riepilogo_ordine(arch, ordine_id: int) -> Dict[str, object]:
@@ -144,6 +150,7 @@ def riepilogo_ordine(arch, ordine_id: int) -> Dict[str, object]:
     ci_sono = lambda gruppo: [p for p in file[gruppo]
                               if p and os.path.isfile(p)]
     grezzi, esportati = ci_sono("grezzi"), ci_sono("esportati")
+    negativi, selezionati = ci_sono("negativi"), ci_sono("selezionati")
     mancanti = ((len(file["grezzi"]) - len(grezzi)) +
                 (len(file["esportati"]) - len(esportati)))
     tocco = ultimo_tocco(arch, ordine_id, o.creato or 0.0) or (o.creato or time.time())
@@ -152,6 +159,7 @@ def riepilogo_ordine(arch, ordine_id: int) -> Dict[str, object]:
         "id": o.id, "codice": o.codice, "stato": o.stato, "note": o.note,
         "creato": o.creato, "ultimo": tocco, "giorni": round(max(eta, 0.0), 1),
         "n_grezzi": len(grezzi), "n_esportati": len(esportati),
+        "n_negativi": len(negativi), "n_selezionati": len(selezionati),
         "mancanti": mancanti,
         "peso_grezzi": _dimensione(grezzi),
         "peso_esportati": _dimensione(esportati),
@@ -191,8 +199,9 @@ def libera(arch, ordine_id: int, cosa: str = "grezzi") -> Dict[str, object]:
     """
     if arch.ordine(ordine_id) is None:
         raise ValueError("ordine inesistente")
-    gruppi = {"grezzi": ["grezzi"], "esportati": ["esportati", "maschere"],
-              "tutto": ["grezzi", "esportati", "maschere"]}[cosa]
+    gruppi = {"grezzi": ["grezzi"],
+              "esportati": ["esportati", "maschere", "negativi"],
+              "tutto": ["grezzi", "esportati", "maschere", "negativi"]}[cosa]
 
     tolti, liberati, gia_spariti, falliti = 0, 0, 0, []
     scordare = {}
@@ -353,9 +362,13 @@ def zip_ordine(arch, ordine_id: int, destinazione: str,
     if o is None:
         raise ValueError("ordine inesistente")
     file = file_ordine(arch, ordine_id)
-    dentro = file["esportati"] if cosa == "esportati" else (
-        file["grezzi"] if cosa == "grezzi"
-        else file["esportati"] + file["grezzi"] + file["maschere"])
+    # "selezionati": solo i fotogrammi segnati da stampare; "negativi": i
+    # negativi lineari (TIFF o DNG) per chi converte con altri programmi
+    if cosa in ("esportati", "grezzi", "negativi", "selezionati"):
+        dentro = file[cosa]
+    else:
+        dentro = (file["esportati"] + file["grezzi"] + file["maschere"]
+                  + file["negativi"])
     dentro = [p for p in dentro if p and os.path.isfile(p)]
     if not dentro:
         raise ValueError("questo ordine non ha file di tipo '%s' sul disco" % cosa)

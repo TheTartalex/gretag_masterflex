@@ -98,6 +98,10 @@ class ProcessOptions:
     lut: Optional[object] = None
     lut_intensita: float = 1.0
 
+    # Tenere il negativo lineare a piena risoluzione nel risultato (per
+    # l'export TIFF o DNG): costa ~35 MB, quindi solo quando serve.
+    negativo_lineare: bool = False
+
 
 @dataclass
 class ProcessResult:
@@ -120,6 +124,11 @@ class ProcessResult:
     # cui si ricalcola l'anteprima a ogni movimento di un cursore, senza
     # rifare l'intera catena.
     base: Optional[np.ndarray] = None
+
+    # Il negativo lineare a piena risoluzione (canali allineati, nessuna
+    # inversione), solo se chiesto (opts.negativo_lineare): e' il file per
+    # chi converte con altri programmi.
+    lineare: Optional[np.ndarray] = None
 
 
 def _negativo_rgb(planes: Dict[str, np.ndarray]) -> Optional[np.ndarray]:
@@ -238,6 +247,15 @@ def process(raw: RawScan, opts: ProcessOptions,
     # confronto prima/dopo mostrasse due inquadrature diverse ingannerebbe
     # invece di aiutare, ed e' esattamente cio' che serve NON fare.
     negativo = _negativo_rgb(planes)
+    lineare = None
+    if opts.negativo_lineare:
+        canali = [c for c in ("R", "G", "B") if c in planes] or [riferimento_lin(planes)]
+        if len(canali) == 1:
+            canali = canali * 3
+        lineare = np.stack([np.clip(planes[c], 0.0, 1.0) for c in canali],
+                           axis=-1).astype(np.float32)
+        if opts.roll_mirror is not None and opts.roll_mirror.flip_h:
+            lineare = lineare[:, ::-1]
     img = invert.invert_negative(planes, opts.profile)
 
     # --- 6. colore ---
@@ -331,7 +349,12 @@ def process(raw: RawScan, opts: ProcessOptions,
 
     _tick(progress, "Fatto", 1.0)
     return ProcessResult(img, mask, box, shifts, cov, warnings, orientation,
-                         _riduci_per_schermo(negativo), base)
+                         _riduci_per_schermo(negativo), base, lineare)
+
+
+def riferimento_lin(planes: Dict[str, np.ndarray]) -> str:
+    """Il canale visibile di un grezzo a un canale solo (bianco e nero)."""
+    return next(c for c in planes if c != "IR")
 
 
 def anteprima_rapida(raw: RawScan, opts: ProcessOptions, lato: int = 700):
@@ -378,32 +401,135 @@ def anteprima_rapida(raw: RawScan, opts: ProcessOptions, lato: int = 700):
 # Export
 # --------------------------------------------------------------------------
 
+MARCA = "Gretag"
+MODELLO = "Masterflex D1008"
+PROGRAMMA = "filmscan"
+
+
+def _ascii(testo: str) -> str:
+    """I campi EXIF/TIFF sono ASCII: le lettere accentate si semplificano
+    invece di diventare punti interrogativi in Esplora risorse."""
+    import unicodedata
+    t = unicodedata.normalize("NFKD", str(testo or ""))
+    return t.encode("ascii", "ignore").decode("ascii")
+
+
+def _data_exif(meta: Optional[Dict[str, object]]) -> str:
+    import time as _t
+    quando = (meta or {}).get("data") or _t.time()
+    return _t.strftime("%Y:%m:%d %H:%M:%S", _t.localtime(float(quando)))
+
+
 def export(img: np.ndarray, path: str, fmt: str = "tiff16",
-           jpeg_quality: int = 95) -> str:
+           jpeg_quality: int = 95,
+           meta: Optional[Dict[str, object]] = None) -> str:
     """Scrive il file finale. Il TIFF a 16 bit e' il default consigliato:
-    conserva la gamma tonale per eventuali ritocchi successivi."""
+    conserva la gamma tonale per eventuali ritocchi successivi.
+
+    'meta' finisce dentro il file (TIFF e JPEG; il PNG a 16 bit no, non c'e'
+    chi lo sappia scrivere fra le librerie che abbiamo): descrizione
+    (ordine, rullo, fotogramma, numero di bordo, pellicola), data di
+    scansione, dpi veri, scanner e programma. Cosi' un file preso
+    dall'archivio dice da solo cos'e', anche fuori da filmscan. Il nome del
+    cliente no: i file vanno al cliente e magari oltre."""
     from PIL import Image
 
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     arr = np.clip(img, 0.0, 1.0)
+    meta = meta or {}
+    descrizione = _ascii(meta.get("descrizione", ""))
+    dpi = float(meta.get("dpi") or 0) or None
+    data = _data_exif(meta)
 
     if fmt == "tiff16":
         # PIL non sa scrivere TIFF RGB a 16 bit: serve tifffile (o imageio).
-        data = (arr * 65535).astype(np.uint16)
+        data16 = (arr * 65535).astype(np.uint16)
         try:
             import tifffile
-            tifffile.imwrite(path, data, photometric="rgb")
+            tifffile.imwrite(
+                path, data16, photometric="rgb", metadata=None,
+                description=descrizione or None, software=PROGRAMMA,
+                datetime=data,
+                resolution=(dpi, dpi) if dpi else None,
+                resolutionunit="INCH" if dpi else None,
+                extratags=[(271, "s", 0, MARCA, True),
+                           (272, "s", 0, MODELLO, True)])
         except ImportError:
             import imageio.v3 as iio
-            iio.imwrite(path, data)
+            iio.imwrite(path, data16)
     elif fmt == "tiff8":
-        Image.fromarray((arr * 255).astype(np.uint8), "RGB").save(path, format="TIFF")
+        info = {270: descrizione, 271: MARCA, 272: MODELLO, 305: PROGRAMMA,
+                306: data}
+        Image.fromarray((arr * 255).astype(np.uint8), "RGB").save(
+            path, format="TIFF", tiffinfo=info,
+            **({"dpi": (dpi, dpi)} if dpi else {}))
     elif fmt == "png":
         import imageio.v3 as iio
         iio.imwrite(path, (arr * 65535).astype(np.uint16))
     else:
-        Image.fromarray((arr * 255).astype(np.uint8), "RGB").save(
-            path, format="JPEG", quality=jpeg_quality, subsampling=0)
+        pil = Image.fromarray((arr * 255).astype(np.uint8), "RGB")
+        exif = Image.Exif()
+        for tag, valore in ((270, descrizione), (271, MARCA), (272, MODELLO),
+                            (305, PROGRAMMA), (306, data)):
+            if valore:
+                exif[tag] = valore
+        pil.save(path, format="JPEG", quality=jpeg_quality, subsampling=0,
+                 exif=exif.tobytes(), **({"dpi": (dpi, dpi)} if dpi else {}))
+    return path
+
+
+# Il negativo lineare per altri programmi (Negative Lab Pro, darktable,
+# Lightroom): i tre canali allineati e calibrati, senza inversione ne'
+# correzioni, a 16 bit. In TIFF lo legge tutto; in DNG (LinearRaw, come i
+# DNG di VueScan) Lightroom lo tratta da RAW, che e' quello che Negative
+# Lab Pro vuole.
+#
+# La matrice colore del DNG (ColorMatrix1, XYZ -> camera) e' quella
+# dell'sRGB lineare: i LED della testa non sono primari sRGB, ma per un
+# negativo da invertire serve un riferimento stabile e dichiarato, non
+# una colorimetria della pellicola, che nessuno dei due ha.
+_XYZ_A_SRGB = (3.2406, -1.5372, -0.4986,
+               -0.9689, 1.8758, 0.0415,
+               0.0557, -0.2040, 1.0570)
+
+
+def export_negativo(lineare: np.ndarray, path: str, fmt: str = "dng",
+                    meta: Optional[Dict[str, object]] = None) -> str:
+    """Scrive il negativo lineare: fmt "tiff" (RGB 16 bit) o "dng"."""
+    import tifffile
+
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    meta = meta or {}
+    dati = (np.clip(lineare, 0.0, 1.0) * 65535.0 + 0.5).astype(np.uint16)
+    descrizione = _ascii(meta.get("descrizione", "")) or None
+    dpi = float(meta.get("dpi") or 0) or None
+    comuni = dict(metadata=None, description=descrizione, software=PROGRAMMA,
+                  datetime=_data_exif(meta),
+                  resolution=(dpi, dpi) if dpi else None,
+                  resolutionunit="INCH" if dpi else None)
+    marca = [(271, "s", 0, MARCA, True), (272, "s", 0, MODELLO, True)]
+    if fmt == "tiff":
+        tifffile.imwrite(path, dati, photometric="rgb", extratags=marca, **comuni)
+        return path
+
+    def razionali(valori, den=10000):
+        fuori = []
+        for v in valori:
+            fuori += [int(round(v * den)), den]
+        return tuple(fuori)
+
+    tag_dng = marca + [
+        (50706, "B", 4, (1, 4, 0, 0), True),                 # DNGVersion
+        (50707, "B", 4, (1, 1, 0, 0), True),                 # DNGBackwardVersion
+        (50708, "s", 0, "%s %s" % (MARCA, MODELLO), True),   # UniqueCameraModel
+        (50714, "I", 3, (0, 0, 0), True),                    # BlackLevel
+        (50717, "I", 3, (65535, 65535, 65535), True),        # WhiteLevel
+        (50721, "2i", 9, razionali(_XYZ_A_SRGB), True),      # ColorMatrix1
+        (50728, "2I", 3, (1, 1, 1, 1, 1, 1), True),          # AsShotNeutral
+        (50778, "H", 1, 21, True),                           # CalibrationIlluminant1 = D65
+    ]
+    tifffile.imwrite(path, dati, photometric=34892, planarconfig="contig",
+                     subfiletype=0, extratags=tag_dng, **comuni)
     return path
 
 

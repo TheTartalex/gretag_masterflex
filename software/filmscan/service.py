@@ -42,7 +42,7 @@ from .invert import PROFILES
 from .orders import Archivio
 from .orient import RollMirror
 from .pipeline import (ProcessOptions, anteprima_rapida, export, export_mask,
-                       finiture, process)
+                       export_negativo, finiture, process)
 
 
 @dataclass
@@ -213,6 +213,8 @@ class ScanService:
         self._elab: Optional[_ElaborazioneInFondo] = None
         self._provini_rapidi: Dict[Tuple[int, int], bytes] = {}
         self._ultima_rapida: Optional[Tuple[int, int]] = None
+        # il fotogramma riaperto dalla striscia (id), per Salva e Applica
+        self._aperto: Optional[int] = None
         # mentre la connessione automatica aspetta lo scanner, cosa aspetta
         self.attesa_connessione: Optional[str] = None
         # Disconnetti ferma anche la connessione automatica: altrimenti si
@@ -632,7 +634,7 @@ class ScanService:
         for numero, f in zip(numeri, nuovo):
             g = dict(f)
             g["numero"] = numero
-            for campo in ("file_raw", "file_out", "file_maschera"):
+            for campo in ("file_raw", "file_out", "file_maschera", "file_negativo"):
                 g[campo] = self._nome_con_numero(f.get(campo) or "", numero)
             piano.append((f, g))
         # file: prima tutti su un nome provvisorio, poi su quello giusto,
@@ -640,7 +642,7 @@ class ScanService:
         spostati = []
         try:
             for f, g in piano:
-                for campo in ("file_raw", "file_out", "file_maschera"):
+                for campo in ("file_raw", "file_out", "file_maschera", "file_negativo"):
                     for a, b in self._file_compagni(f.get(campo) or "",
                                                     g.get(campo) or ""):
                         if a != b and os.path.exists(a):
@@ -664,7 +666,7 @@ class ScanService:
         if not percorso:
             return percorso
         cartella, nome = os.path.split(percorso)
-        nuovo = re.sub(r"_(\d{3})(?=(_maschera)?\.[^.]+$)", "_%03d" % numero, nome)
+        nuovo = re.sub(r"_(\d{3})(?=(_maschera|_negativo)?\.[^.]+$)", "_%03d" % numero, nome)
         return os.path.join(cartella, nuovo)
 
     @staticmethod
@@ -1085,7 +1087,8 @@ class ScanService:
         return {"esposizione_auto": self.cfg.esposizione_auto,
                 "pressore_auto": self.cfg.pressore_auto,
                 "avanzamento_automatico": self.cfg.avanzamento_automatico,
-                "autofocus": self.cfg.autofocus}
+                "autofocus": self.cfg.autofocus,
+                "negativo_lineare": self.cfg.negativo_lineare}
 
     def imposta_macchina(self, valori: Dict[str, object]) -> Dict[str, bool]:
         if self.job.running:
@@ -1098,6 +1101,10 @@ class ScanService:
             if valori["autofocus"] not in self.AUTOFOCUS:
                 raise ValueError("autofocus sconosciuto: %s" % valori["autofocus"])
             self.cfg.autofocus = str(valori["autofocus"])
+        if "negativo_lineare" in valori:
+            if valori["negativo_lineare"] not in ("", "tiff", "dng"):
+                raise ValueError("negativo lineare: '', 'tiff' o 'dng'")
+            self.cfg.negativo_lineare = str(valori["negativo_lineare"])
         return self.impostazioni_macchina()
 
     def _autofocus(self, backend, metodo: Optional[str] = None) -> bool:
@@ -1218,6 +1225,198 @@ class ScanService:
             return False
         self.log("Lettura unica verificata (visto/atteso %s)." % dettaglio)
         return True
+
+    # --- esportazione, e rielaborare i fotogrammi gia' scansionati --------
+
+    def _opzioni_rullo(self, rullo) -> ProcessOptions:
+        """Le opzioni di elaborazione per un rullo: quelle correnti (cursori,
+        LUT) con profilo, specchiatura e Digital ICE del rullo."""
+        opts = ProcessOptions(**{k: v for k, v in vars(self.options).items()})
+        opts.profile = PROFILES.get(rullo.profilo, PROFILES["c41"])
+        opts.roll_mirror = RollMirror(flip_h=rullo.specchiato, source="operatore",
+                                      confirmed=rullo.conf_specchio)
+        if not rullo.ice:
+            opts.ir_strength = 0.0
+        opts.negativo_lineare = self.cfg.negativo_lineare in ("tiff", "dng")
+        return opts
+
+    @staticmethod
+    def _meta_file(ordine, rullo, numero: int, bordo: str, raw) -> Dict[str, object]:
+        """Cosa scrivere dentro il file: ordine, rullo, fotogramma, numero
+        di bordo, pellicola, data di scansione, dpi veri."""
+        parti = ["Ordine %s" % ordine.codice, "rullo %s" % rullo.etichetta,
+                 "fotogramma %d" % numero]
+        if bordo:
+            parti.append("bordo %s" % bordo)
+        profilo = PROFILES.get(rullo.profilo)
+        parti.append("pellicola %s" % (profilo.name if profilo else rullo.profilo))
+        parti.append("scansione Gretag Masterflex D1008")
+        return {"descrizione": " - ".join(parti),
+                "dpi": getattr(raw.meta, "dpi", 0) or 0,
+                "data": getattr(raw.meta, "timestamp", 0) or None}
+
+    def _esporta(self, raw, opts, dest: str, nome: str, rullo_id: int,
+                 numero: int, bordo: str, raw_path: str, ordine_rullo):
+        """Elaborazione completa di un grezzo, file finale (con i
+        metadati), maschera e negativo lineare se chiesti, e registro. Lo
+        usano il rullo, Salva fotogramma e Applica a tutto il rullo."""
+        ordine, rullo = ordine_rullo
+        res = process(raw, opts)
+        meta = self._meta_file(ordine, rullo, numero, bordo, raw)
+        ext = {"tiff16": ".tif", "tiff8": ".tif",
+               "png": ".png", "jpeg": ".jpg"}.get(self.cfg.export_format, ".tif")
+        out_path = os.path.join(dest, nome + ext)
+        export(res.image, out_path, self.cfg.export_format,
+               self.cfg.jpeg_quality, meta=meta)
+
+        mask_path = ""
+        if self.cfg.export_ir_mask and res.mask is not None:
+            mask_path = export_mask(res.mask,
+                                    os.path.join(dest, nome + "_maschera.png"))
+        neg_path = ""
+        if res.lineare is not None and self.cfg.negativo_lineare in ("tiff", "dng"):
+            neg_path = export_negativo(
+                res.lineare, os.path.join(dest, nome + "_negativo." + (
+                    "dng" if self.cfg.negativo_lineare == "dng" else "tif")),
+                self.cfg.negativo_lineare, meta=meta)
+            res.lineare = None          # 35 MB in meno, subito
+
+        self.archivio.fotogramma_registra(
+            rullo_id, numero, file_out=out_path, file_raw=raw_path,
+            file_maschera=mask_path,
+            rotazione=res.orientation.rotation if res.orientation else 0,
+            stato="ok", avvisi=" | ".join(res.warnings),
+            numero_bordo=bordo, file_negativo=neg_path)
+        return res
+
+    def _fotogramma_e_rullo(self, fotogramma_id: int):
+        righe = self.archivio.fotogrammi_per_id(int(fotogramma_id))
+        if not righe:
+            raise ValueError("fotogramma inesistente")
+        f = righe[0]
+        rullo = self.archivio.rullo(int(f["rullo_id"]))
+        if rullo is None:
+            raise ValueError("rullo inesistente")
+        ordine = self.archivio.ordine(rullo.ordine_id)
+        if ordine is None:
+            raise ValueError("ordine inesistente")
+        return f, rullo, ordine
+
+    @staticmethod
+    def _nome_file(f: Dict[str, object], ordine, rullo) -> str:
+        """Il nome (senza estensione) dei file di un fotogramma: quello del
+        file esistente se c'e', cosi' una rielaborazione lo sovrascrive."""
+        for campo in ("file_out", "file_raw"):
+            p = f.get(campo) or ""
+            if p:
+                base = os.path.splitext(os.path.basename(p))[0]
+                return base
+        return "%s_%s_%03d" % (ordine.codice, rullo.etichetta.replace(" ", "-"),
+                               int(f["numero"]))
+
+    def apri_fotogramma(self, fotogramma_id: int) -> None:
+        """Riapre un fotogramma gia' scansionato dal suo grezzo, senza la
+        pellicola: nel visore con le regolazioni correnti, pronto da
+        correggere e risalvare."""
+        f, rullo, ordine = self._fotogramma_e_rullo(fotogramma_id)
+        raw_path = f.get("file_raw") or ""
+        if not raw_path or not os.path.exists(raw_path):
+            raise ScannerError("il grezzo di questo fotogramma non c'e' piu': "
+                               "per rielaborarlo va riscansionato")
+
+        def job():
+            self.progress("Apertura del fotogramma %d" % f["numero"], 0.1)
+            raw = RawScan.load(raw_path)
+            opts = self._opzioni_rullo(rullo)
+            opts.negativo_lineare = False
+            res = process(raw, opts, progress=self.progress)
+            self.ultimo_raw = raw
+            self.preview = res.image
+            self.base_lineare = res.base
+            self.preview_ridotta = False
+            self.preview_neg = res.negativo
+            self._aperto = int(f["id"])
+            self.log("Fotogramma %d del rullo %s aperto: correggere e premere "
+                     "Salva fotogramma, o Applica a tutto il rullo."
+                     % (f["numero"], rullo.etichetta))
+        self._avvia("apertura", job)
+
+    def salva_fotogramma(self) -> None:
+        """Riesporta il fotogramma aperto con le regolazioni correnti."""
+        if not self._aperto:
+            raise ValueError("nessun fotogramma aperto: toccarne uno nella "
+                             "striscia")
+        f, rullo, ordine = self._fotogramma_e_rullo(self._aperto)
+
+        def job():
+            self.progress("Salvataggio del fotogramma %d" % f["numero"], 0.2)
+            raw = RawScan.load(f["file_raw"])
+            dest = self.archivio.cartella_ordine(self.cfg.out_dir, ordine.id)
+            res = self._esporta(raw, self._opzioni_rullo(rullo), dest,
+                                self._nome_file(f, ordine, rullo), rullo.id,
+                                int(f["numero"]), f.get("numero_bordo") or "",
+                                f["file_raw"], (ordine, rullo))
+            self.preview = res.image
+            self.base_lineare = res.base
+            self.preview_neg = res.negativo
+            self._cache_prov.clear()
+            self.log("Fotogramma %d salvato con le nuove regolazioni."
+                     % f["numero"])
+        self._avvia("salvataggio", job)
+
+    def applica_rullo(self, rullo_id: Optional[int] = None) -> None:
+        """Le regolazioni correnti su tutti i fotogrammi di un rullo: si
+        rielaborano dai grezzi e si riesportano, uno dopo l'altro. I vuoti
+        restano vuoti; quelli senza grezzo si saltano e lo si dice."""
+        if rullo_id is None:
+            if not self._aperto:
+                raise ValueError("nessun rullo scelto")
+            rullo_id = int(self._fotogramma_e_rullo(self._aperto)[0]["rullo_id"])
+        rullo = self.archivio.rullo(int(rullo_id))
+        if rullo is None:
+            raise ValueError("rullo inesistente")
+        ordine = self.archivio.ordine(rullo.ordine_id)
+
+        def job():
+            dest = self.archivio.cartella_ordine(self.cfg.out_dir, ordine.id)
+            opts = self._opzioni_rullo(rullo)
+            fotogrammi = [f for f in self.archivio.fotogrammi(rullo.id)
+                          if f.get("stato") != "vuoto"]
+            fatti, senza = 0, 0
+            for k, f in enumerate(fotogrammi):
+                if self._stop.is_set():
+                    self.log("Applica a tutto il rullo fermato dopo %d "
+                             "fotogrammi." % fatti)
+                    break
+                self.progress("Fotogramma %d (%d di %d)"
+                              % (f["numero"], k + 1, len(fotogrammi)),
+                              k / float(max(len(fotogrammi), 1)))
+                raw_path = f.get("file_raw") or ""
+                if not raw_path or not os.path.exists(raw_path):
+                    senza += 1
+                    continue
+                try:
+                    raw = RawScan.load(raw_path)
+                    self._esporta(raw, opts, dest, self._nome_file(f, ordine, rullo),
+                                  rullo.id, int(f["numero"]),
+                                  f.get("numero_bordo") or "", raw_path,
+                                  (ordine, rullo))
+                    fatti += 1
+                except Exception as exc:                # noqa: BLE001
+                    self.job.errors.append("fotogramma %d: %s" % (f["numero"], exc))
+                    self.log("Fotogramma %d non rielaborato: %s" % (f["numero"], exc))
+            self._cache_prov.clear()
+            self.log("Rullo %s rielaborato: %d fotogrammi%s." % (
+                rullo.etichetta, fatti,
+                (", %d senza grezzo (saltati)" % senza) if senza else ""))
+            self.job.message = "Rullo rielaborato: %d fotogrammi" % fatti
+        self._avvia("rielaborazione", job, total=0)
+
+    def vota(self, fotogramma_id: int, voto: int) -> Dict[str, object]:
+        """Da stampare (1), scartato (-1), niente (0)."""
+        self._fotogramma_e_rullo(fotogramma_id)
+        self.archivio.fotogramma_voto(int(fotogramma_id), int(voto))
+        return {"ok": True, "voto": voto}
 
     def _esposizione_fissa(self, preset) -> Optional[Dict[str, float]]:
         """Con l'esposizione automatica spenta: x1 su tutti i canali, senza
@@ -1347,14 +1546,7 @@ class ScanService:
                      % rullo.preset)
         preset = dataclasses.replace(preset, use_ir=bool(rullo.ice) and preset.use_ir)
         dest = self.archivio.cartella_ordine(self.cfg.out_dir, ordine.id)
-        mirror = RollMirror(flip_h=rullo.specchiato, source="operatore",
-                            confirmed=rullo.conf_specchio)
-
-        opts = ProcessOptions(**{k: v for k, v in vars(self.options).items()})
-        opts.profile = PROFILES.get(rullo.profilo, PROFILES["c41"])
-        opts.roll_mirror = mirror
-        if not rullo.ice:
-            opts.ir_strength = 0.0
+        opts = self._opzioni_rullo(rullo)
 
         if isinstance(self.backend, OriginaleBackend):
             return self.ricevi_da_originale(rullo_id)
@@ -1434,24 +1626,9 @@ class ScanService:
                             rullo_id, numero, file_raw=raw_path, stato="vuoto",
                             avvisi=vuoto, numero_bordo=bordo)
                         return
-                    res = process(raw, opts)
-                    ext = {"tiff16": ".tif", "tiff8": ".tif",
-                           "png": ".png", "jpeg": ".jpg"}.get(self.cfg.export_format, ".tif")
-                    out_path = os.path.join(dest, nome + ext)
-                    export(res.image, out_path, self.cfg.export_format,
-                           self.cfg.jpeg_quality)
-
-                    mask_path = ""
-                    if self.cfg.export_ir_mask and res.mask is not None:
-                        mask_path = export_mask(res.mask,
-                                                os.path.join(dest, nome + "_maschera.png"))
-
-                    self.archivio.fotogramma_registra(
-                        rullo_id, numero, file_out=out_path, file_raw=raw_path,
-                        file_maschera=mask_path,
-                        rotazione=res.orientation.rotation if res.orientation else 0,
-                        stato="ok", avvisi=" | ".join(res.warnings),
-                        numero_bordo=bordo)
+                    res = self._esporta(raw, opts, dest, nome, rullo_id,
+                                        numero, bordo, raw_path,
+                                        (ordine, rullo))
                     elaborati["ok"] += 1
                     # nel visore la versione finita, se e' ancora l'ultimo
                     # fotogramma letto: uno piu' nuovo non si copre

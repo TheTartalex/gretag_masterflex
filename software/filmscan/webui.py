@@ -371,6 +371,8 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .prov img{width:100%;height:100%;object-fit:cover;display:block}
 .prov .n{position:absolute;left:0;bottom:0;font-size:10px;padding:1px 4px;
  background:rgba(0,0,0,.7);border-radius:0 4px 0 0}
+.prov .voto{position:absolute;right:3px;bottom:1px;font-size:14px;color:var(--acc)}
+.prov.scartato img{opacity:.3}
 .vuoto{color:var(--dim);font-size:13px;padding:16px 0;text-align:center}
 .nota{font-size:11px;color:var(--dim);opacity:.85;line-height:1.6;margin-top:8px}
 .grande{font-size:19px;font-weight:600;font-variant-numeric:tabular-nums}
@@ -564,6 +566,10 @@ function apri(id){
        '<button class="sec" onclick="riapri('+o.id+')">Riapri in scansione</button>'+
        '</div>'+
        '<div class="g2" style="margin-top:8px">'+
+       '<button class="sec"'+(ri.n_selezionati?'':' disabled')+' onclick="location.href=url(\'/api/archivio/zip?cosa=selezionati&id='+o.id+'\')">Scarica le foto da stampare ('+(ri.n_selezionati||0)+')</button>'+
+       '<button class="sec"'+(ri.n_negativi?'':' disabled')+' onclick="location.href=url(\'/api/archivio/zip?cosa=negativi&id='+o.id+'\')">Scarica i negativi lineari ('+(ri.n_negativi||0)+')</button>'+
+       '</div>'+
+       '<div class="g2" style="margin-top:8px">'+
        '<button class="sec"'+cf+' onclick="window.open(url(\'/api/archivio/provino.jpg?id='+o.id+'\'),\'_blank\')">Vedi il provino</button>'+
        '<button class="sec"'+cf+' onclick="salvaProvino('+o.id+')">Salva il provino</button>'+
        '</div>'+
@@ -601,9 +607,10 @@ function apri(id){
          ')">Elimina questo rullo</button></div>'+
          '<div class="provini">';
       ru.fotogrammi.forEach(function(f){
-        h+='<div class="prov"><img loading="lazy" src="'+url('/api/provino.jpg?id='+f.id)+'"'+
+        h+='<div class="prov'+((f.voto||0)<0?' scartato':'')+'"><img loading="lazy" src="'+url('/api/provino.jpg?id='+f.id)+'"'+
            (f.esiste ? '' : ' title="Il file di questo fotogramma non e\' piu\' sul disco"')+
-           '>'+'<div class="n">'+f.numero+'</div></div>';
+           '>'+'<div class="n">'+f.numero+'</div>'+
+           ((f.voto||0)>0?'<div class="voto">\u2605</div>':'')+'</div>';
       });
       h+='</div></section>';
     });
@@ -971,6 +978,17 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .prov .s.errore{background:var(--male)}
 .prov .s.vuoto{background:var(--dim)}
 .prov .s.lavoro{background:var(--acc)}
+.prov .voto{position:absolute;right:3px;bottom:1px;font-size:14px;color:var(--acc)}
+.prov.scartato img{opacity:.3}
+/* la barra del fotogramma riaperto dalla striscia, sopra l'immagine */
+.barra-fot{position:absolute;left:50%;bottom:8px;transform:translateX(-50%);
+ z-index:6;display:flex;gap:6px;align-items:center;flex-wrap:wrap;
+ justify-content:center;background:var(--card);border:1px solid var(--line);
+ border-radius:8px;padding:6px 8px;max-width:calc(100% - 16px);
+ box-shadow:0 2px 10px var(--ombra)}
+.barra-fot button{width:auto;padding:9px 13px}
+.barra-fot button.on{border-color:var(--acc);color:var(--acc)}
+.barra-fot span{font-size:12px;color:var(--dim)}
 
 /* --- la barra dei comandi principali: sempre visibile, tasti grandi --- */
 .comandi{flex:0 0 auto;display:flex;gap:8px;align-items:center;
@@ -1350,6 +1368,13 @@ details.sez>div{padding-bottom:10px}
     <option value="spento">spento</option>
    </select>
    <div class="nota-imp">Sul primo fotogramma di ogni striscia, e col tasto Fuoco. Se il fuoco non si trova, la lente torna alla posizione nominale.</div>
+   <label>Negativo lineare per altri programmi</label>
+   <select id="imp_negativo_lineare" onchange="impostaMacchina()">
+    <option value="">no</option>
+    <option value="dng">DNG (Lightroom, Negative Lab Pro)</option>
+    <option value="tiff">TIFF 16 bit</option>
+   </select>
+   <div class="nota-imp">Accanto a ogni foto anche il negativo com'è uscito dal sensore: canali allineati e calibrati, senza inversione né correzioni, per chi converte con i suoi programmi. Circa 18 MB a fotogramma.</div>
    <div class="row">
     <button class="sec" onclick="leggiTesta()">Stato della testa</button>
     <button class="sec" onclick="alzaPressore()" title="Libera la pellicola senza muoverla. Funziona anche con lo STOP EMERGENZA">Alza pressore</button>
@@ -1434,6 +1459,14 @@ details.sez>div{padding-bottom:10px}
   </div>
   <div class="vuoto" id="vuoto">Nessuna anteprima.<br>Premere <b>Anteprima</b> qui sotto.</div>
   <img id="im_diretta" class="diretta" alt="" style="display:none">
+  <div class="barra-fot" id="barra_fot" style="display:none">
+   <span id="bf_info"></span>
+   <button class="sec" id="bf_stampa" onclick="vota(1)">&#9733; Stampa</button>
+   <button class="sec" id="bf_scarta" onclick="vota(-1)">Scarta</button>
+   <button class="sec" onclick="salvaFotogramma()" title="Riesporta questo fotogramma con le regolazioni di adesso">Salva</button>
+   <button class="sec" onclick="applicaRullo()" title="Le regolazioni di adesso su tutti i fotogrammi del rullo">Applica al rullo</button>
+   <button class="ghost" onclick="chiudiFotogramma()">Chiudi</button>
+  </div>
  </div>
 
  <div class="filmina">
@@ -1671,13 +1704,17 @@ function caricaStriscia(){
       var d1=document.createElement('div'); d1.className='prov'+(provSel===x.id?' sel':'');
       var im=document.createElement('img'); im.loading='lazy';
       im.src=url('/api/provino.jpg?id='+x.id); im.alt='';
+      if((x.voto||0)<0) d1.classList.add('scartato');
       var n=document.createElement('div'); n.className='n'; n.textContent=x.numero;
       var st=document.createElement('div');
       st.className='s '+(x.stato==='ok'?(x.avvisi?'avviso':'ok'):
         (x.stato==='vuoto'?'vuoto':(x.stato==='elaborazione'?'lavoro':'errore')));
       d1.appendChild(im); d1.appendChild(n); d1.appendChild(st);
+      if((x.voto||0)>0){ var v=document.createElement('div'); v.className='voto';
+        v.textContent='\u2605'; d1.appendChild(v); }
+      if(fotoAperto && fotoAperto.id===x.id){ fotoAperto=x; mostraBarraFot(); }
       d1.onclick=function(){
-        provSel=x.id; caricaStriscia();
+        provSel=x.id; caricaStriscia(); apriFotogramma(x);
         el('prov_info').innerHTML = 'Fotogramma <b>'+x.numero+'</b> · '+x.stato+
           (x.rotazione?(' · ruotato '+x.rotazione+'°'):'') +
           (x.avvisi?('<br><span style="color:var(--avviso)">'+x.avvisi+'</span>'):'') +
@@ -1687,6 +1724,41 @@ function caricaStriscia(){
     });
   }).catch(function(){});
 }
+
+/* ---------- il fotogramma riaperto dalla striscia ----------
+   Toccandolo si riapre dal suo grezzo, senza pellicola: si corregge con i
+   pannelli Colore e Ritocco, poi Salva lo riesporta, Applica al rullo fa lo
+   stesso su tutto il rullo. Stampa e Scarta sono la scelta per il cliente:
+   la consegna puo' prendere solo quelle da stampare. */
+var fotoAperto=null;
+function apriFotogramma(x){
+  fotoAperto=x; mostraBarraFot();
+  if(ultimoJob && ultimoJob.running) return;   /* a rullo in corso: solo il voto */
+  if(x.stato==='vuoto' || !x.file_raw) return;
+  post('/api/fotogramma/apri',{id:x.id}).then(esito);
+}
+function mostraBarraFot(){
+  var b=el('barra_fot'); if(!b) return;
+  if(!fotoAperto){ b.style.display='none'; return; }
+  b.style.display='flex';
+  el('bf_info').textContent='Fotogramma '+fotoAperto.numero;
+  el('bf_stampa').classList.toggle('on',(fotoAperto.voto||0)>0);
+  el('bf_scarta').classList.toggle('on',(fotoAperto.voto||0)<0);
+}
+function vota(v){
+  if(!fotoAperto) return;
+  var nuovo=((fotoAperto.voto||0)===v)?0:v;
+  post('/api/fotogramma/voto',{id:fotoAperto.id,voto:nuovo}).then(function(r){
+    if(r && r.errore){ alert(r.errore); return; }
+    fotoAperto.voto=nuovo; mostraBarraFot(); caricaStriscia(); });
+}
+function salvaFotogramma(){ post('/api/fotogramma/salva',{}).then(esito); }
+function applicaRullo(){
+  if(!fotoAperto) return;
+  if(!confirm('Le regolazioni di adesso su TUTTI i fotogrammi di questo rullo? I file esportati vengono riscritti (i grezzi restano).')) return;
+  post('/api/rullo/applica',{rullo_id:fotoAperto.rullo_id}).then(esito);
+}
+function chiudiFotogramma(){ fotoAperto=null; provSel=null; mostraBarraFot(); caricaStriscia(); }
 
 /* ---------- comandi ---------- */
 var wbGuadagni=null;          /* guadagni dal campionamento neutro */
@@ -1833,7 +1905,7 @@ function muovi(mm){ post('/api/muovi',{mm:mm}).then(mostraStato); }
    finche' nessuno le tocca, poi si salvano al cambio. */
 var IMP=['esposizione_auto','pressore_auto','avanzamento_automatico'];
 function impostaMacchina(){
-  var d={autofocus:val('imp_autofocus')};
+  var d={autofocus:val('imp_autofocus'), negativo_lineare:val('imp_negativo_lineare')};
   IMP.forEach(function(k){ d[k]=el('imp_'+k).checked; });
   post('/api/macchina/impostazioni',d).then(function(r){
     if(r && r.errore){ alert(r.errore); }
@@ -2028,6 +2100,8 @@ function mostraStato(s){
     });
     var af=el('imp_autofocus');
     if(af && document.activeElement!==af) af.value=s.impostazioni_macchina.autofocus;
+    var nl=el('imp_negativo_lineare');
+    if(nl && document.activeElement!==nl) nl.value=s.impostazioni_macchina.negativo_lineare||'';
   }
   var tr=el('tasto_rullo');
   if(tr){
@@ -2658,6 +2732,22 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/api/fotogramma":
                 return self._json(s.fotogramma(int(d.get("verso", 1)) >= 0,
                                                str(d.get("formato", "135-full"))))
+
+            if u.path == "/api/fotogramma/apri":
+                s.apri_fotogramma(int(d.get("id") or 0))
+                return self._json({"avviato": True})
+
+            if u.path == "/api/fotogramma/salva":
+                s.salva_fotogramma()
+                return self._json({"avviato": True})
+
+            if u.path == "/api/fotogramma/voto":
+                return self._json(s.vota(int(d.get("id") or 0), int(d.get("voto") or 0)))
+
+            if u.path == "/api/rullo/applica":
+                rid = d.get("rullo_id")
+                s.applica_rullo(int(rid) if rid else None)
+                return self._json({"avviato": True})
 
             if u.path == "/api/fuoco":
                 return self._json(s.fuoco(float(d.get("mm", 0))))

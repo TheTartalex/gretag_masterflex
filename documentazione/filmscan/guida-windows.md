@@ -215,6 +215,31 @@ riordinano secondo quei numeri, file compresi: le strisce si possono
 inserire in qualunque ordine. Per ora la macchina non li passa ancora: i
 fotogrammi restano nell'ordine di scansione.
 
+## Riaprire un fotogramma, Stampa e Scarta, Applica al rullo
+
+Toccando un fotogramma nella striscia si riapre dal suo grezzo, senza
+rimettere la pellicola, e sopra l'immagine compare una barra:
+
+- **Stampa** / **Scarta**: la scelta per il cliente (stella o miniatura
+  sbiadita). Nell'archivio, *Scarica le foto da stampare* prende solo
+  quelle con la stella. Si possono segnare anche a rullo in corso.
+- **Salva**: riesporta quel fotogramma con le regolazioni di adesso (Colore,
+  Ritocco, LUT), sopra il file di prima. Il grezzo non cambia.
+- **Applica al rullo**: lo stesso su tutti i fotogrammi del rullo, uno dopo
+  l'altro (i vuoti restano vuoti). Si può fermare con STOP.
+- **Chiudi**: toglie la barra.
+
+Dentro ogni file esportato (TIFF e JPEG) ci sono ordine, rullo, numero di
+fotogramma e di bordo, pellicola, data di scansione, scanner e i dpi veri:
+un file preso dall'archivio dice da solo da dove viene. Il nome del cliente
+no.
+
+**Negativo lineare** (Macchina, *Impostazioni macchina*): accanto a ogni
+foto anche il negativo com'è uscito dal sensore, canali allineati e
+calibrati, senza inversione né correzioni, in **DNG** (Lightroom e Negative
+Lab Pro lo trattano come un RAW) o **TIFF 16 bit**. Circa 18 MB a
+fotogramma. Nell'archivio: *Scarica i negativi lineari*.
+
 ## La LUT, in fondo a Colore
 
 In fondo alla scheda **Colore** si sceglie una LUT. Quella scelta si

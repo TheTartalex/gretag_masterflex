@@ -333,6 +333,22 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
   2x2 sul CCD, un quarto dei dati) come modo "veloce", con la sua
   calibrazione.
 
+- **Dal confronto con toneScan Studio** (Tone Photographic):
+  - **riaprire un fotogramma** dalla striscia (dal grezzo, `apri_fotogramma`),
+    **Salva** (`salva_fotogramma`) e **Applica al rullo** (`applica_rullo`),
+    con la barra sopra l'immagine;
+  - **Stampa / Scarta** per fotogramma (`fotogrammi.voto`), zip delle sole
+    foto da stampare in archivio;
+  - **metadati nei file** TIFF e JPEG (`pipeline.export(meta=...)`): ordine,
+    rullo, fotogramma, bordo, pellicola, data, dpi, Make/Model;
+  - **negativo lineare** in DNG (LinearRaw, `export_negativo`) o TIFF 16 bit,
+    colonna `fotogrammi.file_negativo`, zip "negativi". Il DNG dichiara
+    sRGB lineare come colorimetria (ColorMatrix1): da vedere in Lightroom con
+    Negative Lab Pro se lo prende come RAW.
+  Lasciati fuori, su indicazione di Alessandro: correzioni CMY da minilab
+  (si stampa con la drylab Epson) e scorciatoie da tastiera (monitor
+  touch).
+
 ## Problemi aperti, in ordine di priorità
 
 1. **Motori delle guide all'avvio: RISOLTO per il 135** (28/10/2026, dalla

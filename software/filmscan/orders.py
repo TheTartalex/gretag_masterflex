@@ -152,7 +152,11 @@ class Archivio:
             # con il valore di serie, senza toccare il resto.
             for tabella, colonna, tipo in (
                     ("rulli", "ice", "INTEGER NOT NULL DEFAULT 0"),
-                    ("fotogrammi", "numero_bordo", "TEXT DEFAULT ''")):
+                    ("fotogrammi", "numero_bordo", "TEXT DEFAULT ''"),
+                    # 1 = da stampare, -1 = scartato, 0 = niente
+                    ("fotogrammi", "voto", "INTEGER NOT NULL DEFAULT 0"),
+                    # il negativo lineare per altri programmi (TIFF o DNG)
+                    ("fotogrammi", "file_negativo", "TEXT DEFAULT ''")):
                 presenti = [r[1] for r in c.execute(
                     "PRAGMA table_info(%s)" % tabella).fetchall()]
                 if colonna not in presenti:
@@ -416,24 +420,37 @@ class Archivio:
                             file_out: str = "", file_raw: str = "",
                             file_maschera: str = "", rotazione: int = 0,
                             stato: str = "ok", avvisi: str = "",
-                            numero_bordo: str = "") -> int:
+                            numero_bordo: str = "",
+                            file_negativo: str = "") -> int:
         """Registra un fotogramma scansionato. Se esiste gia', lo aggiorna:
         riscansionare un fotogramma venuto male e' normale e non deve creare
-        doppioni."""
+        doppioni. Il voto resta quello dato; il negativo lineare resta se
+        questa volta non se n'e' fatto uno nuovo."""
         with self._conn() as c:
             cur = c.execute(
                 "INSERT INTO fotogrammi (rullo_id, numero, file_raw, file_out, "
-                "file_maschera, rotazione, stato, avvisi, creato, numero_bordo) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?) "
+                "file_maschera, rotazione, stato, avvisi, creato, numero_bordo, "
+                "file_negativo) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?) "
                 "ON CONFLICT(rullo_id, numero) DO UPDATE SET "
                 "  file_raw=excluded.file_raw, file_out=excluded.file_out, "
                 "  file_maschera=excluded.file_maschera, "
                 "  rotazione=excluded.rotazione, stato=excluded.stato, "
                 "  avvisi=excluded.avvisi, creato=excluded.creato, "
-                "  numero_bordo=excluded.numero_bordo",
+                "  numero_bordo=excluded.numero_bordo, "
+                "  file_negativo=CASE WHEN excluded.file_negativo != '' "
+                "    THEN excluded.file_negativo ELSE fotogrammi.file_negativo END",
                 (rullo_id, numero, file_raw, file_out, file_maschera,
-                 rotazione, stato, avvisi, time.time(), numero_bordo or ""))
+                 rotazione, stato, avvisi, time.time(), numero_bordo or "",
+                 file_negativo or ""))
             return int(cur.lastrowid)
+
+    def fotogramma_voto(self, fotogramma_id: int, voto: int) -> None:
+        """Da stampare (1), scartato (-1) o niente (0)."""
+        voto = 1 if voto > 0 else (-1 if voto < 0 else 0)
+        with self._conn() as c:
+            c.execute("UPDATE fotogrammi SET voto = ? WHERE id = ?",
+                      (voto, int(fotogramma_id)))
 
     def fotogrammi_rinumera(self, nuovi: List[Dict[str, object]]) -> None:
         """Cambia numero e file a piu' fotogrammi insieme (riordino). In due
@@ -445,10 +462,11 @@ class Archivio:
                           (-int(f["id"]), int(f["id"])))
             for f in nuovi:
                 c.execute("UPDATE fotogrammi SET numero = ?, file_raw = ?, "
-                          "file_out = ?, file_maschera = ? WHERE id = ?",
+                          "file_out = ?, file_maschera = ?, file_negativo = ? "
+                          "WHERE id = ?",
                           (int(f["numero"]), f.get("file_raw") or "",
                            f.get("file_out") or "", f.get("file_maschera") or "",
-                           int(f["id"])))
+                           f.get("file_negativo") or "", int(f["id"])))
 
     def fotogrammi(self, rullo_id: int) -> List[Dict[str, object]]:
         with self._conn() as c:
@@ -469,7 +487,7 @@ class Archivio:
 
     def fotogramma_scorda_file(self, fotogramma_id: int,
                                quali=("file_raw", "file_out",
-                                      "file_maschera")) -> None:
+                                      "file_maschera", "file_negativo")) -> None:
         """Azzera i percorsi dei file che non ci sono piu'.
 
         Serve dopo una cancellazione, ed e' la meta' che mancava: finche' il
@@ -482,7 +500,7 @@ class Archivio:
         e' esattamente l'informazione che si vuole conservare.
         """
         campi = [q for q in quali
-                 if q in ("file_raw", "file_out", "file_maschera")]
+                 if q in ("file_raw", "file_out", "file_maschera", "file_negativo")]
         if not campi:
             return
         sql = "UPDATE fotogrammi SET %s WHERE id = ?" % ", ".join(
