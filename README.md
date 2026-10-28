@@ -60,10 +60,9 @@ verticale) e su telefono.
 
 Problemi aperti e prossimi passi: **[documentazione/stato.md](documentazione/stato.md)**.
 
-> ⚠️ **Non usare filmscan in modalità "macchina vera"** finché il problema
-> delle guide non è chiuso: all'avvio del carrello i motori delle guide
-> sono andati a fine corsa e hanno continuato a spingere. Si possono usare
-> la simulazione e la modalità "motori bloccati". Ipotesi e prove in
+> ✅ **Guide del carrello: problema risolto per il 135** (28/10/2026).
+> Con APS e 110 la modalità "macchina vera" non è ancora provata: la prima
+> volta, mano sull'interruttore. Storia del problema in
 > [carrello-capri.md](documentazione/hardware/carrello-capri.md#6-procedura-consigliata-per-il-problema-delle-guide).
 
 ## Installazione

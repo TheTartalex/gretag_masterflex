@@ -44,8 +44,9 @@ Le parti del progetto:
    (`0x1xxxx`).
 2. **Niente sulla produzione** finché la riserva non ha provato tutto,
    immagini comprese.
-3. **Niente motori in modalità reale** finché l'autotest delle guide non ha
-   limiti di passi o di tempo.
+3. **Motori in modalità reale**: per il 135 sì, il problema delle guide è
+   risolto (28/10/2026). Per APS e 110 non ancora provati: la prima volta
+   con la mano sull'interruttore.
 4. **Mai committare file Kodak/Gretag** (driver originale, SDK, firmware,
    pacchetto CapriFirmware, backup del Parameter Flash, manuali), log delle
    macchine o dati di clienti. `.gitignore` li esclude; non forzarlo.

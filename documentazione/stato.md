@@ -335,7 +335,13 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
 
 ## Problemi aperti, in ordine di priorità
 
-1. **Motori delle guide all'avvio.** Le guide sono i motori 3 e 4 del
+1. **Motori delle guide all'avvio: RISOLTO per il 135** (28/10/2026,
+   segnalato da Alessandro dalla riserva). La causa e il rimedio vanno
+   ancora scritti qui e in [carrello-capri.md §6](hardware/carrello-capri.md#6-procedura-consigliata-per-il-problema-delle-guide).
+   Per APS e 110 non è ancora provato: la prima volta, mano
+   sull'interruttore. Resta sotto, per riferimento, l'analisi fatta prima.
+
+   Le guide sono i motori 3 e 4 del
    carrello Capri. Lo zero lo fa il firmware: ogni guida va verso la sua
    fotocellula di riferimento per al massimo 750 passi, poi si ferma con
    l'errore 37507 o 37508 e resta in spinta. Il sintomo, fine corsa e
@@ -355,8 +361,8 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
 
    Le prove sono in [carrello-capri.md §6](hardware/carrello-capri.md#6-procedura-consigliata-per-il-problema-delle-guide):
    accensione senza programmi, selftest di servizio (HOME e PRECISION delle
-   guide), SensorTest, flag. Finché non è chiuso, usare **"motori bloccati"**
-   o la simulazione. Attenzione: anche con i motori bloccati l'apertura
+   guide), SensorTest, flag. Prima della soluzione si usavano **"motori
+   bloccati"** o la simulazione. Attenzione: anche con i motori bloccati l'apertura
    dell'SDK può far partire lo zero. `APERTURA=leggera` in `MASTERFLEX.bat`
    serve a capire se è così.
 2. **Le immagini non arrivano correttamente.** Due cause in filmscan sono

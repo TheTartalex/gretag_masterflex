@@ -150,8 +150,9 @@ giudicare colore e densità.
    Parameter Flash. Dentro ci sono le tarature fatte una volta sola da un
    tecnico, con pellicole di prova che oggi non si comprano più.
 
-> **Ottobre 2026:** il passo 5 è sospeso. All'avvio i motori delle guide sono
-> andati a fine corsa continuando a spingere. Vedi
+> **28 ottobre 2026:** il problema delle guide (all'avvio andavano a fine
+> corsa continuando a spingere) è risolto per il 135. Con APS e 110 la prima
+> volta mano sull'interruttore. Vedi
 > [stato.md](../stato.md#problemi-aperti-in-ordine-di-priorità) e
 > [carrello-capri.md](../hardware/carrello-capri.md).
 

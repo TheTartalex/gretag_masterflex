@@ -243,6 +243,10 @@ Da `MASTERFLEX.bat`: voce 4, poi 5.
 
 ## 6. Procedura consigliata per il problema delle guide
 
+> **28/10/2026: risolto per il 135** sulla riserva. Causa e rimedio da
+> scrivere qui; per APS e 110 la procedura resta valida finché non sono
+> provati.
+
 In quest'ordine, con il percorso pellicola vuoto e la mano sull'interruttore:
 
 1. **Accensione senza programmi**: con "No Reset" a 1 le guide devono restare
