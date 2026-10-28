@@ -31,6 +31,8 @@ Rete locale fidata e basta.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import os
 import secrets
@@ -252,6 +254,33 @@ def _opzioni(d: Dict) -> ProcessOptions:
 # Pagina
 # --------------------------------------------------------------------------
 
+# --- il PIN fisso delle postazioni ---------------------------------------
+# Si salva l'impronta, non il numero: PBKDF2-SHA256 con sale casuale. Le
+# iterazioni sono poche per gli standard di oggi perche' il PC della
+# macchina e' del 2007, e bastano: la verifica si fa solo sulla pagina del
+# PIN (poi la pagina usa il PIN dell'avvio), e chi prova a indovinare viene
+# comunque fermato dopo cinque tentativi (Handler._segna_pin).
+ITERAZIONI_PIN = 20000
+
+
+def impronta_pin(pin: str) -> str:
+    sale = secrets.token_bytes(16)
+    h = hashlib.pbkdf2_hmac("sha256", pin.encode("utf-8"), sale, ITERAZIONI_PIN)
+    return "pbkdf2$%d$%s$%s" % (ITERAZIONI_PIN, sale.hex(), h.hex())
+
+
+def pin_giusto(pin: str, impronta: str) -> bool:
+    try:
+        tipo, giri, sale, h = impronta.split("$")
+        if tipo != "pbkdf2":
+            return False
+        prova = hashlib.pbkdf2_hmac("sha256", pin.encode("utf-8"),
+                                    bytes.fromhex(sale), int(giri))
+        return hmac.compare_digest(prova.hex(), h)
+    except (ValueError, AttributeError):
+        return False
+
+
 PAGINA_PIN = r"""<!DOCTYPE html>
 <html lang="it"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -276,18 +305,25 @@ button{width:100%;background:var(--acc);color:var(--su-acc);border:0;border-radi
 button:disabled{opacity:.4;cursor:not-allowed}
 .errore{color:var(--male);font-size:13px;min-height:20px;margin-bottom:10px}
 .nota{font-size:11px;color:var(--dim);margin-top:18px;line-height:1.6}
-@media(pointer:coarse){input{padding:20px;font-size:34px}button{padding:19px}}
+.ricorda{display:flex;gap:8px;align-items:center;justify-content:center;
+ font-size:12px;color:var(--dim);margin:-4px 0 14px}
+.ricorda input{width:auto;margin:0;padding:0}
+@media(pointer:coarse){#pin{padding:20px;font-size:34px}button{padding:19px}
+ .ricorda input{width:20px;height:20px}}
 </style></head><body>
 <div style="position:fixed;top:14px;right:14px">/*ICONA*/</div>
 <form class="scatola" onsubmit="entra(event)">
  <h1>Masterflex D1008</h1>
  <p class="sotto">Interfaccia di scansione</p>
  <div class="errore" id="errore"></div>
- <input id="pin" inputmode="numeric" pattern="[0-9]*" maxlength="8"
+ <input id="pin" inputmode="numeric" pattern="[0-9]*" maxlength="12"
         placeholder="&middot;&middot;&middot;&middot;&middot;&middot;&middot;&middot;" autocomplete="off" autofocus>
+ <label class="ricorda"><input type="checkbox" id="ricorda"> Ricorda il PIN fisso su questo dispositivo</label>
  <button id="tasto" type="submit">Entra</button>
  <div class="nota">Il PIN e' scritto nella finestra del server,
-  sul monitor della macchina. Cambia a ogni accensione.</div>
+  sul monitor della macchina, e cambia a ogni accensione. Sulle postazioni
+  interne vale anche il PIN fisso: spuntando "Ricorda", questo dispositivo
+  entra da solo anche dopo un riavvio.</div>
 </form>
 <script>
 /*STATO*/
@@ -303,9 +339,16 @@ if(BLOCCO>0){
   }, 1000);
   E.textContent='Troppi tentativi. Riprovare fra '+resta+' secondi.';
 } else if(SBAGLIATO){ E.textContent='PIN errato.'; }
+/* Il PIN ricordato e' solo quello fisso, e solo sui dispositivi dove lo si
+   e' chiesto. Se non apre piu' (cambiato, o era quello dell'avvio) si
+   dimentica, invece di bussare a vuoto. */
+var salvato=''; try{ salvato=localStorage.getItem('pin_fisso')||''; }catch(e){}
+if(salvato && SBAGLIATO){ try{ localStorage.removeItem('pin_fisso'); }catch(e){} salvato=''; }
+if(salvato && !SBAGLIATO && BLOCCO<=0){ location.href='/?t='+encodeURIComponent(salvato); }
 function entra(ev){ ev.preventDefault();
   var v=P.value.replace(/\D/g,'');
   if(!v){ P.focus(); return; }
+  try{ if(document.getElementById('ricorda').checked) localStorage.setItem('pin_fisso', v); }catch(e){}
   location.href='/?t='+encodeURIComponent(v); }
 P.oninput=function(){ P.value=P.value.replace(/\D/g,''); };
 </script></body></html>
@@ -1374,6 +1417,13 @@ details.sez>div{padding-bottom:10px}
     <option value="dng">DNG (Lightroom, Negative Lab Pro)</option>
     <option value="tiff">TIFF 16 bit</option>
    </select>
+   <label>PIN fisso delle postazioni <span id="pin_stato" class="nota-imp" style="margin:0"></span></label>
+   <div class="row" style="margin-top:4px">
+    <input type="password" id="pin_nuovo" inputmode="numeric" maxlength="12" autocomplete="new-password" placeholder="almeno 6 cifre">
+    <button class="sec" style="width:auto" onclick="impostaPinFisso(true)">Salva</button>
+    <button class="ghost" style="width:auto" onclick="impostaPinFisso(false)">Togli</button>
+   </div>
+   <div class="nota-imp">Vale insieme al PIN che cambia a ogni avvio, solo per le postazioni interne. Si conserva solo l'impronta, non il numero. Sulla pagina del PIN, "Ricorda" lo tiene sul dispositivo.</div>
    <div class="nota-imp">Accanto a ogni foto anche il negativo com'è uscito dal sensore: canali allineati e calibrati, senza inversione né correzioni, per chi converte con i suoi programmi. Circa 18 MB a fotogramma.</div>
    <div class="row">
     <button class="sec" onclick="leggiTesta()">Stato della testa</button>
@@ -1912,6 +1962,16 @@ function impostaMacchina(){
     /* senza fuoco, al prossimo aggiornamento la spunta torna quella vera */
     if(document.activeElement) document.activeElement.blur(); });
 }
+function impostaPinFisso(salva){
+  var v = salva ? el('pin_nuovo').value.replace(/\D/g,'') : '';
+  if(salva && v.length<6){ alert('Il PIN fisso deve avere almeno 6 cifre.'); return; }
+  if(!salva && !confirm('Togliere il PIN fisso? Si entrera\' solo con quello dell\'avvio.')) return;
+  post('/api/pin_fisso',{pin:v}).then(function(r){
+    if(r && r.errore){ alert(r.errore); return; }
+    el('pin_nuovo').value='';
+    el('pin_stato').textContent = r.pin_fisso ? '(impostato)' : '(non impostato)';
+  });
+}
 function leggiTesta(){
   post('/api/testa',{}).then(function(r){
     if(r && r.errore){ el('testa').textContent=r.errore; return; }
@@ -2100,6 +2160,8 @@ function mostraStato(s){
     });
     var af=el('imp_autofocus');
     if(af && document.activeElement!==af) af.value=s.impostazioni_macchina.autofocus;
+    var ps=el('pin_stato');
+    if(ps) ps.textContent = s.impostazioni_macchina.pin_fisso ? '(impostato)' : '(non impostato)';
     var nl=el('imp_negativo_lineare');
     if(nl && document.activeElement!==nl) nl.value=s.impostazioni_macchina.negativo_lineare||'';
   }
@@ -2377,6 +2439,17 @@ class Handler(BaseHTTPRequestHandler):
             # 403 sulle chiamate, che e' il modo peggiore di dire "non entri".
             if self.token and not self._autorizzato(q):
                 dato = q.get("t", [""])[0]
+                if (dato and self._bloccato_per() <= 0
+                        and pin_giusto(dato, s.cfg.pin_fisso)):
+                    # PIN fisso: si entra con il PIN di questo avvio, cosi'
+                    # il fisso non resta nell'indirizzo, nella cronologia
+                    # e nelle richieste di ogni secondo
+                    self._segna_pin(dato, True)
+                    self.send_response(302)
+                    self.send_header("Location", "/?t=%s" % self.token)
+                    self.send_header("Cache-Control", "no-store")
+                    self.end_headers()
+                    return
                 if dato:
                     self._segna_pin(dato, False)
                 attesa = int(round(self._bloccato_per()))
@@ -2732,6 +2805,19 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/api/fotogramma":
                 return self._json(s.fotogramma(int(d.get("verso", 1)) >= 0,
                                                str(d.get("formato", "135-full"))))
+
+            if u.path == "/api/pin_fisso":
+                pin = "".join(ch for ch in str(d.get("pin") or "") if ch.isdigit())
+                if pin and len(pin) < 6:
+                    return self._json({"errore": "il PIN fisso deve avere almeno 6 cifre"}, 400)
+                s.cfg.pin_fisso = impronta_pin(pin) if pin else ""
+                if self.impostazioni:
+                    try:
+                        s.cfg.save(self.impostazioni)
+                    except (IOError, OSError) as exc:
+                        return self._json({"errore": "PIN fisso non salvato: %s" % exc}, 500)
+                s.log("PIN fisso delle postazioni %s." % ("impostato" if pin else "tolto"))
+                return self._json({"ok": True, "pin_fisso": bool(pin)})
 
             if u.path == "/api/fotogramma/apri":
                 s.apri_fotogramma(int(d.get("id") or 0))

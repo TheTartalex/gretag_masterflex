@@ -349,6 +349,12 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
   (si stampa con la drylab Epson) e scorciatoie da tastiera (monitor
   touch).
 
+- **PIN fisso delle postazioni**: oltre al PIN dell'avvio, un PIN scelto da
+  noi (impostato da Macchina, salvato come impronta PBKDF2 in
+  `impostazioni.json`, mai nel repository). Apre la sessione con un
+  reindirizzamento al PIN dell'avvio; "Ricorda" lo tiene nel browser del
+  dispositivo, che rientra da solo dopo i riavvii.
+
 ## Problemi aperti, in ordine di priorità
 
 1. **Motori delle guide all'avvio: RISOLTO per il 135** (28/10/2026, dalla

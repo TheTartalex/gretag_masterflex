@@ -343,6 +343,27 @@ Dettagli in [archivio.md](archivio.md).
   isola i dispositivi fra loro: usare la rete normale.
 - L'indirizzo giusto è quello stampato all'avvio, non `localhost`.
 
+## PIN fisso delle postazioni
+
+Il PIN stampato all'avvio cambia ogni volta. Per le postazioni interne
+(tablet, altri PC) c'è anche un **PIN fisso**, scelto da noi:
+
+1. si imposta una volta da Macchina → *Impostazioni macchina* → *PIN fisso
+   delle postazioni* (almeno 6 cifre), **Salva**. Il programma conserva solo
+   l'impronta cifrata, in `impostazioni.json`: il numero non è scritto da
+   nessuna parte, nemmeno nel repository;
+2. sulla pagina del PIN di ogni postazione: PIN fisso, spunta **Ricorda il
+   PIN fisso su questo dispositivo**, *Entra*. Da lì in poi quel dispositivo
+   entra da solo, anche dopo un riavvio del server;
+3. per toglierlo da un dispositivo basta cancellare i dati del sito nel
+   browser; per cambiarlo a tutti, un PIN fisso nuovo (i dispositivi col
+   vecchio tornano a chiederlo).
+
+Il PIN fisso non resta nell'indirizzo: apre la sessione, poi la pagina usa
+il PIN dell'avvio. Restano i cinque tentativi sbagliati e mezzo minuto di
+blocco. Da usare solo su dispositivi nostri: chi ha in mano un dispositivo
+che lo ricorda entra.
+
 ## Avvio automatico
 
 Voce **9** (oppure alla fine dell'installazione). Si sceglie il modo di

@@ -52,6 +52,12 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-10-28 — PIN fisso delle postazioni
+
+- PIN fisso oltre a quello dell'avvio: impronta PBKDF2 in `impostazioni.json`
+  (`pin_fisso`), impostato da Macchina; apre la sessione e reindirizza al
+  PIN dell'avvio; "Ricorda" sul dispositivo.
+
 ### 2026-10-28 — riaprire i fotogrammi, Stampa/Scarta, metadati, DNG
 
 - Striscia: un fotogramma si riapre dal grezzo; barra con Stampa, Scarta,

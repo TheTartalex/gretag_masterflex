@@ -1088,7 +1088,8 @@ class ScanService:
                 "pressore_auto": self.cfg.pressore_auto,
                 "avanzamento_automatico": self.cfg.avanzamento_automatico,
                 "autofocus": self.cfg.autofocus,
-                "negativo_lineare": self.cfg.negativo_lineare}
+                "negativo_lineare": self.cfg.negativo_lineare,
+                "pin_fisso": bool(self.cfg.pin_fisso)}
 
     def imposta_macchina(self, valori: Dict[str, object]) -> Dict[str, bool]:
         if self.job.running:

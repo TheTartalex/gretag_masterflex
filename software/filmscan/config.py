@@ -239,6 +239,10 @@ class AppConfig:
     # "" = no, "tiff" = TIFF RGB 16 bit, "dng" = DNG lineare (Lightroom e
     # Negative Lab Pro lo trattano da RAW)
     negativo_lineare: str = ""
+    # PIN fisso delle postazioni interne, oltre a quello che cambia a ogni
+    # avvio. Qui c'e' solo l'impronta (PBKDF2, vedi webui.impronta_pin), mai
+    # il numero: questo file finisce nei backup e nelle diagnosi.
+    pin_fisso: str = ""
     eject_max_mm: float = 400.0  # corsa massima in espulsione, per non tirare a vuoto
 
     # --- archivio degli ordini gia' fatti ---
