@@ -45,6 +45,14 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-10-28 — Scansiona rullo con Carica, anteprima in diretta
+
+- Scansiona rullo prepara il carrello e parte da solo quando la pellicola
+  è inserita (`_attendi_pellicola`); con la pellicola già dentro parte
+  subito.
+- Tasto *Diretta*: il video della macchina nel visore (`/api/diretta.jpg`),
+  negativo o positivo.
+
 ### 2026-10-27 — esposizione misurata sul primo fotogramma vero
 
 - La misura dell'esposizione per canale si fa sul primo fotogramma con

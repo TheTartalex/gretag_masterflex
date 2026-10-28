@@ -187,7 +187,14 @@ muovono senza i nostri limiti: solo per il tecnico.
 **Il tasto Fotogramma ›** in basso fa muovere la pellicola: il carrello
 porta in finestra lo scatto successivo, come farebbe durante il rullo. Non
 scansiona e non aggiorna l'immagine sullo schermo, che resta l'ultima
-anteprima: per vederlo si preme **Anteprima**.
+anteprima: per vederlo si preme **Anteprima**, oppure si accende la
+**Diretta**.
+
+**Diretta**, sopra l'immagine: il video della macchina, circa due immagini
+al secondo, finché resta acceso. Con *Negativo* si vede la pellicola com'è,
+con *Positivo* invertita. Intanto *Fotogramma ›* e i movimenti a mano si
+possono usare. Si spegne da sola quando parte un lavoro (anteprima,
+calibrazione, rullo): la macchina serve a lui.
 
 **Digital ICE** si sceglie quando si crea il rullo. Acceso, si legge anche
 l'infrarosso e si puliscono polvere e graffi; è più lento. Finché l'IR non è
@@ -224,7 +231,13 @@ correzioni, a tutti gli ordini, finché non se ne sceglie un'altra o
 
 ## Fine rullo e STOP EMERGENZA
 
-**Scansiona rullo** è verde. Mentre il rullo gira diventa **Fine rullo**,
+**Scansiona rullo** è verde e fa anche *Carica*: guide al formato del
+rullo, carrello pronto, poi aspetta (fino a 10 minuti) che si inserisca la
+pellicola e parte da solo appena il carrello la sente. Se la pellicola era
+già stata inserita dopo un *Carica*, parte subito. Con i motori bloccati il
+carrello non si prepara e si scansiona quello che c'è in finestra.
+
+Mentre il rullo gira, o aspetta la pellicola, diventa **Fine rullo**,
 rosso: chiude il rullo appena finito il fotogramma in corso, espelle la
 pellicola e lo segna completato. Il tasto resta `Chiusura...` finché il
 rullo non è chiuso davvero.

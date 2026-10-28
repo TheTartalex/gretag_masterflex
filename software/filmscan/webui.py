@@ -919,6 +919,8 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .visore{position:relative;flex:1;min-height:0;background:var(--neutro);
  border:1px solid var(--line);border-radius:8px;overflow:hidden;
  display:flex;align-items:center;justify-content:center}
+.diretta{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;
+ background:var(--neutro);z-index:5}
 .tela{position:relative;display:none;max-width:100%;max-height:100%;
  line-height:0;touch-action:none}
 .tela img{display:block;max-width:100%;max-height:100%;
@@ -1416,6 +1418,7 @@ details.sez>div{padding-bottom:10px}
    <button data-z="1">1:1</button>
   </div>
   <button class="ghost" id="b_griglia" style="width:auto" onclick="togliGriglia()">Griglia</button>
+  <button class="ghost" id="b_diretta" style="width:auto" onclick="diretta()" title="Il video della macchina, finche' resta acceso">Diretta</button>
   <span class="info" id="zoominfo"></span>
  </div>
 
@@ -1429,6 +1432,7 @@ details.sez>div{padding-bottom:10px}
    <div class="etichetta" id="et_dopo">POSITIVO</div>
   </div>
   <div class="vuoto" id="vuoto">Nessuna anteprima.<br>Premere <b>Anteprima</b> qui sotto.</div>
+  <img id="im_diretta" class="diretta" alt="" style="display:none">
  </div>
 
  <div class="filmina">
@@ -1533,6 +1537,33 @@ function impostaZoom(z){
   Array.prototype.forEach.call(el('g_zoom').children,function(b){
     b.classList.toggle('on', (b.dataset.z==='1')===z); });
   aggiornaImmagini(true);
+}
+/* L'anteprima in diretta: un'immagine alla volta, la prossima solo quando
+   e' arrivata la precedente, cosi' le richieste non si accumulano. Si
+   spegne da sola quando parte un lavoro (la macchina serve a lui). */
+var dirOn=false, dirT=null, dirUrl=null;
+function diretta(on){
+  dirOn = (on===undefined) ? !dirOn : !!on;
+  el('b_diretta').classList.toggle('on',dirOn);
+  el('im_diretta').style.display = dirOn ? 'block' : 'none';
+  if(dirT){ clearTimeout(dirT); dirT=null; }
+  if(dirOn) prossimaDiretta();
+}
+function prossimaDiretta(){
+  if(!dirOn) return;
+  var t0=Date.now();
+  fetch(url('/api/diretta.jpg?positivo='+(vista==='prima'?0:1)+'&n='+t0))
+  .then(function(r){
+    if(scaduto(r)) return;
+    if(!r.ok) return r.json().then(function(j){
+      diretta(false); el('msg').textContent='Diretta: '+((j&&j.errore)||'non disponibile'); });
+    return r.blob().then(function(b){
+      if(!dirOn) return;
+      var vecchio=dirUrl; dirUrl=URL.createObjectURL(b);
+      el('im_diretta').src=dirUrl; if(vecchio) URL.revokeObjectURL(vecchio);
+      dirT=setTimeout(prossimaDiretta, Math.max(0, 400-(Date.now()-t0)));
+    });
+  }).catch(function(){ diretta(false); });
 }
 function togliGriglia(){
   var g=el('griglia'), on=g.style.display!=='block';
@@ -1986,6 +2017,7 @@ function mostraStato(s){
      ogni volta dalla prima voce: e' il modo migliore per far scegliere a
      qualcuno un backend diverso da quello con cui il server e' partito. */
   ultimoJob = s.job || null;
+  if(dirOn && s.job && s.job.running) diretta(false);
   mostraPosizionamento(s.job && s.job.running ? s.job.posizionamento : '');
   if(s.impostazioni_macchina){
     IMP.forEach(function(k){
@@ -2370,6 +2402,13 @@ class Handler(BaseHTTPRequestHandler):
 
         if u.path == "/api/video.jpg":
             return self._immagine(s.video_jpeg() or _mancante())
+
+        if u.path == "/api/diretta.jpg":
+            try:
+                img = s.diretta_jpeg(q.get("positivo", ["1"])[0] != "0")
+            except Exception as exc:                    # noqa: BLE001
+                return self._json({"errore": str(exc).splitlines()[0]}, 409)
+            return self._immagine(img or _mancante())
 
         if u.path == "/api/provino.jpg":
             try:

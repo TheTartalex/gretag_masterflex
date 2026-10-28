@@ -1,6 +1,6 @@
 # Stato del progetto
 
-**Aggiornato al 27 ottobre 2026.** Questo è il documento da aggiornare a fine
+**Aggiornato al 28 ottobre 2026.** Questo è il documento da aggiornare a fine
 di ogni sessione di lavoro: stato, problemi aperti e prossimi passi stanno
 qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.md).
 
@@ -284,6 +284,18 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
     tutti i thread quando muore dentro l'SDK. Servono quel file e le
     ultime righe di `agente-*.log`; intanto si puo' usare "posizione
     nominale" o "spento".
+
+## Fatto il 28 ottobre
+
+- **Scansiona rullo fa anche Carica**: se l'agente dice che la pellicola
+  non c'è (`pellicola_inserita` falso), guide al formato e carrello
+  pronto, poi attesa della pellicola (`attesa_striscia_s`, 10 minuti) e
+  partenza da sola. Già inserita: si parte subito; agente che non lo sa
+  (None): come prima. Da vedere sulla macchina: se un agente riavviato con
+  la pellicola dentro la crede assente e riarma il carrello.
+- **Anteprima in diretta** (tasto *Diretta* sopra l'immagine): il video
+  dell'SDK a richiesta della pagina, una lettura alla volta, solo senza
+  lavori in corso.
 
 ## Problemi aperti, in ordine di priorità
 

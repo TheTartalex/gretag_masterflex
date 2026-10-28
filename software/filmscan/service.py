@@ -127,6 +127,10 @@ class ScanService:
         # il thread del rullo li esegue (la macchina la comanda uno solo)
         self._comandi_pos: "queue.Queue" = queue.Queue()
         self._video: bytes = b""
+        # anteprima in diretta: una lettura alla volta, l'ultima si ripete
+        # a chi chiede mentre la successiva e' in corso
+        self._lock_diretta = threading.Lock()
+        self._diretta: bytes = b""
         # mentre la connessione automatica aspetta lo scanner, cosa aspetta
         self.attesa_connessione: Optional[str] = None
         # Disconnetti ferma anche la connessione automatica: altrimenti si
@@ -349,6 +353,38 @@ class ScanService:
         finally:
             self.job.attesa_striscia = False
 
+    def _attendi_pellicola(self, backend, formato: str) -> bool:
+        """Inizio rullo: arma il carrello e aspetta la prima striscia.
+        False se non arriva (Fine rullo, STOP, cfg.attesa_striscia_s)."""
+        try:
+            self.progress("Carrello in preparazione", 0.0)
+            backend.prepara_carico(formato)
+        except (Emergenza, MotoriBloccati):
+            raise
+        except ScannerError as exc:
+            # motori bloccati o carrello che rifiuta: si scansiona quello che
+            # c'e', come prima che Scansiona rullo facesse anche Carica
+            self.log("Carrello non preparato (%s): si scansiona quello che "
+                     "c'e' in finestra." % str(exc).splitlines()[0])
+            return True
+        self.log("Carrello pronto: inserire la pellicola, la scansione "
+                 "parte da sola.")
+        scadenza = time.time() + self.cfg.attesa_striscia_s
+        while time.time() < scadenza:
+            if self.emergenza:
+                raise Emergenza("STOP EMERGENZA")
+            if self._stop.is_set() or self._fine_rullo.is_set():
+                self.log("Rullo non iniziato: nessuna pellicola inserita.")
+                return False
+            self.progress("Inserire la pellicola (o Fine rullo)", 0.0)
+            if backend.pellicola_sdk():
+                self.log("Pellicola inserita: avvio scansione.")
+                return True
+            time.sleep(0.5)
+        self.log("Nessuna pellicola in %.0f s: rullo non iniziato."
+                 % self.cfg.attesa_striscia_s)
+        return False
+
     # --- posizionamento a mano con il video -------------------------------
 
     AZIONI_POSIZIONAMENTO = ("muovi", "prossimo", "acquisisci", "striscia", "fine")
@@ -367,15 +403,36 @@ class ScanService:
     def video_jpeg(self) -> bytes:
         return self._video
 
+    def diretta_jpeg(self, positivo: bool = True) -> bytes:
+        """L'anteprima in diretta: un'immagine del video della macchina per
+        ogni richiesta della pagina. Niente thread: smette da sola quando la
+        pagina smette di chiedere. Non durante un lavoro, che ha la macchina
+        per se' (nel posizionamento a mano il video c'e' gia')."""
+        if self.job.running:
+            if self.job.posizionamento:
+                return self._video
+            raise ScannerError("c'e' un lavoro in corso: la diretta riprende "
+                               "a lavoro finito")
+        backend = self._require()
+        if not self._lock_diretta.acquire(False):
+            return self._diretta
+        try:
+            self._diretta = self._jpeg_video(backend.anteprima_veloce(),
+                                             inverti=positivo)
+            return self._diretta
+        finally:
+            self._lock_diretta.release()
+
     @staticmethod
-    def _jpeg_video(img: np.ndarray) -> bytes:
-        """Il verde a bassa risoluzione, invertito come un positivo e tirato
-        sui percentili: serve a vedere dov'e' il fotogramma, non il colore."""
+    def _jpeg_video(img: np.ndarray, inverti: bool = True) -> bytes:
+        """Il video a bassa risoluzione, tirato sui percentili e (di serie)
+        invertito come un positivo: serve a vedere dov'e' il fotogramma e
+        com'e', non a giudicare il colore."""
         from PIL import Image
         x = img.astype(np.float32)
         lo, hi = np.percentile(x, (1.0, 99.0))
         x = np.clip((x - lo) / max(hi - lo, 1e-6), 0.0, 1.0)
-        x = (1.0 - x) ** 0.8
+        x = ((1.0 - x) if inverti else x) ** 0.8
         buf = io.BytesIO()
         Image.fromarray((x * 255).astype(np.uint8)).save(buf, "JPEG", quality=75)
         return buf.getvalue()
@@ -1176,6 +1233,15 @@ class ScanService:
             if mancanti:
                 self.log("Canali non disponibili su questa macchina, saltati: %s"
                          % ", ".join(mancanti))
+
+            # Scansiona rullo fa anche Carica: guide al formato, carrello
+            # pronto, e si parte da soli appena il carrello sente la
+            # pellicola. Gia' dentro (Carica a mano, poi la striscia): si
+            # parte subito. None = l'agente non lo sa dire: come prima.
+            if (hasattr(backend, "pellicola_sdk")
+                    and backend.pellicola_sdk() is False):
+                if not self._attendi_pellicola(backend, rullo.formato):
+                    return
 
             if self.cfg.auto_start:
                 s = backend.read_sensors()
