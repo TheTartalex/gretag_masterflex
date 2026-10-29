@@ -104,7 +104,7 @@ perdita; sulla stampa in drylab può piacere.
 | Scene difficili | tungsteno, neon, controluce, flash, velo | niente | tungsteno e velo: sì, con un rilevamento moderno |
 | Contrasto locale | LDC + Retinex (2001) | chiarezza (manuale) | sì, ma con un metodo d'oggi (filtro guidato) e automatico |
 | Occhi rossi, volti | `IIT_ImgEnh`, `IIT_FeatureA` | niente | no: per la scansione non servono, e gli algoritmi del 2002 sono superati |
-| Digital ICE | `DMLDICELib.dll` di Kodak, con licenza | ASF dell'SDK + nostra pulizia IR | no: la licenza è legata alla macchina |
+| Digital ICE | `DMLDICELib.dll` (Applied Science Fiction, 1999), chiamata dall'SDK in `process_negative_asf` / `process_reversal_asf` | `gi_set_asf_mode` (probabilmente senza effetto con `scan_raw`) + nostra pulizia IR | **sì** (vedi §6): è ancora un riferimento, e la libreria non ha controlli di licenza (quello sta in PhxScanner) |
 
 ## 4. Le migliorie da EyeTech, in versione 2026
 
@@ -145,3 +145,33 @@ Non si copia EyeTech: si prendono le idee che reggono, con i mezzi di oggi.
   `scan_raw`.
 - **`ERR_FILM_ORIENTATION`**: quando arriva (inserimento, carica,
   fotogramma successivo) e se vale anche per il 135 o solo per l'APS.
+
+## 6. Digital ICE
+
+*Correzione del 29/10: nella prima stesura era scartato per una "licenza
+legata alla macchina". Non è così.*
+
+- `DMLDICELib.dll` (Applied Science Fiction, "Digital ICE Library (DML
+  version)", 1999) esporta cinque funzioni C: `DICEVersion`,
+  `DMLDICEBegin(DWORD, DICEInfoStaticTag)`, `DMLDICEProcess(void*,
+  DICEInfoDynamicTag)`, `DMLDICEDefectCount(void*, DICEInfoDynamicTag,
+  DWORD*, DWORD*)`, `DMLDICEEnd(void*)`. Importa solo KERNEL32: nessun
+  controllo di licenza nella libreria. Il controllo ("Error getting DICE
+  license", "LICENSE FILE ...") è in `PhxScanner.exe`, cioè l'opzione del
+  minilab: va usato solo se questa macchina l'aveva.
+- L'SDK la chiama da `ImgProc.cpp`: `DMLDICEBegin(101, statica)` in
+  `0x1803B6D0`, con la struttura statica di 8 DWORD = 32, 2, 1, 14, 2, 0, 0,
+  0 (14 = bit per campione, con ogni probabilità); `DMLDICEProcess` in
+  `0x1803E0F0` (`process_negative_asf`) e `0x1803EA00`
+  (`process_reversal_asf`), con la struttura dinamica di 12 DWORD che
+  contiene almeno IsOverscan e la zona utile (TopLeft/BottomRight, scritti
+  nel log dell'SDK); `DMLDICEDefectCount` in `0x1803F260` (difetti, pixel,
+  percentuale).
+- Si attiva con `gi_set_asf_mode` e un buffer `SetASFImageBufferPtr`, nel
+  percorso `capture`: con `scan_raw`, che usiamo noi, quasi certamente non
+  parte.
+
+Strada: verificare l'IR sulla macchina; finire la struttura dinamica
+(ordine dei campi, formato dei piani); comando `ice` nell'agente che la
+chiama sui piani R, G, B, IR calibrati; la nostra pulizia IR resta come
+ripiego.
