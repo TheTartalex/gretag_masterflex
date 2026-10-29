@@ -35,6 +35,7 @@ import argparse
 import datetime
 import json
 import os
+import shutil
 import sys
 import time
 import traceback
@@ -456,9 +457,62 @@ def cmd_passi(a):
 
 # --------------------------------------------------------------------------
 
+def cmd_sdk(a):
+    """Le sonde dell'SDK, una volta, con una striscia di prova (meglio un
+    negativo con un po' di polvere): codice DX, percorso "capture" del
+    programma originale con e senza Digital ICE, Digital ICE chiamato
+    direttamente. Muovono la pellicola come una scansione dell'originale:
+    agente a motori attivi.
+
+    Servono a chiudere i formati che dal disassemblato non si leggono con
+    certezza (FrameInfo, buffer ASF/ICE, posizione del DX): i file finiscono
+    nel rapporto, da mandare."""
+    r = Rapporto("sdk")
+    r("SONDE DELL'SDK - %s" % datetime.datetime.now())
+    b = collega(a.ponte, a.risoluzione, True, r)
+    print("")
+    print("Nel carrello serve una striscia di negativo (meglio con un po' di")
+    print("polvere), caricata con Carica come per una scansione.")
+    chiedi("Invio quando e' pronta: ")
+    prove = [("codice DX", "dx", 15.0),
+             ("capture senza ICE", "sonda_capture_%d_0" % a.risoluzione, 120.0),
+             ("capture con ICE (ASF)", "sonda_capture_%d_1" % a.risoluzione, 120.0),
+             ("Digital ICE diretto", "sonda_ice_%d" % a.risoluzione, 180.0)]
+    r.dati["sonde"] = {}
+    for nome, comando, attesa in prove:
+        r("")
+        r("== %s (%s)" % (nome, comando))
+        t0 = time.time()
+        try:
+            risposta = b._send(comando, attesa=attesa)
+            try:
+                dati = json.loads(risposta)
+            except ValueError:
+                dati = risposta
+            r.dati["sonde"][comando] = dati
+            r("  fatto in %.1f s" % (time.time() - t0))
+            r("  " + json.dumps(dati)[:1500])
+        except ScannerError as exc:
+            r.avviso("%s non riuscita: %s" % (nome, exc))
+    # i file delle sonde, dalla cartella del ponte al rapporto
+    sorgente = os.path.join(a.ponte, "raw")
+    copiati = 0
+    for nome in sorted(os.listdir(sorgente)) if os.path.isdir(sorgente) else []:
+        if nome.startswith("sonda_"):
+            try:
+                shutil.copy2(os.path.join(sorgente, nome), os.path.join(r.cartella, nome))
+                copiati += 1
+            except (IOError, OSError) as exc:
+                r.avviso("%s non copiato: %s" % (nome, exc))
+    r("")
+    r("%d file delle sonde nel rapporto. Mandare tutta la cartella." % copiati)
+    r.chiudi()
+    return 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Collaudi dello scanner vero")
-    ap.add_argument("prova", choices=("colori", "sensori", "passi"))
+    ap.add_argument("prova", choices=("colori", "sensori", "passi", "sdk"))
     ap.add_argument("--ponte", default=PONTE)
     ap.add_argument("--risoluzione", type=int, default=None, choices=range(5),
                     help="ImageResolution dell'SDK (0 = 2100x1400)")
@@ -473,10 +527,10 @@ def main(argv=None):
     if a.ir and "IR" not in a.canali:
         a.canali += ",IR"
     if a.risoluzione is None:
-        a.risoluzione = 0 if a.prova == "colori" else 1
+        a.risoluzione = 0 if a.prova in ("colori", "sdk") else 1
     try:
         return {"colori": cmd_colori, "sensori": cmd_sensori,
-                "passi": cmd_passi}[a.prova](a)
+                "passi": cmd_passi, "sdk": cmd_sdk}[a.prova](a)
     except Exception as exc:
         if isinstance(exc, ScannerError):
             testo = "ERRORE: %s" % exc

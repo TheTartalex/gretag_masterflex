@@ -94,7 +94,9 @@ CANALI = {"R": 0, "G": 1, "B": 2, "IR": 3}
 # Comandi che muovono la meccanica. "fuoco" muove la lente.
 MOVIMENTI = ("formato", "carica", "alimenta", "avanza", "prossimo", "precedente",
              "espelli", "espelli_retro", "regola", "fuoco", "azzera",
-             "pressore", "calibrasdk")
+             "pressore", "calibrasdk",
+             # il percorso capture dell'SDK puo' muovere la pellicola da solo
+             "sonda")
 
 MAX_PASSI = 300               # 3 mm: oltre non e' piu' una regolazione fine
 MAX_ALIMENTAZIONE = 15.0      # secondi di trascinamento acceso senza comandi
@@ -270,6 +272,16 @@ class AgenteSimulato(object):
         return dati, w, h, w * h
 
     def finestra_gretag(self, numero, mostra=True): pass
+
+    def codice_dx(self):
+        # una Kodak Gold 200 qualunque: serve a provare la memoria per pellicola
+        return {"dx1": 115, "dx2": 3, "dx": (115 << 4) + 3, "simulato": True}
+
+    def sonda_capture(self, risoluzione, asf, cartella, attesa=60.0):
+        return {"simulato": True, "risoluzione": risoluzione, "asf": bool(asf)}
+
+    def sonda_ice(self, piani, larghezza, altezza, cartella):
+        return {"simulato": True, "larghezza": larghezza, "altezza": altezza}
 
     def modo_asf(self, acceso): pass
     def espelli(self): self.pellicola_inserita = False
@@ -700,6 +712,25 @@ class Agente(object):
             nome = "parameter_flash_%d.bin" % int(time.time())
             self.s.salva_parametri_flash(os.path.join(self.condivisa, "raw", nome))
             return nome
+
+        if comando == "dx":
+            return json.dumps(self.s.codice_dx())
+
+        if testa == "sonda" and len(parti) >= 3:
+            # sonda_capture_<ris>_<0|1> | sonda_ice_<ris>: una volta, per
+            # imparare i formati del percorso capture e del Digital ICE
+            cartella = os.path.join(self.condivisa, "raw")
+            if parti[1] == "capture":
+                asf = len(parti) > 3 and parti[3] == "1"
+                return json.dumps(self.s.sonda_capture(int(parti[2]), asf, cartella))
+            if parti[1] == "ice":
+                ris = int(parti[2])
+                piani, w, h = [], 0, 0
+                for k in range(4):
+                    dati, w, h = self.s.scansiona_canale(k, 1.0, ris)
+                    piani.append(dati)
+                return json.dumps(self.s.sonda_ice(piani, w, h, cartella))
+            raise ValueError("sonda sconosciuta: %s" % comando)
 
         if testa == "grabm":
             # grabm_<risoluzione>_<eR>_<eG>_<eB>[_<eIR>]

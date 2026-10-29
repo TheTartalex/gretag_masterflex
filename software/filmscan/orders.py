@@ -128,6 +128,8 @@ class Rullo:
     scansionati: int = 0
     # Digital ICE: pulizia a infrarosso, scelta rullo per rullo
     ice: bool = False
+    # il codice DX letto dalla macchina ("DX 115-3"), vuoto se non letto
+    dx: str = ""
 
 
 # --------------------------------------------------------------------------
@@ -152,6 +154,7 @@ class Archivio:
             # con il valore di serie, senza toccare il resto.
             for tabella, colonna, tipo in (
                     ("rulli", "ice", "INTEGER NOT NULL DEFAULT 0"),
+                    ("rulli", "dx", "TEXT DEFAULT ''"),
                     ("fotogrammi", "numero_bordo", "TEXT DEFAULT ''"),
                     # 1 = da stampare, -1 = scartato, 0 = niente
                     ("fotogrammi", "voto", "INTEGER NOT NULL DEFAULT 0"),
@@ -371,6 +374,7 @@ class Archivio:
             d["specchiato"] = bool(d["specchiato"])
             d["conf_specchio"] = bool(d["conf_specchio"])
             d["ice"] = bool(d.get("ice", 0))
+            d["dx"] = d.get("dx") or ""
             out.append(Rullo(**d))
         return out
 
@@ -386,6 +390,7 @@ class Archivio:
         d["specchiato"] = bool(d["specchiato"])
         d["conf_specchio"] = bool(d["conf_specchio"])
         d["ice"] = bool(d.get("ice", 0))
+        d["dx"] = d.get("dx") or ""
         return Rullo(**d)
 
     def rullo_specchiatura(self, rullo_id: int, specchiato: bool,
@@ -398,6 +403,10 @@ class Archivio:
         with self._conn() as c:
             c.execute("UPDATE rulli SET specchiato = ?, conf_specchio = ? WHERE id = ?",
                       (1 if specchiato else 0, 1 if confermata else 0, rullo_id))
+
+    def rullo_dx(self, rullo_id: int, dx: str) -> None:
+        with self._conn() as c:
+            c.execute("UPDATE rulli SET dx = ? WHERE id = ?", (dx or "", rullo_id))
 
     def rullo_stato(self, rullo_id: int, stato: str) -> None:
         if stato not in STATI_RULLO:

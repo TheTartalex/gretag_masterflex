@@ -102,6 +102,16 @@ class ProcessOptions:
     # l'export TIFF o DNG): costa ~35 MB, quindi solo quando serve.
     negativo_lineare: bool = False
 
+    # --- dal rullo (rullo.py), riempiti dal servizio fotogramma per
+    # fotogramma; None/"" = come prima, tutto dal singolo fotogramma ---
+    base_rullo: Optional[tuple] = None          # trasmittanza della base
+    correzione_densita: Optional[tuple] = None  # D da togliere per canale
+    classe_esposizione: str = ""                # sottoesposto, sovraesposto...
+    avvisi_rullo: List[str] = field(default_factory=list)
+
+    # correzione di densita' locale (0 = spenta): schiarisce e scurisce per zone
+    densita_locale: float = 0.0
+
 
 @dataclass
 class ProcessResult:
@@ -166,6 +176,51 @@ def _riduci_per_schermo(img: Optional[np.ndarray],
     return (np.clip(img[::passo, ::passo], 0, 1) * 255).astype(np.uint8)
 
 
+def _correzione(opts: ProcessOptions):
+    """La correzione di densita' del rullo, dosata dal cursore del
+    bilanciamento automatico (0 = niente)."""
+    if opts.correzione_densita is None or opts.auto_wb <= 0:
+        return None
+    return tuple(float(x) * float(opts.auto_wb) for x in opts.correzione_densita)
+
+
+def _bilancia(img: np.ndarray, opts: ProcessOptions, rapida: bool = False) -> np.ndarray:
+    """Bilanciamento, livelli, curva e ritocco della classe di esposizione.
+    Con l'equilibrio del rullo il bilanciamento per fotogramma non si fa: il
+    colore e' gia' stato messo a posto in densita', e rifarlo sul singolo
+    fotogramma riporterebbe proprio l'errore che il rullo evita."""
+    if opts.correzione_densita is None and opts.auto_wb > 0:
+        img = invert.auto_white_balance(img, opts.auto_wb)
+    if opts.auto_levels:
+        nero = 0.5 if opts.classe_esposizione == "velato" else 0.1
+        img = invert.auto_levels(img, black_pct=nero)
+    if opts.curve:
+        img = invert.apply_curve(img, opts.curve)
+    return _ritocco_classe(img, opts.classe_esposizione, rapida)
+
+
+def _ritocco_classe(img: np.ndarray, classe: str, rapida: bool = False) -> np.ndarray:
+    """Il ritocco di partenza per i negativi fuori esposizione, come i set
+    "Film Scanner underexposed/overexposed" del programma originale.
+
+    - sottoesposto (negativo chiaro): le ombre sono povere e rumorose; piu'
+      contrasto nei toni bassi e meno rumore di colore;
+    - sovraesposto (negativo denso): le alte luci si schiacciano; spalla
+      morbida sopra il 72%.
+    """
+    if classe == "sottoesposto":
+        img = np.clip(img, 0.0, 1.0) ** 1.12
+        if not rapida:
+            img, _ = enh.enhance(img, grain_reduction=0.35, chroma_only=True)
+        return img.astype(np.float32)
+    if classe == "sovraesposto":
+        k = 0.72
+        x = np.clip(img, 0.0, 1.0)
+        spalla = k + (1.0 - k) * np.tanh((x - k) / (1.0 - k) * 1.3) / np.tanh(1.3)
+        return np.where(x > k, spalla, x).astype(np.float32)
+    return img
+
+
 def finiture(base: np.ndarray, opts: ProcessOptions):
     """Dalla base al fotogramma finito: i controlli dell'operatore e l'sRGB.
 
@@ -178,6 +233,8 @@ def finiture(base: np.ndarray, opts: ProcessOptions):
     l'immagine a un punto di partenza ragionevole, la mano di chi guarda decide
     da li' in poi. Il contrario vanificherebbe il lavoro fatto.
     """
+    if opts.densita_locale > 0:
+        base = enh.densita_locale(base, opts.densita_locale)
     img = colore.applica(base, opts)
 
     if abs(opts.saturation - 1.0) > 1e-3:
@@ -247,6 +304,7 @@ def process(raw: RawScan, opts: ProcessOptions,
     # confronto prima/dopo mostrasse due inquadrature diverse ingannerebbe
     # invece di aiutare, ed e' esattamente cio' che serve NON fare.
     negativo = _negativo_rgb(planes)
+    warnings.extend(opts.avvisi_rullo or [])
     lineare = None
     if opts.negativo_lineare:
         canali = [c for c in ("R", "G", "B") if c in planes] or [riferimento_lin(planes)]
@@ -256,16 +314,12 @@ def process(raw: RawScan, opts: ProcessOptions,
                            axis=-1).astype(np.float32)
         if opts.roll_mirror is not None and opts.roll_mirror.flip_h:
             lineare = lineare[:, ::-1]
-    img = invert.invert_negative(planes, opts.profile)
+    img = invert.invert_negative(planes, opts.profile, dmin=opts.base_rullo,
+                                 correzione_densita=_correzione(opts))
 
     # --- 6. colore ---
     _tick(progress, "Bilanciamento colore", 0.60)
-    if opts.auto_wb > 0:
-        img = invert.auto_white_balance(img, opts.auto_wb)
-    if opts.auto_levels:
-        img = invert.auto_levels(img)
-    if opts.curve:
-        img = invert.apply_curve(img, opts.curve)
+    img = _bilancia(img, opts)
 
     # --- 7. inpainting ---
     if mask is not None and mask.any() and opts.ir_strength > 0:
@@ -381,13 +435,9 @@ def anteprima_rapida(raw: RawScan, opts: ProcessOptions, lato: int = 700):
                        if len(ridotti) > 1 else ridotti[0])
 
     negativo = _negativo_rgb(piccoli)
-    img = invert.invert_negative(piccoli, opts.profile)
-    if opts.auto_wb > 0:
-        img = invert.auto_white_balance(img, opts.auto_wb)
-    if opts.auto_levels:
-        img = invert.auto_levels(img)
-    if opts.curve:
-        img = invert.apply_curve(img, opts.curve)
+    img = invert.invert_negative(piccoli, opts.profile, dmin=opts.base_rullo,
+                                 correzione_densita=_correzione(opts))
+    img = _bilancia(img, opts, rapida=True)
     if opts.roll_mirror is not None and opts.roll_mirror.flip_h:
         img = img[:, ::-1]
         if negativo is not None:

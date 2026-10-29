@@ -410,6 +410,9 @@ METODI = [
     # gi_set_asf_mode(bool): comando 0x25 alla testa. ASF = Applied Science
     # Fiction, cioe' Digital ICE
     ("modo_asf", "?gi_set_asf_mode@DMLScanner@@QAEPAVErrStat@1@_N@Z", VP, [B]),
+    # percorso "capture" del programma originale (sonde, vedi sonda_capture)
+    ("importa_immagine", "?import_image@DMLScanner@@QAEPAVErrStat@1@PAPAVFrameInfo@1@@Z", VP, [VP]),
+    ("buffer_asf", "?SetASFImageBufferPtr@DMLScannerAdv@@QAEXPAG@Z", None, [VP]),
 
     # --- diagnostica e memoria macchina ---
     ("leggi_ingresso", "?diag_input@DMLScannerAdv@@QAE_NHPA_NPAVScanCallback@@@Z", B, [I, VP, VP]),
@@ -479,11 +482,11 @@ class Scanner(object):
             except ErroreScanner:
                 self._mancanti.append(etichetta)
         for etichetta, nome, restype, argtypes in STATICHE:
+            # sono __cdecl ("SA" nel nome decorato): prese da un WinDLL
+            # sarebbero chiamate come stdcall e la pila resterebbe storta
             try:
-                f = self._dll[nome]
-                f.restype = restype
-                f.argtypes = argtypes
-                self._m[etichetta] = f
+                indirizzo = ctypes.cast(self._dll[nome], ctypes.c_void_p).value
+                self._m[etichetta] = ctypes.CFUNCTYPE(restype, *argtypes)(indirizzo)
             except Exception:
                 self._mancanti.append(etichetta)
 
@@ -1019,6 +1022,196 @@ class Scanner(object):
                      a, b, c, d, risoluzione, 0)
         self._verifica(err, "scansione canale %s" % canale)
         return bytes(memoryview(buffer_img).cast("B")[:w * h * piani * 2]), w, h
+
+    # -- memoria letta con prudenza (sonde) --------------------------------
+
+    @staticmethod
+    def _leggibile(indirizzo, n):
+        """True se n byte da 'indirizzo' si possono leggere senza far
+        cadere il processo (IsBadReadPtr). Le sonde leggono strutture di cui
+        non sappiamo ancora tutto: meglio un 'non leggibile' che un crash."""
+        if not indirizzo or _kernel32 is None:
+            return False
+        try:
+            return not _kernel32.IsBadReadPtr(ctypes.c_void_p(indirizzo), ctypes.c_size_t(n))
+        except Exception:
+            return False
+
+    def _esadecimale(self, indirizzo, n):
+        if not self._leggibile(indirizzo, n):
+            return None
+        return ctypes.string_at(indirizzo, n).hex()
+
+    def codice_dx(self):
+        """Il codice DX dalla MediaInfo dell'SDK. Da PhxScanner (0x42F117):
+        MediaInfo +0x10 punta a un blocco dove, per il 135, i byte +4 e +5
+        sono i due numeri DX; per l'APS a +0xC c'e' il numero di pose
+        (0x449944). L'oggetto non si libera: e' piccolo, uno per rullo, e il
+        suo distruttore virtuale e' meglio non chiamarlo alla cieca."""
+        p = ctypes.c_void_p()
+        self._verifica(self._m["info_supporto"](self._obj, ctypes.byref(p)),
+                       "codice DX (get_media_info)")
+        fuori = {"media_info": self._esadecimale(p.value, 64)}
+        if not self._leggibile(p.value, 0x14):
+            return fuori
+        tipo = ctypes.c_uint32.from_address(p.value + 0x0C).value
+        blocco = ctypes.c_uint32.from_address(p.value + 0x10).value
+        fuori["tipo"] = tipo
+        fuori["blocco"] = self._esadecimale(blocco, 32)
+        if self._leggibile(blocco, 8):
+            dx1 = ctypes.c_uint8.from_address(blocco + 4).value
+            dx2 = ctypes.c_uint8.from_address(blocco + 5).value
+            fuori["dx1"], fuori["dx2"] = dx1, dx2
+            # il valore che il programma originale scrive nel registro
+            fuori["dx"] = (dx1 << 4) + dx2
+        return fuori
+
+    def sonda_capture(self, risoluzione, asf, cartella, attesa=60.0, buffer_n=2):
+        """Una volta il percorso "capture" del programma originale, per
+        imparare dalla macchina i formati che dal disassemblato non si
+        leggono con certezza: buffer, FrameInfo, ASF (Digital ICE).
+
+        Come PhxScanner (0x446c89, 0x448301, 0x447290):
+        get_image_buffer_size -> add_image_buffer -> [ASF] -> capture ->
+        import_image in ciclo. Tutto quello che torna si salva in 'cartella'.
+        Non si usa per scansionare: e' una sonda."""
+        import json as _json
+        esito = {"risoluzione": risoluzione, "asf": bool(asf), "eventi": []}
+        dim = int(self._m["dimensione_buffer"](int(risoluzione), bool(asf)))
+        esito["dimensione_buffer"] = dim
+        if dim <= 0 or dim > 200 * 1024 * 1024:
+            esito["errore"] = "dimensione del buffer non valida"
+            return esito
+        buffers = [ctypes.create_string_buffer(dim + 65536) for _ in range(buffer_n)]
+        indirizzi = [ctypes.cast(b, ctypes.c_void_p).value for b in buffers]
+        esito["buffer"] = [hex(a) for a in indirizzi]
+        for b in buffers:
+            self._m["aggiungi_buffer"](self._obj, int(risoluzione),
+                                       ctypes.cast(b, ctypes.POINTER(ctypes.c_uint16)))
+        buf_asf = None
+        try:
+            if asf:
+                buf_asf = ctypes.create_string_buffer(dim * 2 + 65536)
+                self._m["buffer_asf"](self._obj, ctypes.cast(buf_asf, ctypes.c_void_p).value)
+                self._verifica(self._m["modo_asf"](self._obj, True), "modo ASF")
+            t0 = time.time()
+            err = self._m["acquisisci"](self._obj, False, int(risoluzione), bool(asf))
+            esito["capture"] = self._leggi_errori(err) if err else []
+            fotogrammi = []
+            while time.time() - t0 < attesa and len(fotogrammi) < 2:
+                fi = ctypes.c_void_p()
+                err = self._m["importa_immagine"](self._obj, ctypes.byref(fi))
+                codici = self._leggi_errori(err) if err else []
+                if codici:
+                    esito["eventi"].append([round(time.time() - t0, 2), codici])
+                if fi.value:
+                    dump = self._esadecimale(fi.value, 512)
+                    voce = {"t": round(time.time() - t0, 2), "frame_info": dump,
+                            "punta_a_buffer": []}
+                    if dump:
+                        dati = bytes.fromhex(dump)
+                        for k in range(0, 512 - 3, 4):
+                            v = int.from_bytes(dati[k:k + 4], "little")
+                            for j, a in enumerate(indirizzi):
+                                if a <= v < a + dim:
+                                    voce["punta_a_buffer"].append([k, j, v - a])
+                    fotogrammi.append(voce)
+                if any(c[0] in (32, 33, 204, 205) for c in codici if c and c[0] is not None):
+                    break
+                time.sleep(0.2)
+            esito["fotogrammi"] = fotogrammi
+            esito["secondi"] = round(time.time() - t0, 2)
+        finally:
+            for j, b in enumerate(buffers):
+                nome = os.path.join(cartella, "sonda_capture_%s_buffer%d.raw"
+                                    % ("asf" if asf else "base", j))
+                with open(nome, "wb") as f:
+                    f.write(b.raw[:dim])
+            if buf_asf is not None:
+                with open(os.path.join(cartella, "sonda_capture_asf_bufferASF.raw"), "wb") as f:
+                    f.write(buf_asf.raw[:dim * 2])
+                try:
+                    self._m["modo_asf"](self._obj, False)
+                except Exception:
+                    pass
+            try:
+                n = ctypes.c_uint(0)
+                self._m["togli_buffer"](self._obj, ctypes.byref(n))
+            except Exception:
+                pass
+            with open(os.path.join(cartella, "sonda_capture_%s.json"
+                                   % ("asf" if asf else "base")), "w") as f:
+                _json.dump(esito, f, indent=1)
+        return esito
+
+    def sonda_ice(self, piani, larghezza, altezza, cartella):
+        """Digital ICE chiamato direttamente (DMLDICELib.dll), sui piani R,
+        G, B, IR (bytes uint16, uno per canale) di una lettura nostra.
+
+        Strutture ricavate dall'SDK (ImgProc.cpp): DMLDICEBegin(101, statica
+        di 8 DWORD = 32, 2, 1, 14, 2, 0, 0, 0) a 0x1803B6D0; DMLDICEProcess
+        (handle, dinamica di 12 DWORD = 48, buffer, larghezza, altezza, 0, 1,
+        IsOverscan, TopLeft X/Y, BottomRight X/Y, 0) a 0x1803E3A5. Il formato
+        del buffer non e' certo: si provano piani separati e pixel
+        intercalati RGBI, a 14 bit, e si guarda quale da' un risultato
+        sensato (difetti trovati, immagine cambiata solo dove serve)."""
+        import json as _json
+        import numpy as _np
+        cartella_bin = os.path.dirname(self._dll._name) if hasattr(self._dll, "_name") else ""
+        lib = ctypes.CDLL(os.path.join(cartella_bin, "DMLDICELib.dll"))
+
+        class Statica(ctypes.Structure):
+            _fields_ = [("v", ctypes.c_uint32 * 8)]
+
+        class Dinamica(ctypes.Structure):
+            _fields_ = [("v", ctypes.c_uint32 * 12)]
+
+        begin = lib["?DMLDICEBegin@@YAPAXKUDICEInfoStaticTag@@@Z"]
+        begin.restype, begin.argtypes = ctypes.c_void_p, [ctypes.c_uint32, Statica]
+        process = lib["?DMLDICEProcess@@YAJPAXUDICEInfoDynamicTag@@@Z"]
+        process.restype, process.argtypes = ctypes.c_long, [ctypes.c_void_p, Dinamica]
+        conta = lib["?DMLDICEDefectCount@@YAJPAXUDICEInfoDynamicTag@@PAK2@Z"]
+        conta.restype = ctypes.c_long
+        conta.argtypes = [ctypes.c_void_p, Dinamica, ctypes.POINTER(ctypes.c_uint32),
+                          ctypes.POINTER(ctypes.c_uint32)]
+        fine = lib["?DMLDICEEnd@@YAJPAX@Z"]
+        fine.restype, fine.argtypes = ctypes.c_long, [ctypes.c_void_p]
+        versione = lib["?DICEVersion@@YAJXZ"]
+        versione.restype = ctypes.c_long
+
+        w, h = int(larghezza), int(altezza)
+        p = [(_np.frombuffer(x, "<u2")[:w * h].reshape(h, w) >> 2).astype(_np.uint16)
+             for x in piani]
+        esito = {"versione": int(versione()), "larghezza": w, "altezza": h, "prove": []}
+        for nome, dati in (("piani", _np.stack(p, 0)), ("pixel", _np.stack(p, -1))):
+            orig = _np.ascontiguousarray(dati)
+            buf = (ctypes.c_uint16 * (orig.size * 2))()          # margine doppio
+            ctypes.memmove(buf, orig.ctypes.data, orig.nbytes)
+            st = Statica()
+            for k, v in enumerate((32, 2, 1, 14, 2, 0, 0, 0)):
+                st.v[k] = v
+            din = Dinamica()
+            for k, v in enumerate((48, ctypes.addressof(buf), w, h, 0, 1, 0, 0, 0, w, h, 0)):
+                din.v[k] = v
+            voce = {"disposizione": nome}
+            handle = begin(101, st)
+            voce["begin"] = bool(handle)
+            if handle:
+                voce["process"] = int(process(handle, din))
+                d, n = ctypes.c_uint32(0), ctypes.c_uint32(0)
+                voce["defect_count"] = int(conta(handle, din, ctypes.byref(d), ctypes.byref(n)))
+                voce["difetti"], voce["pixel"] = int(d.value), int(n.value)
+                voce["end"] = int(fine(handle))
+                dopo = _np.frombuffer(buf, _np.uint16)[:orig.size].reshape(orig.shape)
+                diff = _np.abs(dopo.astype(_np.int32) - orig.astype(_np.int32))
+                voce["cambiati_pct"] = round(float((diff > 0).mean() * 100), 3)
+                voce["diff_media"] = round(float(diff.mean()), 3)
+                with open(os.path.join(cartella, "sonda_ice_%s.raw" % nome), "wb") as f:
+                    f.write(dopo.tobytes())
+            esito["prove"].append(voce)
+        with open(os.path.join(cartella, "sonda_ice.json"), "w") as f:
+            _json.dump(esito, f, indent=1)
+        return esito
 
     def salva_parametri_flash(self, percorso):
         """Copia il Parameter Flash della macchina in un file.

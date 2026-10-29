@@ -133,6 +133,19 @@ Non si copia EyeTech: si prendono le idee che reggono, con i mezzi di oggi.
    con filtro guidato (niente aloni, che erano il difetto dei Retinex del
    2001), forza regolabile e spenta di serie.
 
+### Stato al 29/10/2026
+
+Fatti tutti e cinque (`filmscan/rullo.py`, `pipeline.py`, `enhance.py`):
+equilibrio di rullo con esclusione dei fotogrammi anomali; memoria per
+pellicola col DX (`pellicole.json`); classi sottoesposto, sovraesposto,
+velato e piatto, con ritocchi dedicati e avvisi; tungsteno riconosciuto e
+corretto all'80%, velo di base rispetto alla memoria della pellicola;
+densita' locale col filtro guidato (cursore in Ritocco, spenta di serie).
+
+Lavorandoci e' venuto fuori un errore di fondo, ereditato dal codice di
+partenza: `invert_negative` non invertiva (vedi `software/CLAUDE.md`).
+Corretto insieme al simulatore.
+
 ## 5. Da verificare sulla macchina
 
 - **Codice DX**: `get_media_info` (già legata in `ponte/sdk.py` come
@@ -170,6 +183,13 @@ legata alla macchina". Non è così.*
 - Si attiva con `gi_set_asf_mode` e un buffer `SetASFImageBufferPtr`, nel
   percorso `capture`: con `scan_raw`, che usiamo noi, quasi certamente non
   parte.
+
+Dal 29/10/2026 ci sono le **sonde** (collaudo dello scanner, voce 6):
+`dx`, `sonda_capture_<ris>_<0|1>` (percorso capture con e senza ASF,
+salva FrameInfo e buffer), `sonda_ice_<ris>` (DMLDICELib diretto su R, G,
+B, IR letti da noi, con piani separati e pixel intercalati). Con i loro
+file si chiudono i formati e si sceglie la strada: ICE dentro il percorso
+capture dell'SDK, o chiamato da noi sui nostri piani.
 
 Strada: verificare l'IR sulla macchina; finire la struttura dinamica
 (ordine dei campi, formato dei piani); comando `ice` nell'agente che la

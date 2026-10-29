@@ -202,6 +202,8 @@ echo       sull'immagine (muove il trasporto)
 echo    4  Prova guidata dei motori, con l'agente in questa finestra
 echo    5  Strumenti originali del carrello ^(COM5^): selftest di servizio,
 echo       SensorTest, Compad ^(guide, flag, versione^)
+echo    6  Sonde dell'SDK: codice DX, acquisizione "capture" con e senza
+echo       Digital ICE, Digital ICE diretto ^(muove la pellicola^)
 echo    0  Indietro
 echo.
 set "C="
@@ -221,6 +223,7 @@ set "CS="
 if "%C%"=="1" set "CS=colori"
 if "%C%"=="2" set "CS=sensori"
 if "%C%"=="3" set "CS=passi"
+if "%C%"=="6" set "CS=sdk"
 if not defined CS exit /b 0
 set "DOVE=%PONTE%"
 set "AG="

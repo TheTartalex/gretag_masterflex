@@ -222,6 +222,11 @@ class ScannerBackend(abc.ABC):
     def finestra_carrello(self, numero: int, mostra: bool) -> None:
         raise ScannerError("questo collegamento non ha le finestre del carrello")
 
+    def codice_dx(self) -> Optional[Dict[str, object]]:
+        """Il codice DX della pellicola nel carrello ({"dx1", "dx2", ...}),
+        se la macchina lo sa leggere. None se non si sa."""
+        return None
+
     def numero_bordo(self) -> Optional[str]:
         """Il numero stampato sul bordo del fotogramma in finestra, se la
         macchina lo sa leggere. Mai bloccante: None se non si sa."""
@@ -414,12 +419,14 @@ class MockBackend(ScannerBackend):
         row0 = int(round(self._pos / 25.4 * self.dpi))
         scene = self._scene_block(row0, lines, self._offsets[channel])
 
-        # densita' del negativo: immagine invertita + maschera arancione per canale
+        # densita' del negativo: base arancione + coloranti, PIU' densi dove la
+        # scena era PIU' chiara (come un negativo vero: fino al 29/10/2026 era
+        # il contrario, e copriva un'inversione sbagliata in invert.py)
         base = {"R": 0.16, "G": 0.42, "B": 0.72, "IR": 0.04}[channel]
         # l'IR non e' del tutto cieco all'immagine: un residuo di densita' dei
         # coloranti passa sempre, ed e' cio' che rende possibile allinearlo
         gamma = {"R": 0.60, "G": 0.62, "B": 0.65, "IR": 0.03}[channel]
-        density = base + gamma * (1.0 - scene)
+        density = base + gamma * scene
 
         transmit = 10.0 ** (-density)
 
@@ -881,6 +888,20 @@ class PonteSdkBackend(ScannerBackend):
         # righe (il bordo del fotogramma) erano un pessimo campione per dire
         # se c'e' ancora pellicola.
         return self._leggi(nome)
+
+    def codice_dx(self) -> Optional[Dict[str, object]]:
+        """Il codice DX (get_media_info dell'SDK, comando "dx" dell'agente).
+        La posizione dei numeri nella struttura viene dal disassemblato di
+        PhxScanner (0x42F117) e va confermata sulla macchina: l'agente la
+        legge con prudenza e qui si accetta solo una risposta sensata."""
+        import json
+        try:
+            d = json.loads(self._send("dx", attesa=10.0))
+        except (ScannerError, ValueError):
+            return None
+        if not isinstance(d, dict) or not d.get("dx1"):
+            return None
+        return d
 
     def capture_frame(self, canali: List[str],
                       esposizioni: Dict[str, float]) -> Optional[Dict[str, np.ndarray]]:

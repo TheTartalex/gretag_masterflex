@@ -43,6 +43,7 @@ from .orders import Archivio
 from .orient import RollMirror
 from .pipeline import (ProcessOptions, anteprima_rapida, export, export_mask,
                        export_negativo, finiture, process)
+from .rullo import MemoriaPellicole, StatisticheRullo, chiave_dx
 
 
 @dataclass
@@ -110,6 +111,9 @@ class _ElaborazioneInFondo(object):
         self._in_memoria = 0
         self._cond = threading.Condition()
         self._chiusa = False
+        # la lettura del rullo e' finita: chi aspettava altri fotogrammi per
+        # l'equilibrio del rullo non deve piu' aspettare
+        self.lettura_finita = threading.Event()
         self._thread = threading.Thread(target=self._giro, name="elaborazione",
                                         daemon=True)
         self._thread.start()
@@ -146,6 +150,7 @@ class _ElaborazioneInFondo(object):
         if self._chiusa:
             return
         self._chiusa = True
+        self.lettura_finita.set()
         self._coda.put(None)
         self._thread.join()
 
@@ -1229,6 +1234,61 @@ class ScanService:
 
     # --- esportazione, e rielaborare i fotogrammi gia' scansionati --------
 
+    # --- statistiche di rullo -------------------------------------------
+
+    def _memoria_pellicole(self) -> MemoriaPellicole:
+        cartella = os.path.dirname(os.path.abspath(self.archivio.path))
+        return MemoriaPellicole(os.path.join(cartella, "pellicole.json"))
+
+    def _file_statistiche(self, rullo_id: int) -> str:
+        return os.path.join(self.cfg.path("raw"), "rullo_%d_statistiche.json" % int(rullo_id))
+
+    @staticmethod
+    def _opzioni_fotogramma(opts: ProcessOptions, corr) -> ProcessOptions:
+        """Le opzioni di un fotogramma con base, equilibrio e classe del
+        rullo; senza correzione (pochi dati, fotogramma letto a x1) quelle
+        del rullo, cioe' il bilanciamento del singolo fotogramma."""
+        if not corr:
+            return opts
+        return dataclasses.replace(
+            opts, base_rullo=tuple(corr["base"]),
+            correzione_densita=tuple(corr["densita"]),
+            classe_esposizione=str(corr.get("classe", "")),
+            avvisi_rullo=list(corr.get("avvisi", [])))
+
+    def _chiudi_statistiche(self, rullo_id: int, stat: StatisticheRullo,
+                            chiave: str, memoria: MemoriaPellicole) -> None:
+        """A fine rullo: statistiche salvate (servono a Riapri, Salva e
+        Applica al rullo), memoria della pellicola aggiornata, diario."""
+        try:
+            r = stat.riepilogo()
+            if not r["fotogrammi"]:
+                return
+            dati = {"pellicola": chiave, "riepilogo": r,
+                    "fotogrammi": dict((str(n), stat.correzione(n)) for n in stat.numeri())}
+            percorso = self._file_statistiche(rullo_id)
+            with open(percorso + ".tmp", "w", encoding="utf-8") as f:
+                json.dump(dati, f, indent=1)
+            os.replace(percorso + ".tmp", percorso)
+            memoria.aggiorna(chiave, stat)
+            classi = ", ".join("%s %d" % kv for kv in sorted(r["classi"].items()))
+            self.log("Rullo: %d fotogrammi nell'equilibrio (%s)." % (r["fotogrammi"], classi))
+            velo = stat.velo_di_base()
+            if velo is not None and velo > 0.08:
+                avviso = ("base della pellicola %.2f D piu' densa del solito per %s: "
+                          "pellicola velata o sviluppo diverso" % (velo, chiave))
+                self.job.errors.append(avviso)
+                self.log("Attenzione: " + avviso)
+        except Exception as exc:                        # noqa: BLE001
+            self.log("Statistiche del rullo non salvate: %s" % exc)
+
+    def _correzioni_salvate(self, rullo_id: int) -> Dict[str, object]:
+        try:
+            with open(self._file_statistiche(rullo_id), encoding="utf-8") as f:
+                return json.load(f).get("fotogrammi", {})
+        except (IOError, OSError, ValueError):
+            return {}
+
     def _opzioni_rullo(self, rullo) -> ProcessOptions:
         """Le opzioni di elaborazione per un rullo: quelle correnti (cursori,
         LUT) con profilo, specchiatura e Digital ICE del rullo."""
@@ -1251,6 +1311,8 @@ class ScanService:
             parti.append("bordo %s" % bordo)
         profilo = PROFILES.get(rullo.profilo)
         parti.append("pellicola %s" % (profilo.name if profilo else rullo.profilo))
+        if getattr(rullo, "dx", ""):
+            parti.append(rullo.dx)
         parti.append("scansione Gretag Masterflex D1008")
         return {"descrizione": " - ".join(parti),
                 "dpi": getattr(raw.meta, "dpi", 0) or 0,
@@ -1328,7 +1390,9 @@ class ScanService:
         def job():
             self.progress("Apertura del fotogramma %d" % f["numero"], 0.1)
             raw = RawScan.load(raw_path)
-            opts = self._opzioni_rullo(rullo)
+            opts = self._opzioni_fotogramma(
+                self._opzioni_rullo(rullo),
+                self._correzioni_salvate(rullo.id).get(str(f["numero"])))
             opts.negativo_lineare = False
             res = process(raw, opts, progress=self.progress)
             self.ultimo_raw = raw
@@ -1353,7 +1417,10 @@ class ScanService:
             self.progress("Salvataggio del fotogramma %d" % f["numero"], 0.2)
             raw = RawScan.load(f["file_raw"])
             dest = self.archivio.cartella_ordine(self.cfg.out_dir, ordine.id)
-            res = self._esporta(raw, self._opzioni_rullo(rullo), dest,
+            res = self._esporta(raw, self._opzioni_fotogramma(
+                                    self._opzioni_rullo(rullo),
+                                    self._correzioni_salvate(rullo.id).get(str(f["numero"]))),
+                                dest,
                                 self._nome_file(f, ordine, rullo), rullo.id,
                                 int(f["numero"]), f.get("numero_bordo") or "",
                                 f["file_raw"], (ordine, rullo))
@@ -1381,6 +1448,7 @@ class ScanService:
         def job():
             dest = self.archivio.cartella_ordine(self.cfg.out_dir, ordine.id)
             opts = self._opzioni_rullo(rullo)
+            correzioni = self._correzioni_salvate(rullo.id)
             fotogrammi = [f for f in self.archivio.fotogrammi(rullo.id)
                           if f.get("stato") != "vuoto"]
             fatti, senza = 0, 0
@@ -1398,7 +1466,9 @@ class ScanService:
                     continue
                 try:
                     raw = RawScan.load(raw_path)
-                    self._esporta(raw, opts, dest, self._nome_file(f, ordine, rullo),
+                    self._esporta(raw, self._opzioni_fotogramma(
+                                      opts, correzioni.get(str(f["numero"]))),
+                                  dest, self._nome_file(f, ordine, rullo),
                                   rullo.id, int(f["numero"]),
                                   f.get("numero_bordo") or "", raw_path,
                                   (ordine, rullo))
@@ -1610,6 +1680,29 @@ class ScanService:
             vuoti = 0
             elaborati = {"ok": 0}
 
+            # Statistiche di rullo (rullo.py): base ed equilibrio dei grigi
+            # su tutti i fotogrammi, partendo da quel che si sa della
+            # pellicola (codice DX) se la macchina lo dice.
+            dx = None
+            try:
+                dx = backend.codice_dx()
+            except Emergenza:
+                raise
+            except Exception as exc:                    # noqa: BLE001
+                self.log("Codice DX non letto: %s" % exc)
+            chiave = chiave_dx(dx)
+            if chiave:
+                self.archivio.rullo_dx(rullo_id, chiave)
+                rullo.dx = chiave
+            memoria = self._memoria_pellicole()
+            nota = memoria.per(chiave)
+            stat = StatisticheRullo(nota)
+            self.log("Pellicola: %s%s." % (
+                chiave or "codice DX non letto",
+                (", conosciuta da %d rull%s" % (nota.get("rulli", 1),
+                                                "o" if nota.get("rulli", 1) == 1 else "i"))
+                if nota else ""))
+
             def elabora(compito):
                 """Un fotogramma letto: elaborazione completa, file, registro.
                 Gira nel thread di elaborazione; un errore qui perde il
@@ -1627,7 +1720,16 @@ class ScanService:
                             rullo_id, numero, file_raw=raw_path, stato="vuoto",
                             avvisi=vuoto, numero_bordo=bordo)
                         return
-                    res = self._esporta(raw, opts, dest, nome, rullo_id,
+                    # L'equilibrio del rullo ha bisogno di qualche fotogramma:
+                    # il primo aspetta che ce ne siano 4 (o che la striscia
+                    # sia finita). La lettura intanto va avanti.
+                    scadenza = time.time() + 180.0
+                    while (len(stat) < 4 and not elab.lettura_finita.is_set()
+                           and time.time() < scadenza):
+                        time.sleep(0.2)
+                    res = self._esporta(raw, self._opzioni_fotogramma(
+                                            opts, stat.correzione(numero)),
+                                        dest, nome, rullo_id,
                                         numero, bordo, raw_path,
                                         (ordine, rullo))
                     elaborati["ok"] += 1
@@ -1865,7 +1967,12 @@ class ScanService:
                     # come "in elaborazione"; quella vera (e il salvataggio
                     # del grezzo) la fa il thread di elaborazione, mentre la
                     # macchina passa al successivo.
-                    self._mostra_rapida(raw, opts, (rullo_id, i + 1))
+                    if not opaca:
+                        # letto a x1 perche' opaco: scala diversa dagli altri,
+                        # non entra nelle statistiche del rullo
+                        stat.aggiungi(i + 1, raw)
+                    self._mostra_rapida(raw, self._opzioni_fotogramma(
+                        opts, stat.correzione(i + 1)), (rullo_id, i + 1))
                     self.archivio.fotogramma_registra(
                         rullo_id, i + 1, stato="elaborazione",
                         numero_bordo=bordo)
@@ -1969,6 +2076,8 @@ class ScanService:
                 if conta:
                     i += 1
 
+            elab.lettura_finita.set()
+
             # Prima la macchina: ASF spento e pellicola fuori subito, senza
             # aspettare l'elaborazione, che non la riguarda.
             if ice_sdk:
@@ -2007,6 +2116,7 @@ class ScanService:
             # tutti i file
             self._chiudi_elaborazione()
             fatti = elaborati["ok"]
+            self._chiudi_statistiche(rullo_id, stat, chiave, memoria)
 
             # una striscia piu' corta del previsto non e' un problema: e' la
             # normalita' con pellicole di lunghezza variabile

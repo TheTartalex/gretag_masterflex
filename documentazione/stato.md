@@ -371,6 +371,17 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
   memoria per pellicola col DX, classi di esposizione, tungsteno e velo,
   densità locale.
 
+- **Tutte le migliorie di EyeTech** (§4 del documento sull'originale):
+  equilibrio di rullo, memoria per pellicola col DX, classi di esposizione,
+  tungsteno e velo, densità locale. E **un errore di fondo corretto**:
+  l'inversione non invertiva (il simulatore era sbagliato allo stesso modo,
+  per questo non si vedeva).
+- **Sonde dell'SDK** (collaudo dello scanner, voce 6): codice DX, percorso
+  `capture` con e senza Digital ICE, Digital ICE diretto. Da far girare una
+  volta sulla riserva con una striscia di negativo e mandare la cartella
+  del rapporto: con quei file si integra l'ICE e, se conviene, la
+  scansione a striscia intera dell'SDK (quella dei 36 fotogrammi in 60 s).
+
 ## Problemi aperti, in ordine di priorità
 
 1. **Motori delle guide all'avvio: RISOLTO per il 135** (28/10/2026, dalla

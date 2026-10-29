@@ -230,6 +230,7 @@ def _opzioni(d: Dict) -> ProcessOptions:
         scratch_repair=f("graffi"),
         dust_repair=f("polvere"),
         sharpen=f("nitidezza"),
+        densita_locale=f("densita_locale"),
         auto_rotate=bool(d.get("auto_ruota", False)),
 
         # --- pannello colore ---
@@ -1368,6 +1369,8 @@ details.sez>div{padding-bottom:10px}
   <input type="range" id="polvere" min="0" max="1" step="0.1" value="0">
   <label>Grana sintetica <b id="v_grana_aggiungi">0,00</b></label>
   <input type="range" id="grana_aggiungi" min="0" max="0.1" step="0.01" value="0">
+  <label title="Schiarisce le grandi zone scure e scurisce quelle chiare, senza toccare il dettaglio">Densità locale <b id="v_densita_locale">0,0</b></label>
+  <input type="range" id="densita_locale" min="0" max="1" step="0.1" value="0">
   <div style="margin-top:12px">
    <label><input type="checkbox" id="ritaglio" checked style="width:auto"> Ritaglio automatico</label>
    <label><input type="checkbox" id="auto_ruota" style="width:auto"> Orientamento automatico</label>
@@ -1821,6 +1824,7 @@ function opzioni(){ return {
   ir:num('ir'), grana_riduci:num('grana_riduci'),
   graffi:num('graffi'), polvere:num('polvere'),
   nitidezza:num('nitidezza'), grana_aggiungi:num('grana_aggiungi'),
+  densita_locale:num('densita_locale'),
   auto_ruota:val('auto_ruota'), ritaglio:val('ritaglio'),
   /* pannello colore */
   esposizione:num('esposizione'),
@@ -2067,7 +2071,7 @@ function scansiona(){
   post('/api/scansiona',Object.assign({rullo_id:parseInt(r)},opzioni())).then(esito); }
 
 function azzeraCorrezioni(){
-  var d={ir:1,grana_riduci:0,nitidezza:0,graffi:0,polvere:0,grana_aggiungi:0};
+  var d={ir:1,grana_riduci:0,nitidezza:0,graffi:0,polvere:0,grana_aggiungi:0,densita_locale:0};
   Object.keys(d).forEach(function(k){ el(k).value=d[k]; mostraValore(k); });
 }
 var DECIMALI={grana_aggiungi:2,esposizione:2,gamma_tono:2,saturazione:2,
@@ -2270,7 +2274,9 @@ Array.prototype.forEach.call(el('g_zoom').children,function(b){
 /* i cursori del colore rielaborano da soli: si sposta e si guarda, senza
    dover premere niente. La pellicola non si muove: si rifa' solo il calcolo. */
 ['esposizione','temperatura_k','tinta_vm','contrasto','luminosita','gamma_tono',
- 'chiarezza','saturazione','hue','barra_r','barra_g','barra_b'].forEach(function(id){
+ 'chiarezza','saturazione','hue','barra_r','barra_g','barra_b',
+ /* la densita' locale lavora sulla base come il colore: si vede subito */
+ 'densita_locale'].forEach(function(id){
   el(id).oninput=function(){
     mostraValore(id);
     if(id==='temperatura_k'||id==='tinta_vm') wbGuadagni=null;

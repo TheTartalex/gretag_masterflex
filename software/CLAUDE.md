@@ -81,6 +81,20 @@ reintrodurle.
   (riordino, stato, conteggio) va dopo `_chiudi_elaborazione()`, che
   aspetta la coda; il `finally` di `_avvia` la chiude anche dopo
   un'emergenza. Il thread di elaborazione non tocca mai la macchina.
+- **L'inversione e' 10^(+densita'/gamma).** Fino al 29/10/2026
+  `invert_negative` restituiva 10^(-densita'), cioe' la trasmittanza: il
+  negativo usciva negativo, e non si vedeva perche' anche `MockBackend`
+  metteva la densita' alta dove la scena era scura. Un negativo vero e'
+  piu' denso dove la scena e' piu' chiara: non toccare uno dei due senza
+  l'altro.
+- **Equilibrio di rullo.** `rullo.StatisticheRullo` misura ogni fotogramma
+  letto (non quelli letti a x1 perche' opachi); il thread di elaborazione
+  aspetta 4 fotogrammi (o la fine della lettura) prima di elaborare, poi
+  passa base, correzione di densita' e classe in `ProcessOptions`. Con la
+  correzione di rullo il bilanciamento per fotogramma non si fa. A fine
+  rullo le correzioni vanno in `raw/rullo_<id>_statistiche.json` (le
+  usano Riapri, Salva e Applica) e la memoria per pellicola in
+  `pellicole.json` accanto all'archivio.
 - **Lettura unica.** `scan_frame` prova prima `capture_frame` (R, G, B in
   una `scan_raw`, canale 4, un tempo per LED). La disposizione dei piani
   la decide `_separa_piani`; se la macchina rifiuta, o se la verifica del

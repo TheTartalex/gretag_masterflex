@@ -52,6 +52,20 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-10-29 — rullo, classi di esposizione, densità locale, sonde SDK
+
+- **Correzione**: `invert_negative` ora inverte (10^(+D/γ), γ 0,6);
+  `MockBackend` fa un negativo vero.
+- `rullo.py`: base ed equilibrio dei grigi di rullo, classi (sottoesposto,
+  sovraesposto, velato, piatto), tungsteno, velo, memoria per pellicola
+  (`pellicole.json`, chiave DX); collegato a rullo, anteprima rapida,
+  Riapri/Salva/Applica.
+- `enhance.densita_locale` (filtro guidato) e cursore in Ritocco.
+- Rulli: colonna `dx`; DX nei metadati dei file.
+- SDK/agente: `dx`, `sonda_capture`, `sonda_ice`; funzioni statiche
+  dell'SDK chiamate come `__cdecl`. Collaudo dello scanner: prova `sdk`
+  (menu, voce 6).
+
 ### 2026-10-29 — profili Gretag, codici d'errore dell'SDK
 
 - `lut.py`: i profili CMM del programma originale (`*.lut` binari, magia

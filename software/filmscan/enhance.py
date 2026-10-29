@@ -329,3 +329,67 @@ def enhance(img: np.ndarray,
         out = add_grain(out, grain_add)
 
     return out, mask
+
+
+# --------------------------------------------------------------------------
+# Densita' locale (schiarire e scurire per zone)
+# --------------------------------------------------------------------------
+
+def _media_box(x: np.ndarray, r: int) -> np.ndarray:
+    """Media su una finestra (2r+1)^2, con le somme cumulate: costa uguale
+    qualunque sia r."""
+    if HAS_SCIPY:
+        return ndimage.uniform_filter(x, size=2 * r + 1, mode="reflect")
+    p = np.pad(x, r + 1, mode="reflect")
+    c = p.cumsum(0).cumsum(1)
+    k = 2 * r + 1
+    s = c[k:, k:] - c[:-k, k:] - c[k:, :-k] + c[:-k, :-k]
+    return (s / float(k * k))[:x.shape[0], :x.shape[1]].astype(x.dtype)
+
+
+def _filtro_guidato(guida: np.ndarray, r: int, eps: float) -> np.ndarray:
+    """Filtro guidato (He, Sun, Tang 2010) con l'immagine come guida di se'
+    stessa: liscia le zone e si ferma ai bordi, quindi non fa aloni."""
+    m = _media_box(guida, r)
+    var = _media_box(guida * guida, r) - m * m
+    a = var / (var + eps)
+    b = m - a * m
+    return _media_box(a, r) * guida + _media_box(b, r)
+
+
+def densita_locale(img: np.ndarray, forza: float) -> np.ndarray:
+    """La correzione di densita' locale, come la LDC del programma originale
+    ma con un filtro guidato invece di una maschera a blocchi: le grandi zone
+    troppo chiare o troppo scure si avvicinano al tono medio, il dettaglio
+    resta com'e'. 'forza' 0..1; 0 non tocca niente.
+
+    Lavora in log2 della luminanza su una copia di ~400 px (la parte grande
+    dell'immagine e' fatta di zone, non di dettagli) e riporta la correzione
+    a piena risoluzione come rapporto, uguale sui tre canali: il colore non
+    cambia."""
+    forza = float(np.clip(forza, 0.0, 1.0))
+    if forza <= 0:
+        return img
+    x = np.clip(img, 0.0, 1.0).astype(np.float32)
+    lum = 0.2126 * x[..., 0] + 0.7152 * x[..., 1] + 0.0722 * x[..., 2]
+    L = np.log2(lum + 1e-4)
+    h, w = L.shape
+    passo = max(1, int(max(h, w) / 400.0))
+    Lp = np.ascontiguousarray(L[::passo, ::passo])
+    r = max(3, int(max(Lp.shape) / 24))
+    base_p = _filtro_guidato(Lp, r, eps=0.25)
+    if passo > 1:
+        if HAS_SCIPY:
+            base = ndimage.zoom(base_p, (h / float(base_p.shape[0]), w / float(base_p.shape[1])),
+                                order=1)[:h, :w]
+            if base.shape != L.shape:
+                base = np.pad(base, ((0, h - base.shape[0]), (0, w - base.shape[1])), mode="edge")
+        else:
+            base = np.repeat(np.repeat(base_p, passo, 0), passo, 1)[:h, :w]
+    else:
+        base = base_p
+    medio = float(np.median(base))
+    nuova = medio + (base - medio) * (1.0 - 0.6 * forza)
+    rapporto = np.exp2(nuova - base).astype(np.float32)
+    return np.clip(x * rapporto[..., None], 0.0, 1.0)
+

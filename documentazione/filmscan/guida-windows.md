@@ -240,6 +240,24 @@ calibrati, senza inversione né correzioni, in **DNG** (Lightroom e Negative
 Lab Pro lo trattano come un RAW) o **TIFF 16 bit**. Circa 18 MB a
 fotogramma. Nell'archivio: *Scarica i negativi lineari*.
 
+## Colore di rullo, negativi chiari e scuri, densità locale
+
+- **Il colore si decide sul rullo**, non sul singolo fotogramma: base della
+  pellicola ed equilibrio dei grigi si misurano su tutti i fotogrammi
+  normali, e il singolo scatto se ne discosta solo un poco. Un prato o un
+  muro rosso non spostano più il colore. Il primo fotogramma aspetta che
+  ce ne siano almeno quattro letti (la lettura intanto va avanti).
+- Se la macchina legge il **codice DX**, il programma si ricorda della
+  pellicola (`pellicole.json`): anche una striscia di 3-4 fotogrammi parte
+  dal colore giusto. Il DX finisce nel diario e nei file.
+- I negativi **sottoesposti** (chiari) ricevono più contrasto nei toni bassi
+  e meno rumore di colore; quelli **sovraesposti** (densi) una spalla
+  morbida sulle alte luci; i **velati** un nero più deciso. Non entrano nel
+  colore del rullo. Lo dicono gli avvisi del fotogramma.
+- **Luce al tungsteno**: riconosciuta e corretta all'80%, con avviso.
+- **Densità locale** (Ritocco): schiarisce le grandi zone scure e scurisce
+  quelle chiare senza toccare il dettaglio. Spenta di serie; si vede subito.
+
 ## La LUT, in fondo a Colore
 
 In fondo alla scheda **Colore** si sceglie una LUT. Quella scelta si

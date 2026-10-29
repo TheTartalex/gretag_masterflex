@@ -44,6 +44,11 @@ class FilmProfile:
     m_pre: list = field(default_factory=lambda: [r[:] for r in IDENTITY])
     m_post: list = field(default_factory=lambda: [r[:] for r in IDENTITY])
     gamma_rgb: Tuple[float, float, float] = (1.0, 1.0, 1.0)
+    # contrasto del negativo (pendenza della curva caratteristica): la
+    # densita' sopra la base vale circa gamma * log10(esposizione), quindi la
+    # luce della scena si riottiene come 10^(densita' / gamma). 0,6 e' il
+    # valore tipico delle C-41.
+    gamma_negativo: float = 0.6
     print_exposure: float = 1.0
     paper_black: float = 0.0
     paper_grade: float = 1.0
@@ -124,9 +129,14 @@ def _stack_rgb(planes: Dict[str, np.ndarray]) -> np.ndarray:
 
 def invert_negative(planes: Dict[str, np.ndarray],
                     profile: FilmProfile,
-                    dmin: Optional[Tuple[float, float, float]] = None
+                    dmin: Optional[Tuple[float, float, float]] = None,
+                    correzione_densita: Optional[Tuple[float, float, float]] = None
                     ) -> np.ndarray:
-    """Da trasmittanza a immagine positiva. Ritorna (h, w, 3) float32 in 0..1."""
+    """Da trasmittanza a immagine positiva. Ritorna (h, w, 3) float32 in 0..1.
+
+    'correzione_densita' (D per canale) si toglie dalla densita' prima di
+    tornare in luce: e' l'equilibrio dei grigi del rullo (rullo.py), fatto
+    dove va fatto, sulla pellicola e non sull'immagine finita."""
     stack = _stack_rgb(planes)
     stack = np.clip(stack, 1e-5, None)
 
@@ -153,8 +163,16 @@ def invert_negative(planes: Dict[str, np.ndarray],
     g = np.asarray(profile.gamma_rgb, dtype=np.float32).reshape(1, 1, 3)
     density = density * g
 
-    # ritorno al lineare, gia' positivo
-    positive = 10.0 ** (-density)
+    if correzione_densita is not None:
+        density = density - np.asarray(correzione_densita, dtype=np.float32).reshape(1, 1, 3)
+
+    # Ritorno in luce: e' QUI che il negativo diventa positivo. Piu' densita'
+    # vuol dire piu' luce nella scena, quindi 10^(+densita'/gamma). Fino al
+    # 29/10/2026 c'era 10^(-densita'), cioe' di nuovo la trasmittanza: il
+    # negativo usciva negativo. Non si vedeva perche' anche il simulatore
+    # (MockBackend) metteva la densita' alta dove la scena era scura.
+    gamma = max(float(profile.gamma_negativo), 0.1)
+    positive = 10.0 ** np.clip(density / gamma, -6.0, 6.0)
     positive = positive / max(float(np.percentile(positive, 99.5)), 1e-6)
 
     if profile.monochrome:
