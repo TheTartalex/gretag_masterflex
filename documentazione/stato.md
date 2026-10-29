@@ -1,6 +1,6 @@
 # Stato del progetto
 
-**Aggiornato al 28 ottobre 2026.** Questo è il documento da aggiornare a fine
+**Aggiornato al 29 ottobre 2026.** Questo è il documento da aggiornare a fine
 di ogni sessione di lavoro: stato, problemi aperti e prossimi passi stanno
 qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.md).
 
@@ -354,6 +354,22 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
   `impostazioni.json`, mai nel repository). Apre la sessione con un
   reindirizzamento al PIN dell'avvio; "Ricorda" lo tiene nel browser del
   dispositivo, che rientra da solo dopo i riavvii.
+
+## Fatto il 29 ottobre
+
+- **Analisi dell'elaborazione del programma originale**
+  ([elaborazione-originale.md](software-originale/elaborazione-originale.md)):
+  EyeTech (KLT, statistiche per striscia e per DX, esclusioni, classi di
+  scena, LDC), Dens2Paper, correzioni distinte per negativi sotto e
+  sovraesposti, profili CMM, dati APS (`AIDToolkit`), codici d'errore.
+  Fatto subito:
+  - `lut.py` legge i profili CMM Gretag (formato decifrato, Lab D50
+    verificato): `Negative2Lab_P8_neg.lut` diventa una LUT "stampa Gretag";
+  - i codici 29, 30, 35, 37 (`ERR_FILM_ORIENTATION`, pellicola girata), 38
+    hanno nome e spiegazione in italiano nei messaggi e nel registro.
+  Da decidere con Alessandro (§4 del documento): bilanciamento di rullo,
+  memoria per pellicola col DX, classi di esposizione, tungsteno e velo,
+  densità locale.
 
 ## Problemi aperti, in ordine di priorità
 

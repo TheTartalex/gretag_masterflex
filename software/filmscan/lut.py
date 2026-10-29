@@ -213,9 +213,73 @@ def leggi(testo: str, nome: str = "") -> Lut:
     raise ValueError("formato non riconosciuto: mandare il file per vederlo")
 
 
+# --- i profili del programma originale (CMMProfiles\*.lut) ---------------
+#
+# Formato ricavato dai file (vedi documentazione/software-originale/
+# elaborazione-originale.md): intestazione di 5 int32 (magia 0x9E62A68F,
+# 20 = lunghezza dell'intestazione, tipo, nodi per lato, bit), poi N^3 voci
+# di 4 uint16 (tre valori e un riempimento). Tipo 1 = da RGB a Lab: gli assi
+# sono R (il piu' lento), G, B su un RGB positivo in codifica sRGB, e il Lab
+# e' quello ICC (bianco D50) a 15 bit: L = v/32767*100, a/b = (v-16384)/128.
+# Verificato ricostruendo l'identita' da sRGB2Lab_LUT.lut (errore medio
+# 0,004 su 0..1). Qui si compone con Lab -> sRGB e diventa una LUT 3D da
+# sRGB a sRGB come le altre: Negative2Lab_P8_neg.lut da' la resa di stampa
+# Gretag. I file restano del proprietario: non vanno nel repository.
+MAGIA_GRETAG = 0x9E62A68F
+
+_BRADFORD_D50_D65 = np.array([[0.9555766, -0.0230393, 0.0631636],
+                              [-0.0282895, 1.0099416, 0.0210077],
+                              [0.0122982, -0.0204830, 1.3299098]])
+_XYZ_SRGB = np.array([[3.2406, -1.5372, -0.4986],
+                      [-0.9689, 1.8758, 0.0415],
+                      [0.0557, -0.2040, 1.0570]])
+
+
+def _lab_d50_a_srgb(lab: np.ndarray) -> np.ndarray:
+    L, a, b = lab[..., 0], lab[..., 1], lab[..., 2]
+    fy = (L + 16.0) / 116.0
+    fx = fy + a / 500.0
+    fz = fy - b / 200.0
+
+    def finv(t):
+        return np.where(t > 6.0 / 29.0, t ** 3, 3 * (6.0 / 29.0) ** 2 * (t - 4.0 / 29.0))
+    xyz = np.stack([0.9642 * finv(fx), finv(fy), 0.8249 * finv(fz)], axis=-1)
+    lin = np.clip(xyz @ _BRADFORD_D50_D65.T @ _XYZ_SRGB.T, 0.0, 1.0)
+    return np.where(lin <= 0.0031308, 12.92 * lin, 1.055 * lin ** (1 / 2.4) - 0.055)
+
+
+def leggi_gretag(dati: bytes, nome: str = "") -> Lut:
+    """Un profilo CMM del programma originale (tipo 1, verso Lab) come LUT
+    3D da sRGB a sRGB."""
+    if len(dati) < 20:
+        raise ValueError("file troppo corto per un profilo Gretag")
+    magia, testa, tipo, nodi, bit = np.frombuffer(dati[:20], "<u4").tolist()
+    if magia != MAGIA_GRETAG or testa != 20:
+        raise ValueError("non e' un profilo Gretag")
+    if tipo != 1:
+        raise ValueError("profilo Gretag di tipo %d: si usano solo quelli verso "
+                         "Lab (tipo 1, per esempio Negative2Lab_P8_neg.lut)" % tipo)
+    if not 2 <= nodi <= 129 or len(dati) != 20 + nodi ** 3 * 8:
+        raise ValueError("profilo Gretag con dimensioni che non tornano")
+    t = np.frombuffer(dati[20:], "<u2").reshape(nodi, nodi, nodi, 4)[..., :3]
+    t = t.astype(np.float64)
+    pieno = float((1 << bit) - 1) if bit else 32767.0
+    lab = np.stack([t[..., 0] / pieno * 100.0,
+                    (t[..., 1] - (pieno + 1) / 2) / ((pieno + 1) / 256.0),
+                    (t[..., 2] - (pieno + 1) / 2) / ((pieno + 1) / 256.0)], axis=-1)
+    rgb = _lab_d50_a_srgb(lab)
+    # la tabella Gretag e' [r, g, b]; le nostre sono [b, g, r]
+    tabella = np.ascontiguousarray(rgb.transpose(2, 1, 0, 3)).astype(np.float32)
+    return Lut(nome, tabella, "3d", np.zeros(3, np.float32), np.ones(3, np.float32),
+               titolo="profilo Gretag %s" % os.path.splitext(nome)[0])
+
+
 def carica(percorso: str) -> Lut:
-    with open(percorso, encoding="utf-8", errors="replace") as f:
-        return leggi(f.read(), os.path.basename(percorso))
+    with open(percorso, "rb") as f:
+        dati = f.read()
+    if len(dati) >= 4 and int.from_bytes(dati[:4], "little") == MAGIA_GRETAG:
+        return leggi_gretag(dati, os.path.basename(percorso))
+    return leggi(dati.decode("utf-8", errors="replace"), os.path.basename(percorso))
 
 
 def elenco(cartella: str) -> List[str]:

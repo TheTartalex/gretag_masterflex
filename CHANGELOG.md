@@ -52,6 +52,15 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-10-29 — profili Gretag, codici d'errore dell'SDK
+
+- `lut.py`: i profili CMM del programma originale (`*.lut` binari, magia
+  0x9E62A68F, verso Lab D50) diventano LUT 3D sRGB→sRGB.
+- `ponte/sdk.py`: nomi e spiegazioni per 29, 30, 35, 37 (pellicola inserita
+  al contrario), 38; il registro dell'agente le scrive anche per gli errori
+  asincroni.
+- Documento `software-originale/elaborazione-originale.md`.
+
 ### 2026-10-28 — PIN fisso delle postazioni
 
 - PIN fisso oltre a quello dell'avvio: impronta PBKDF2 in `impostazioni.json`

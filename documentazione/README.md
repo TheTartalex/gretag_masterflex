@@ -37,6 +37,7 @@
 |---|---|---|
 | [software-originale/api-sdk.md](software-originale/api-sdk.md) | i 310 metodi di `scn_dll.dll`, costanti ottiche, `DMLCmdTransfer` | 2026-09-03 |
 | [software-originale/programma-originale.md](software-originale/programma-originale.md) | convivere con MasterPlus, spegnere stampa e densitometro | 2026-09-04 |
+| [software-originale/elaborazione-originale.md](software-originale/elaborazione-originale.md) | la catena colore dell'originale (EyeTech, Dens2Paper, profili CMM), confronto con filmscan, cosa conviene prendere | 2026-10-29 |
 
 ### filmscan (il nostro software)
 

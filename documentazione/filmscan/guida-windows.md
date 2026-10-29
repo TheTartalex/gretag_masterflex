@@ -254,6 +254,11 @@ correzioni, a tutti gli ordini, finché non se ne sceglie un'altra o
   rifiutato con il motivo.
 - La scelta resta in `impostazioni.json`: sopravvive a riavvii e
   aggiornamenti.
+- Funzionano anche i **profili del programma originale** (`CMMProfiles\*.lut`,
+  quelli verso Lab): copiare per esempio `Negative2Lab_P8_neg.lut` in
+  `software\lut\` dà la resa di stampa Gretag. Si copiano a mano, non con
+  *Aggiungi LUT*: sono file binari. Comprimono i colori molto saturi: meglio
+  per la stampa che per i file.
 
 ## Fine rullo e STOP EMERGENZA
 

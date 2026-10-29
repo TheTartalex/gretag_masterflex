@@ -158,8 +158,11 @@ NOMI_ERRORI_SDK = {
     13: "ERR_FILM_LOADED", 14: "ERR_NO_GATE_INSTALLED", 15: "ERR_FOCUS_FAILED",
     16: "ERR_NO_CALIB_DATA", 18: "ERR_BUFFER_NOT_ACCEPTED", 19: "ERR_NO_IMAGE_BUFFER",
     22: "ERR_POSITION_UNKNOWN", 24: "ERR_OS", 25: "ERR_OS_LAST_ERR",
-    26: "ERR_MEMORY_ALLOCATION", 28: "ERR_FILM_JAM", 31: "ERR_MOVE",
-    32: "ERR_END_OF_FILM", 33: "ERR_CANCEL_DETECTED", 39: "ERR_FILM_UNKNOWN",
+    26: "ERR_MEMORY_ALLOCATION", 28: "ERR_FILM_JAM",
+    29: "ERR_FILM_JAM_ON_REWIND", 30: "ERR_FRAME_DETECTION_PENDING",
+    31: "ERR_MOVE", 32: "ERR_END_OF_FILM", 33: "ERR_CANCEL_DETECTED",
+    35: "ERR_REQ_FRAME_NOT_FOUND", 37: "ERR_FILM_ORIENTATION",
+    38: "ERR_FILM_UNDEVELOPED", 39: "ERR_FILM_UNKNOWN",
     40: "ERR_NK_GATE", 41: "ERR_NVMEM", 42: "ERR_GENERAL_FW", 43: "ERR_SCANNER_HW",
     46: "ERR_SW_SCANNER_IFC", 48: "ERR_NK_GATE_FIRMWARE", 56: "ERR_DIAG_MOTOR",
     57: "ERR_TEST_ADV_FAILED", 58: "ERR_FEED_ON_FAILED", 59: "ERR_FEED_OFF_FAILED",
@@ -168,6 +171,23 @@ NOMI_ERRORI_SDK = {
     203: "EV_STATE_CHANGE", 204: "EV_SCAN_COMPLETE",
     205: "EV_SCAN_COMPLETE_FILM_TOO_LONG", 206: "EV_SCANNER_CHANGED",
 }
+# Cosa dire all'operatore, dai messaggi del programma originale per gli
+# stessi codici (PhxScanner.exe 0x432DF0): sono quelli che si leggono alla
+# macchina, e devono dire cosa fare.
+SPIEGAZIONI_ERRORI_SDK = {
+    12: "nessuna pellicola nel carrello",
+    15: "fuoco non trovato: lente alla posizione nominale",
+    28: "pellicola inceppata: toglierla a mano dal carrello",
+    29: "pellicola inceppata nel riavvolgimento",
+    30: "errore di rilevamento fotogramma in sospeso",
+    31: "errore nel muovere la pellicola",
+    32: "fine della pellicola",
+    35: "il fotogramma richiesto non si trova",
+    37: "pellicola inserita al contrario: toglierla e reinserirla girata",
+    38: "pellicola APS non sviluppata",
+    39: "tipo di pellicola sconosciuto",
+}
+ERR_FILM_ORIENTATION = 37
 ERR_ILLEGAL_IN_THIS_STATE = 3
 ERR_NO_SCANNER = 4
 EV_STATE_CHANGE = 203
@@ -542,6 +562,8 @@ class Scanner(object):
             base = "codice %s (%s, %s)" % v
             if v[0] in NOMI_ERRORI_SDK:
                 base += " " + NOMI_ERRORI_SDK[v[0]]
+            if v[0] in SPIEGAZIONI_ERRORI_SDK:
+                noti = [SPIEGAZIONI_ERRORI_SDK[v[0]]] + noti
             return base + (" = " + "; ".join(noti) if noti else "")
         testo = ", ".join(descrivi(v) for v in voci)
         raise ErroreScanner("%s: l'SDK segnala %d error%s: %s"
@@ -561,6 +583,10 @@ class Scanner(object):
                     self._log("SDK: stato %s -> %s (%s)"
                               % (vecchio, nuovo, NOMI_STATI_SDK.get(nuovo, "?")))
                     return
+            for codice, _, _ in (voci or []):
+                if codice in SPIEGAZIONI_ERRORI_SDK:
+                    self._log("SDK: %s (%s)" % (SPIEGAZIONI_ERRORI_SDK[codice],
+                                                NOMI_ERRORI_SDK.get(codice, codice)))
             self._log("SDK, errore asincrono: %s" % (voci or "senza dettaglio"))
         except Exception:
             pass
