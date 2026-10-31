@@ -409,6 +409,11 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
   4** e manda di continuo l'**evento 85**: non sono nella tabella dei nomi,
   probabilmente calibrazione in corso. Da annotare come finisce. Calibra
   non rifà più l'azzeramento se lo scanner si è caricato oggi.
+- **31/10, pomeriggio**: senza DX la macchina scansiona; col DX acceso dà
+  errore; col pressore automatico il pressore scende e il "su" fallisce
+  (l'SDK va in errore). DX e pressore spenti di serie. Da fare: registri
+  di quelle due prove e la prova del pressore (collaudo, voce 7), per
+  sapere se la lettura lo rialza da sola.
 - **Letture bloccate dopo il DX**: `get_media_info` porta l'SDK nello
   stato 1, e l'agente rifiutava tutto quello che non era stato 0. Ora
   blocca solo 7 e 10. Il DX letto non si è ancora decodificato (la

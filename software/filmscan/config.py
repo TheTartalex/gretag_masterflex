@@ -296,8 +296,9 @@ class AppConfig:
     pellicola_da_dx: bool = True
     # Leggere il codice DX a inizio rullo e a ogni striscia (get_media_info).
     # Dopo la lettura l'SDK va nello stato 1 (riserva, 31/10/2026): se le
-    # letture ne soffrono, qui si spegne senza toccare altro.
-    leggi_dx: bool = True
+    # letture ne soffrono, qui si spegne senza toccare altro. Spenta di serie
+    # finche' la riserva non la prova: acceso dava errore (31/10/2026).
+    leggi_dx: bool = False
 
     # Calibra azzera i motori (Gretag Reset) "se_serve": non se lo scanner si
     # e' caricato oggi e dopo l'ultima emergenza, perche' al caricamento il
@@ -322,8 +323,10 @@ class AppConfig:
     # calibrazione) piu' la misura per canale a inizio rullo; spenta: tempi
     # di fabbrica, x1 su tutti i canali
     esposizione_auto: bool = True
-    # pressore: giu' prima di ogni lettura, su prima di muovere la pellicola
-    pressore_auto: bool = True
+    # pressore: giu' prima di ogni lettura, su prima di muovere la pellicola.
+    # Spento di serie: sulla riserva (31/10/2026) scendeva e il "su" dava
+    # errore. Si riaccende dopo la prova del pressore (collaudo, voce 7).
+    pressore_auto: bool = False
     # avanzamento automatico: il carrello cerca il fotogramma successivo;
     # spento, ogni fotogramma si mette in finestra a mano col video
     avanzamento_automatico: bool = True

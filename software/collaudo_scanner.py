@@ -465,6 +465,75 @@ def cmd_passi(a):
 
 # --------------------------------------------------------------------------
 
+def cmd_pressore(a):
+    """Il pressore della pellicola (gi_clamp, richieste Gretag 19 e 20), da
+    solo e attorno a una lettura. Sulla riserva, 31/10/2026, col pressore
+    automatico scendeva e poi il "su" dava errore: qui si vede quale, e se
+    dopo una lettura il pressore si rialza da solo (nel qual caso il nostro
+    "su" chiederebbe di alzare un pressore gia' alzato).
+
+    Non muove la pellicola. L'operatore guarda il pressore e risponde."""
+    r = Rapporto("pressore")
+    r("PROVA DEL PRESSORE - %s" % datetime.datetime.now())
+    b = collega(a.ponte, a.risoluzione, False, r)
+    r.dati["passi"] = []
+    print("")
+    print("Serve una striscia nel carrello (Carica, poi inserirla), cosi' il")
+    print("pressore lavora come in una scansione. Tenere d'occhio il pressore:")
+    print("a ogni passo si chiede cosa ha fatto.")
+    chiedi("Invio quando e' pronta: ")
+
+    def comando(nome, fn):
+        t0 = time.time()
+        try:
+            fn()
+            esito = "ok"
+        except ScannerError as exc:
+            esito = "ERRORE: %s" % exc
+        r("  %-38s %s (%.1f s)" % (nome, esito, time.time() - t0))
+        r.dati["passi"].append({"passo": nome, "esito": esito})
+        if esito != "ok":
+            r.avvisi.append("%s: %s" % (nome, esito))
+        return esito == "ok"
+
+    def guarda(domanda):
+        risposta = chiedi("  %s [s/n] " % domanda, ("s", "n"))
+        r("  %-38s %s" % (domanda, "si'" if risposta == "s" else "no"))
+        r.dati["passi"].append({"domanda": domanda, "risposta": risposta})
+        return risposta == "s"
+
+    r("")
+    r("1. Partenza")
+    guarda("Il pressore e' su adesso?")
+    comando("su, con il pressore gia' su", lambda: b.pressore(False))
+    r("")
+    r("2. Giu' e su, senza leggere")
+    comando("giu'", lambda: b.pressore(True))
+    guarda("E' sceso?")
+    comando("su", lambda: b.pressore(False))
+    guarda("E' salito?")
+    r("")
+    r("3. Giu', una lettura, su")
+    comando("giu'", lambda: b.pressore(True))
+    comando("lettura del verde (grab)",
+            lambda: b.capture_line_block("G", 1 << 20, exposure=1.0))
+    da_solo = guarda("Dopo la lettura e' gia' salito da solo?")
+    comando("su, dopo la lettura", lambda: b.pressore(False))
+    guarda("Adesso e' su?")
+    r("")
+    if da_solo:
+        r("CONCLUSIONE: la lettura rialza il pressore da sola. Il nostro 'su'")
+        r("dopo la lettura va tolto o reso tollerante: mandare la cartella.")
+    else:
+        r("CONCLUSIONE: dopo la lettura il pressore resta giu' e lo alza il")
+        r("nostro 'su'. Se il 'su' ha dato errore, il codice e' qui sopra.")
+    print("")
+    print("Se il pressore e' rimasto giu': interfaccia, Macchina > Alza pressore,")
+    print("prima di muovere la pellicola.")
+    r.chiudi()
+    return 0
+
+
 def cmd_sdk(a):
     """Le sonde dell'SDK, una volta, con una striscia di prova (meglio un
     negativo con un po' di polvere): codice DX, percorso "capture" del
@@ -539,7 +608,7 @@ def cmd_sdk(a):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Collaudi dello scanner vero")
-    ap.add_argument("prova", choices=("colori", "sensori", "passi", "sdk"))
+    ap.add_argument("prova", choices=("colori", "sensori", "passi", "sdk", "pressore"))
     ap.add_argument("--ponte", default=PONTE)
     ap.add_argument("--risoluzione", type=int, default=None, choices=range(5),
                     help="ImageResolution dell'SDK (0 = 2100x1400)")
@@ -559,7 +628,8 @@ def main(argv=None):
         a.risoluzione = 0 if a.prova in ("colori", "sdk") else 1
     try:
         return {"colori": cmd_colori, "sensori": cmd_sensori,
-                "passi": cmd_passi, "sdk": cmd_sdk}[a.prova](a)
+                "passi": cmd_passi, "sdk": cmd_sdk,
+                "pressore": cmd_pressore}[a.prova](a)
     except Exception as exc:
         if isinstance(exc, ScannerError):
             testo = "ERRORE: %s" % exc

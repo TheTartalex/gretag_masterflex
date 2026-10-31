@@ -52,6 +52,15 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-10-31 — pressore e DX spenti di serie, prova del pressore
+
+- Dalla riserva: con il DX acceso il rullo dà errore; con il pressore
+  automatico il pressore scende ma il "su" fallisce. Tutti e due spenti di
+  serie (`leggi_dx`, `pressore_auto`) finché non sono provati.
+- Collaudo dello scanner, voce 7: prova guidata del pressore (giù, su, su
+  con il pressore già su, giù + lettura + su), con l'operatore che dice
+  cosa vede. Risponde a: la lettura rialza il pressore da sola?
+
 ### 2026-10-31 — letture bloccate dopo il codice DX
 
 - **Dopo la lettura del DX a inizio rullo l'SDK passa allo stato 1** e

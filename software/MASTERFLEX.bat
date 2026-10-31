@@ -204,6 +204,8 @@ echo    5  Strumenti originali del carrello ^(COM5^): selftest di servizio,
 echo       SensorTest, Compad ^(guide, flag, versione^)
 echo    6  Sonde dell'SDK: codice DX, acquisizione "capture" con e senza
 echo       Digital ICE, Digital ICE diretto ^(muove la pellicola^)
+echo    7  Pressore: giu', su e se dopo una lettura si rialza da solo
+echo       ^(non muove la pellicola^)
 echo    0  Indietro
 echo.
 set "C="
@@ -224,6 +226,7 @@ if "%C%"=="1" set "CS=colori"
 if "%C%"=="2" set "CS=sensori"
 if "%C%"=="3" set "CS=passi"
 if "%C%"=="6" set "CS=sdk"
+if "%C%"=="7" set "CS=pressore"
 if not defined CS exit /b 0
 set "DOVE=%PONTE%"
 set "AG="
