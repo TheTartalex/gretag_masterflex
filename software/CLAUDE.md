@@ -66,7 +66,11 @@ reintrodurle.
   ci sono anche i programmi che usa lui (GateControl). `termina` si rifiuta.
 - **Calibrazione di oggi.** Anteprima e rullo la pretendono
   (`_serve_calibrazione`), e la calibrazione comincia azzerando i motori
-  (`azzera_motori`): senza programma originale nessun altro lo fa.
+  (`azzera_motori`), ma solo se serve: a ogni caricamento dello scanner il
+  GateControl li azzera da solo, e l'agente pubblica l'ora in `stato.json`
+  (`caricato`). Caricato oggi e dopo l'ultima emergenza: si salta. Ogni
+  azzeramento fa ricaricare lo scanner all'SDK (40-90 s, stato 7 → 10 → 0):
+  `PonteSdkBackend._send` ripete i comandi rifiutati con "non ancora pronto".
 - **Pressore: giu' solo dentro `_sotto_pressore`.** Ogni lettura ci passa,
   e all'uscita si rialza sempre; se non si rialza e' `PressoreBloccato`, che
   ferma il rullo (mai prenderla nell'`except Exception` del fotogramma:

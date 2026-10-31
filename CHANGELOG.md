@@ -52,6 +52,14 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-10-31 — Calibra senza azzeramento doppio
+
+- L'agente pubblica in `stato.json` quando lo scanner si è caricato
+  (`caricato`): a ogni caricamento il GateControl azzera già i motori.
+  Calibra rifà l'azzeramento solo se lo scanner non si è caricato oggi o se
+  c'è stata un'emergenza dopo (`azzera_in_calibrazione = "sempre"` per
+  rifarlo comunque). Si risparmia un ricaricamento dell'SDK (40-90 s).
+
 ### 2026-10-31 — dalla riserva: calibrazione, ponte, collaudo
 
 - **Calibra si fermava dopo l'azzeramento**: dopo il Gretag Reset l'SDK

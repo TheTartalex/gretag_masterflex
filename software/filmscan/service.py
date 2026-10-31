@@ -210,6 +210,8 @@ class ScanService:
         # STOP EMERGENZA: il blocco sta su disco e si rilegge all'avvio,
         # cosi' un riavvio non lo scavalca
         self.emergenza: Optional[Dict[str, object]] = self._leggi_emergenza()
+        # dopo un'emergenza Calibra azzera sempre i motori (vedi calibra)
+        self._emergenza_alle = time.time() if self.emergenza else 0.0
         # dopo un'emergenza serve una calibrazione nuova (che azzera i motori)
         self._calibra_dopo: float = 0.0
         # posizionamento a mano: i tasti della pagina mettono qui i comandi,
@@ -812,6 +814,7 @@ class ScanService:
             self.log("ATTENZIONE: file di blocco non scritto (%s): il blocco "
                      "vale solo per questa interfaccia" % exc)
         self.emergenza = dati
+        self._emergenza_alle = time.time()
         self._stop.set()
         self._fine_rullo.set()
         self.log("STOP EMERGENZA: tutto bloccato. Riprende solo con l'ok del "
@@ -1666,9 +1669,22 @@ class ScanService:
             # all'avvio; senza di lui, e con il flag "No Reset" del carrello,
             # tamburo e guide restano dove si sono fermati, e un tamburo
             # fermo storto davanti alla luce fa leggere il buio.
+            # Se lo scanner si e' caricato oggi (e dopo l'ultima emergenza), il
+            # GateControl ha gia' azzerato i motori al collegamento: rifarlo
+            # costa un altro caricamento dell'SDK (40-90 s) e non aggiunge
+            # niente. cfg.azzera_in_calibrazione = "sempre" lo rifa' comunque.
+            caricato = backend.azzerato_alle()
+            gia_azzerato = bool(
+                caricato and self.cfg.azzera_in_calibrazione != "sempre"
+                and time.strftime("%Y%m%d", time.localtime(caricato)) == time.strftime("%Y%m%d")
+                and caricato > self._emergenza_alle)
             self.progress("Azzeramento dei motori", 0.0)
             try:
-                if backend.azzera_motori():
+                if gia_azzerato:
+                    self.log("Motori gia' azzerati al collegamento dello scanner "
+                             "(alle %s): non si rifa'." % time.strftime(
+                                 "%H:%M", time.localtime(caricato)))
+                elif backend.azzera_motori():
                     self.log("Motori azzerati (Gretag Reset).")
                     # dopo il reset l'SDK ricollega lo scanner (~40 s): il
                     # backend aspetta e riprova da solo, qui lo si dice

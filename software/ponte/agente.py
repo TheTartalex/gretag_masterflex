@@ -436,7 +436,8 @@ class Agente(object):
         legge ogni secondo senza disturbare l'agente ne' la macchina."""
         stato = {"pronto": self.pronto_annunciato,
                  "stato_sdk": getattr(self.s, "stato_sdk", None),
-                 "pellicola_inserita": getattr(self.s, "pellicola_inserita", None)}
+                 "pellicola_inserita": getattr(self.s, "pellicola_inserita", None),
+                 "caricato": self.caricato_alle}
         if stato == self._stato_pubblicato:
             return
         percorso = os.path.join(self.condivisa, "stato.json")
@@ -448,6 +449,11 @@ class Agente(object):
         except (IOError, OSError):
             pass
     _inizio_attesa = None
+    # Quando lo scanner e' diventato pronto l'ultima volta. Ogni caricamento
+    # (apertura dell'SDK, o il Gretag Reset dopo "azzera") fa ripartire il
+    # GateControl, che azzera i motori del carrello: filmscan lo usa per non
+    # rifare l'azzeramento in Calibra subito dopo il collegamento.
+    caricato_alle = None
 
     def annuncia_pronto(self, pronto):
         """Una riga nel registro quando lo scanner diventa pronto, o smette."""
@@ -457,6 +463,8 @@ class Agente(object):
             attesa = ("dopo %.0f s" % (time.time() - self._inizio_attesa)
                       if self._inizio_attesa else "")
             self.log("scanner pronto %s" % attesa)
+            self.caricato_alle = time.time()
+            self._inizio_attesa = None
         else:
             self._inizio_attesa = self._inizio_attesa or time.time()
             self.log("attendo che l'SDK colleghi lo scanner (stato %s): sulla "

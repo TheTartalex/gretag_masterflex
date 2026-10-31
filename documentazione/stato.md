@@ -404,6 +404,11 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
   finestra vuota: dati a 12 bit, già saturi a 0,5x (p50 4095): l'SDK porta
   il bianco oltre il fondo scala. Le sonde dell'SDK erano partite senza
   pellicola (DX: errore 12): ora il collaudo arma il carrello e aspetta.
+- Con il pacchetto `4c92e8a` Calibra aspetta lo scanner (84 s) e arriva a
+  `calibrasdk`; durante la calibrazione della macchina l'SDK va in **stato
+  4** e manda di continuo l'**evento 85**: non sono nella tabella dei nomi,
+  probabilmente calibrazione in corso. Da annotare come finisce. Calibra
+  non rifà più l'azzeramento se lo scanner si è caricato oggi.
 - Da provare sulla riserva: che `get_media_info` dia davvero il DX ai byte
   +4/+5 (sonda già nel collaudo, voce 6); l'incolla negli appunti con il
   browser che c'è su Win7 (WhatsApp Web potrebbe non accettare Chrome 109:

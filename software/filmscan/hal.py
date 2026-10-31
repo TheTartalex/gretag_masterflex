@@ -229,6 +229,11 @@ class ScannerBackend(abc.ABC):
         c'e'."""
         return False
 
+    def azzerato_alle(self) -> Optional[float]:
+        """Quando la macchina ha azzerato i motori da sola l'ultima volta
+        (caricamento dello scanner). None se non si sa."""
+        return None
+
     def pressore(self, giu: bool) -> None:
         pass
 
@@ -863,6 +868,16 @@ class PonteSdkBackend(ScannerBackend):
     def calibra_macchina(self) -> bool:
         self._send("calibrasdk", attesa=self.ATTESA_CALIBRAZIONE_SDK)
         return True
+
+    def azzerato_alle(self) -> Optional[float]:
+        """L'ultimo caricamento dello scanner, dal stato.json dell'agente:
+        a ogni caricamento il GateControl riparte e azzera il carrello."""
+        try:
+            v = _con_riprova(lambda: _json_file(
+                os.path.join(self.root, "stato.json"))).get("caricato")
+            return float(v) if v else None
+        except (IOError, OSError, ValueError, TypeError, AttributeError):
+            return None
 
     def pressore(self, giu: bool) -> None:
         self._send("pressore_%s" % ("giu" if giu else "su"),

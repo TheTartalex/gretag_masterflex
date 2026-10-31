@@ -295,6 +295,11 @@ class AppConfig:
     # grana attese. False: vale solo quel che si sceglie a mano.
     pellicola_da_dx: bool = True
 
+    # Calibra azzera i motori (Gretag Reset) "se_serve": non se lo scanner si
+    # e' caricato oggi e dopo l'ultima emergenza, perche' al caricamento il
+    # GateControl li ha gia' azzerati. "sempre": a ogni calibrazione.
+    azzera_in_calibrazione: str = "se_serve"
+
     # --- percorsi ---
     raw_dir: str = "./scansioni/raw"
     out_dir: str = "./scansioni/export"
