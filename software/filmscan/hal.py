@@ -296,6 +296,14 @@ class MockBackend(ScannerBackend):
         self._dark_offset = 0.008          # corrente di buio + offset ADC
         self._field = None
 
+    def codice_dx(self) -> Optional[Dict[str, object]]:
+        """Il simulatore non ha un bordo da leggere: un codice DX si finge
+        con la variabile d'ambiente FILMSCAN_DX (es. "109-9", Ilford HP5
+        Plus), per provare il riconoscimento della pellicola senza macchina."""
+        import re
+        m = re.match(r"\s*(\d+)-(\d+)\s*$", os.environ.get("FILMSCAN_DX", ""))
+        return {"dx1": int(m.group(1)), "dx2": int(m.group(2))} if m else None
+
     def connect(self) -> None:
         time.sleep(0.05)
         self._connected = True

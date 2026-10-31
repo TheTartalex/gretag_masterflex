@@ -64,7 +64,14 @@ class FilmProfile:
 
 PROFILES: Dict[str, FilmProfile] = {
     "c41": FilmProfile("C-41 generico"),
-    "bn": FilmProfile("Bianco e nero", monochrome=True, paper_grade=1.15),
+    "bn": FilmProfile("Bianco e nero", monochrome=True, paper_grade=1.15,
+                      gamma_negativo=0.62),
+    # XP2, BW400CN: coloranti come un C-41, quindi trasparenti all'IR, e
+    # la stessa pendenza; solo l'uscita e' a un canale.
+    "bn_c41": FilmProfile("B/N cromogenica (C-41)", monochrome=True,
+                          paper_grade=1.1),
+    "bn_diapositiva": FilmProfile("Diapositiva B/N (Scala)", positive=True,
+                                  monochrome=True),
     "diapositiva": FilmProfile(
         "Diapositiva (positivo)", positive=True, paper_grade=1.0),
 }

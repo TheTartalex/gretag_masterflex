@@ -31,9 +31,15 @@ cancellare il lavoro appena finito.
 di allegare un file o premere invio da fuori: l'unica strada e' l'API a
 pagamento per aziende, oppure pilotare il browser di nascosto, che e' contro
 le condizioni d'uso e si rompe al primo aggiornamento. Quello che si puo' fare
-- e che facciamo - e' aprire WhatsApp con il messaggio gia' scritto e il
-provino a contatto gia' pronto nella cartella dell'ordine, a un trascinamento
-di distanza. L'invio resta un gesto di chi lavora, ed e' giusto cosi'.
+- e che facciamo - e' aprire la chat giusta con il messaggio gia' scritto e
+l'allegato a portata di mano: sul PC della macchina negli appunti (Ctrl+V,
+vedi appunti.py), su un tablet o un telefono dal menu Condividi del
+sistema. L'invio resta un gesto di chi lavora, ed e' giusto cosi'.
+
+Il numero dell'attivita' non deve stare sul dispositivo che si usa: PC
+(WhatsApp Web o Desktop) e tablet sono dispositivi collegati allo stesso
+account, e i collegamenti qui sotto aprono la chat su quello da cui si
+preme il tasto.
 """
 
 from __future__ import annotations
@@ -380,6 +386,69 @@ def zip_ordine(arch, ordine_id: int, destinazione: str,
     return destinazione
 
 
+def apri_immagine(percorso: str):
+    """Un file esportato come immagine PIL a 8 bit. Pillow non legge i TIFF
+    RGB a 16 bit (il formato di serie): li si legge con tifffile. Prima il
+    provino li saltava senza dirlo."""
+    from PIL import Image
+    try:
+        im = Image.open(percorso)
+        im.load()
+        return im
+    except Exception:                                   # noqa: BLE001
+        import numpy as np
+        import tifffile
+        a = tifffile.imread(percorso)
+        if a.dtype == np.uint16:
+            a = (a >> 8).astype(np.uint8)
+        elif a.dtype != np.uint8:
+            a = (np.clip(a, 0.0, 1.0) * 255).astype(np.uint8)
+        if a.ndim == 3 and a.shape[2] > 3:
+            a = a[:, :, :3]
+        return Image.fromarray(a)
+
+
+def foto_da_mandare(arch, ordine_id: int, quante: int = 30) -> List[str]:
+    """Le foto da mandare al cliente: quelle segnate da stampare, se ce ne
+    sono, altrimenti tutte; al massimo 'quante' (WhatsApp ne prende fino a
+    cento per volta, ma un'anteprima ne basta meno)."""
+    f = file_ordine(arch, ordine_id)
+    scelte = [p for p in f["selezionati"] if p and os.path.isfile(p)]
+    if not scelte:
+        scelte = [p for p in f["esportati"] if p and os.path.isfile(p)]
+    return scelte[:quante]
+
+
+def jpeg_per_invio(percorso: str, lato: int = 2048, qualita: int = 88) -> bytes:
+    """Una copia JPEG, lato lungo 'lato': WhatsApp ricomprime comunque, e un
+    TIFF a 16 bit arriverebbe come documento da 70 MB."""
+    im = apri_immagine(percorso)
+    if im.mode != "RGB":
+        im = im.convert("RGB")
+    im.thumbnail((lato, lato))
+    buf = _io.BytesIO()
+    im.save(buf, format="JPEG", quality=qualita)
+    return buf.getvalue()
+
+
+def copie_per_invio(arch, ordine_id: int, cartella: str, quante: int = 30) -> List[str]:
+    """Le foto da mandare come JPEG in una cartella dell'ordine (per gli
+    appunti del PC: WhatsApp Desktop incolla file, non TIFF a 16 bit)."""
+    os.makedirs(cartella, exist_ok=True)
+    fuori = []
+    for p in foto_da_mandare(arch, ordine_id, quante):
+        nome = os.path.splitext(os.path.basename(p))[0] + ".jpg"
+        dest = os.path.join(cartella, nome)
+        try:
+            if not os.path.isfile(dest) or os.path.getmtime(dest) < os.path.getmtime(p):
+                with open(dest, "wb") as f:
+                    f.write(jpeg_per_invio(p))
+            fuori.append(dest)
+        except Exception:                               # noqa: BLE001
+            continue
+    return fuori
+
+
 def provino_contatto(arch, ordine_id: int, destinazione: str,
                      colonne: int = 5, lato: int = 420,
                      margine: int = 14) -> str:
@@ -400,7 +469,7 @@ def provino_contatto(arch, ordine_id: int, destinazione: str,
     miniature = []
     for p in esistenti:
         try:
-            im = Image.open(p)
+            im = apri_immagine(p)
             im.thumbnail((lato, lato))
             if im.mode not in ("RGB", "L"):
                 im = im.convert("RGB")
@@ -488,14 +557,25 @@ def avviso(arch, ordine_id: int, modello: str = "",
         fotogrammi=o.fotogrammi, rulli=o.rulli,
         data=time.strftime("%d/%m/%Y", time.localtime(o.creato or 0)))
 
+    # Tre collegamenti alla stessa chat: wa.me (va ovunque, ma sul PC passa
+    # da una pagina intermedia), web.whatsapp.com (diretto in WhatsApp Web,
+    # da aprire sempre nella stessa scheda: una scheda nuova a ogni avviso
+    # fa dire a WhatsApp "aperto in un'altra finestra") e whatsapp:// (l'app:
+    # WhatsApp Desktop, o l'app su tablet e telefono, anche collegati).
+    # Senza numero si apre comunque con il testo pronto: il destinatario lo
+    # sceglie l'operatore dalla rubrica.
+    t = quote(testo)
     if numero:
-        link = "https://wa.me/%s?text=%s" % (numero, quote(testo))
+        link = "https://wa.me/%s?text=%s" % (numero, t)
+        web = "https://web.whatsapp.com/send?phone=%s&text=%s" % (numero, t)
+        app = "whatsapp://send?phone=%s&text=%s" % (numero, t)
     else:
-        # senza numero si apre comunque WhatsApp con il testo pronto:
-        # il destinatario lo sceglie l'operatore dalla rubrica
-        link = "https://wa.me/?text=%s" % quote(testo)
+        link = "https://wa.me/?text=%s" % t
+        web = "https://web.whatsapp.com/send?text=%s" % t
+        app = "whatsapp://send?text=%s" % t
 
     return {"numero": numero, "testo": testo, "link": link,
+            "link_web": web, "link_app": app,
             "ha_numero": bool(numero)}
 
 

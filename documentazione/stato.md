@@ -382,6 +382,26 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
   del rapporto: con quei file si integra l'ICE e, se conviene, la
   scansione a striscia intera dell'SDK (quella dei 36 fotogrammi in 60 s).
 
+## Fatto il 31 ottobre
+
+- **Pellicola dal codice DX** ([decisione 0009](decisioni/0009-pellicola-dal-dx.md)):
+  il DX letto dalla macchina si traduce con l'elenco ufficiale I3A (2009)
+  in nome, tipo, ISO e grana attesa. Se il tipo non è quello scelto a mano,
+  il rullo si corregge da solo e l'ordine lo annota; le strisce di una
+  pellicola diversa danno un avviso e si elaborano a parte. Pellicola e ISO
+  finiscono nei metadati dei file (EXIF, parole chiave, XMP).
+- **Sviluppo del rullo** (normale, forzato, tirato) e **bianco e nero**:
+  toni (alto e basso contrasto, gamma estesa, duro) e viraggi in Ritocco;
+  profili per le B/N cromogeniche e per la Scala.
+- **WhatsApp**: chat aperta sul dispositivo da cui si preme (PC, tablet,
+  telefono collegati allo stesso account), allegato negli appunti del PC
+  della macchina, Condividi dal tablet, avviso proposto o aperto da solo a
+  ordine finito.
+- Da provare sulla riserva: che `get_media_info` dia davvero il DX ai byte
+  +4/+5 (sonda già nel collaudo, voce 6); l'incolla negli appunti con il
+  browser che c'è su Win7 (WhatsApp Web potrebbe non accettare Chrome 109:
+  in quel caso Supermium o il tablet).
+
 ## Problemi aperti, in ordine di priorità
 
 1. **Motori delle guide all'avvio: RISOLTO per il 135** (28/10/2026, dalla

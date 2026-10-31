@@ -52,6 +52,39 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-10-31 — pellicola dal DX, bianco e nero, WhatsApp
+
+- `pellicole_dx.py`: i 355 codici dell'elenco I3A "DX Codes for 135-Size
+  Film" (gennaio 2009) con tipo (B/N all'argento, B/N cromogenica, C-41,
+  diapositiva, diapositiva B/N), ISO e tecnologia; attese per tipo e
+  sviluppo (pendenza, grana, scala delle densità).
+- Rullo: il DX corregge da solo il profilo se il tipo non è quello scelto
+  a mano (archivio e nota dell'ordine), spegne l'IR e l'ASF sul B/N
+  all'argento, passa al preset diapositiva quando serve. Ogni striscia
+  rilegge il DX: una pellicola diversa dà un avviso e si elabora a parte
+  (profilo, equilibrio, memoria ed esposizione suoi). Statistiche salvate
+  per pellicola.
+- Rulli: colonna `sviluppo` (normale, forzato +1/+2/+3, tirato −1),
+  scelta nel modulo del rullo; pendenza attesa nell'inversione e soglie
+  delle classi scalate.
+- Profili nuovi `bn_c41` (XP2, BW400CN) e `bn_diapositiva` (Scala).
+- `bianconero.py`: toni (naturale, alto, basso, gamma estesa, duro) e
+  viraggi (seppia, selenio, carta calda e fredda, cianotipia), in Ritocco,
+  applicati subito.
+- Grana attesa: riduzione leggera di serie per le pellicole granulose,
+  solo se l'operatore non ne sceglie una.
+- Metadati: pellicola riconosciuta nella descrizione, ISO in EXIF
+  (`ISOSpeedRatings`), parole chiave di Windows (`XPKeywords`), XMP nei
+  TIFF e nei DNG.
+- WhatsApp: chat su WhatsApp Web (sempre la stessa scheda), sull'app o su
+  un dispositivo collegato; sul PC della macchina provino o foto negli
+  appunti (Ctrl+V nella chat, a scelta incollato da solo se in primo piano
+  c'è WhatsApp); Condividi dal tablet (Web Share); a ordine finito il
+  tasto "Avvisa il cliente", o la chat aperta da sola.
+- **Correzione**: il provino a contatto saltava i TIFF RGB a 16 bit
+  (Pillow non li legge): ora passano da tifffile.
+- Simulatore: `FILMSCAN_DX=109-9` finge un codice DX.
+
 ### 2026-10-29 — rullo, classi di esposizione, densità locale, sonde SDK
 
 - **Correzione**: `invert_negative` ora inverte (10^(+D/γ), γ 0,6);

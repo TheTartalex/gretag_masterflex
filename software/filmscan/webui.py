@@ -45,7 +45,7 @@ from typing import Dict, List, Optional
 from urllib.parse import parse_qs, urlparse
 
 from . import compat
-from . import consegne
+from . import bianconero, consegne, pellicole_dx
 from .config import AppConfig, FORMATS, PRESETS
 from .invert import PROFILES
 from .orders import Archivio
@@ -231,6 +231,8 @@ def _opzioni(d: Dict) -> ProcessOptions:
         dust_repair=f("polvere"),
         sharpen=f("nitidezza"),
         densita_locale=f("densita_locale"),
+        tono_bn=str(d.get("tono_bn") or ""),
+        viraggio=str(d.get("viraggio") or ""),
         auto_rotate=bool(d.get("auto_ruota", False)),
 
         # --- pannello colore ---
@@ -473,6 +475,24 @@ table.sc th{color:var(--dim);font-weight:500}
    <div><label>Prefisso telefono</label>
     <input id="prefisso" value="39"></div>
   </div>
+  <div class="g2" style="margin-top:8px">
+   <div><label title="Da solo: l'app su tablet e telefono, WhatsApp Web sul PC. Il telefono dell'attivita' puo' essere altrove: PC e tablet sono dispositivi collegati">WhatsApp si apre</label>
+    <select id="wa_modo">
+     <option value="auto">da solo</option>
+     <option value="web">WhatsApp Web</option>
+     <option value="app">l'app</option>
+    </select></div>
+   <div><label>A ordine finito</label>
+    <select id="wa_fine">
+     <option value="proponi">propone l'avviso</option>
+     <option value="apri">apre la chat da solo (PC)</option>
+     <option value="niente">niente</option>
+    </select></div>
+  </div>
+  <label style="margin-top:8px"><input type="checkbox" id="wa_appunti" style="width:auto" checked>
+   Sul PC della macchina metti l'allegato negli appunti (nella chat: Ctrl+V)</label>
+  <label><input type="checkbox" id="wa_incolla" style="width:auto">
+   ...e incollalo da solo quando la chat e' aperta</label>
   <label>Quando scadono</label>
   <select id="pulizia">
    <option value="segnala">Segnala soltanto - non cancella niente</option>
@@ -631,17 +651,26 @@ function apri(id){
     h+='<section class="pannello"><h2>Avvisa il cliente</h2>'+
        '<label>Messaggio</label><textarea id="d_msg">'+MODELLO+'</textarea>'+
        '<div class="nota">Si possono usare {cliente} {codice} {fotogrammi} {rulli} {data}.</div>'+
-       '<div class="row"><button onclick="avvisa('+o.id+')">Apri WhatsApp</button>'+
-       '<button class="ghost" onclick="salvaProvino('+o.id+')">Prepara il provino</button></div>'+
+       '<div class="row"><button onclick="avvisa('+o.id+')">Apri la chat</button>'+
+       '<button class="sec" id="tasto_condividi" onclick="condividi('+o.id+',\'provino\')">Condividi il provino</button></div>'+
+       '<div class="g2" style="margin-top:8px">'+
+       '<button class="sec"'+cf+' onclick="negliAppunti('+o.id+',\'provino\')">Provino negli appunti</button>'+
+       '<button class="sec"'+cf+' onclick="negliAppunti('+o.id+',\'foto\')">Foto negli appunti ('+
+         (ri.n_selezionati||ri.n_esportati||0)+')</button></div>'+
+       '<div class="row" style="margin-top:8px"><button class="sec"'+cf+
+         ' id="tasto_condividi_foto" onclick="condividi('+o.id+',\'foto\')">Condividi le foto ('+
+         Math.min(ri.n_selezionati||ri.n_esportati||0,30)+')</button></div>'+
        '<div class="nota" id="esitoavviso"></div>'+
-       '<div class="nota">WhatsApp non permette a un programma esterno di allegare '+
-       'un file o di premere invio: si apre la conversazione con il messaggio gia\' '+
-       'scritto, il provino resta nella cartella dell\'ordine a un trascinamento di '+
-       'distanza, e l\'invio lo fa una persona.</div></section>';
+       '<div class="nota">La chat si apre sul dispositivo da cui premi il tasto: il '+
+       'telefono dell\'attivita\' non serve, PC e tablet sono dispositivi collegati. '+
+       'Sul PC della macchina l\'allegato va negli appunti: nella chat Ctrl+V e '+
+       'Invio. Su tablet e telefono Condividi apre il menu del sistema: si sceglie '+
+       'WhatsApp e poi la chat. L\'invio lo fa sempre una persona.</div></section>';
 
     r.rulli.forEach(function(ru){
       h+='<section class="pannello"><h2>'+ru.etichetta+
-         ' <span>'+ru.formato+' · '+ru.fotogrammi.length+' fotogrammi · '+ru.stato+'</span></h2>'+
+         ' <span>'+ru.formato+' · '+ru.fotogrammi.length+' fotogrammi · '+ru.stato+
+         (ru.pellicola?' · '+ru.pellicola:'')+(ru.sviluppo?' · sviluppo '+ru.sviluppo:'')+'</span></h2>'+
          '<div class="row" style="margin-top:0"><button class="ghost" style="width:auto" '+
          'onclick="riapriRullo('+o.id+','+ru.id+')">Riapri questo rullo</button>'+
          '<button class="male" style="width:auto" '+
@@ -690,16 +719,86 @@ function salvaProvino(oid){
     else alert(r.errore || ('Provino salvato in: '+r.percorso));
   });
 }
+var WA_MODO = 'auto';
+function mobile(){
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
+         (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
+}
+/* auto: sul tablet wa.me (apre l'app, anche collegata), sul PC WhatsApp Web
+   sempre nella stessa scheda ("whatsapp"): una scheda nuova a ogni avviso fa
+   dire a WhatsApp che e' aperto in un'altra finestra */
+function apriChat(r){
+  var m = r.modo || WA_MODO;
+  var l = m==='web' ? r.link_web : m==='app' ? r.link_app
+        : (mobile() ? r.link : r.link_web);
+  if(l.indexOf('whatsapp://')===0) location.href = l;
+  else window.open(l, 'whatsapp');
+}
 function avvisa(oid){
   post('/api/archivio/avviso',{ordine_id:oid, modello:el('d_msg').value})
    .then(function(r){
     if(r.errore){ el('esitoavviso').textContent=r.errore; return; }
-    el('esitoavviso').innerHTML = r.ha_numero
+    var t = r.ha_numero
       ? ('Apro la conversazione con '+r.numero+'.')
       : ('Questo cliente non ha un numero in scheda: WhatsApp si apre con il '+
          'messaggio pronto e il destinatario lo scegli tu.');
-    window.open(r.link, '_blank');
+    if(r.allegato && r.allegato.messaggio) t += ' '+r.allegato.messaggio;
+    el('esitoavviso').textContent = t;
+    apriChat(r);
   });
+}
+function negliAppunti(oid, cosa){
+  el('esitoavviso').textContent = 'Preparo...';
+  post('/api/archivio/appunti',{ordine_id:oid, cosa:cosa}).then(function(r){
+    el('esitoavviso').textContent = r.errore ? r.errore
+      : r.appunti ? r.messaggio
+      : (r.messaggio || 'Gli appunti sono quelli del PC della macchina: da qui usa Condividi.');
+  });
+}
+/* Condividi (Web Share con i file): il menu del sistema va aperto entro
+   pochi secondi dal tocco, quindi in due tempi: il primo tocco scarica le
+   foto, il secondo apre il menu. Serve una pagina sicura: in rete locale
+   senza https Chrome per Android lo permette solo con l'indirizzo fra gli
+   "Insecure origins treated as secure" di chrome://flags. */
+var PRONTI = {};
+function condividi(oid, cosa){
+  var e = el('esitoavviso');
+  var tasto = el(cosa==='foto' ? 'tasto_condividi_foto' : 'tasto_condividi');
+  if(!navigator.canShare){
+    e.textContent = 'Questo browser non condivide file da questa pagina' +
+      (window.isSecureContext ? '.' : (': la pagina non e\' sicura. Su Chrome per '+
+       'Android: chrome://flags, "Insecure origins treated as secure", aggiungere '+
+       location.origin+' e riavviare Chrome. Intanto: Apri la chat e Scarica.'));
+    return;
+  }
+  var chiave = oid+':'+cosa, p = PRONTI[chiave];
+  if(p){
+    delete PRONTI[chiave];
+    navigator.share(p).then(function(){ e.textContent='Condiviso.'; },
+      function(x){ e.textContent = x && x.name==='AbortError' ? 'Condivisione annullata.'
+                                   : ('Condivisione non riuscita: '+x); });
+    if(tasto) tasto.textContent = cosa==='foto' ? 'Condividi le foto' : 'Condividi il provino';
+    return;
+  }
+  e.textContent = 'Preparo le immagini...';
+  post('/api/archivio/avviso',{ordine_id:oid, modello:el('d_msg').value}).then(function(r){
+    var indirizzi = [];
+    if(cosa==='foto') for(var i=0;i<Math.min(r.n_foto||0,30);i++)
+      indirizzi.push(url('/api/archivio/foto.jpg?id='+oid+'&n='+i));
+    else indirizzi.push(url('/api/archivio/provino.jpg?id='+oid));
+    return Promise.all(indirizzi.map(function(u, i){
+      return fetch(u).then(function(x){ return x.blob(); }).then(function(b){
+        return new File([b], (cosa==='foto' ? 'foto-'+(i+1) : 'provino')+'.jpg',
+                        {type:'image/jpeg'}); });
+    })).then(function(file){
+      var dati = {files:file, text:r.testo};
+      if(!navigator.canShare(dati)){ e.textContent='Il sistema non accetta questi file.'; return; }
+      PRONTI[chiave] = dati;
+      e.textContent = file.length+' immagin'+(file.length===1?'e pronta':'i pronte')+
+                      ': tocca di nuovo per scegliere WhatsApp.';
+      if(tasto) tasto.textContent = 'Tocca per condividere ('+file.length+')';
+    });
+  }).catch(function(x){ e.textContent='Immagini non preparate: '+x; });
 }
 /* --- eliminazioni ---
    Tutte e tre passano di qui perche' fanno la stessa cosa in scala diversa, e
@@ -797,6 +896,8 @@ function salvaImpostazioni(){
   post('/api/archivio/impostazioni',{archivio_dir:el('cartella').value,
        conservazione_giorni:parseInt(el('giorni').value)||30,
        whatsapp_prefisso:el('prefisso').value,
+       whatsapp_modo:el('wa_modo').value, whatsapp_fine_ordine:el('wa_fine').value,
+       whatsapp_appunti:el('wa_appunti').checked, whatsapp_incolla:el('wa_incolla').checked,
        pulizia:el('pulizia').value})
    .then(function(r){
     el('cartella').value=r.archivio_dir||'';
@@ -858,6 +959,13 @@ get('/api/archivio/cartelle').then(function(r){ el('cartella').value=r.attuale||
 get('/api/archivio/ordini').then(function(r){
   el('giorni').value=r.conservazione||30;
   if(r.pulizia) el('pulizia').value=r.pulizia;
+  var w=r.whatsapp||{};
+  if(w.prefisso) el('prefisso').value=w.prefisso;
+  if(w.modo) el('wa_modo').value=w.modo;
+  if(w.fine_ordine) el('wa_fine').value=w.fine_ordine;
+  el('wa_appunti').checked=w.appunti!==false;
+  el('wa_incolla').checked=!!w.incolla;
+  WA_MODO=w.modo||'auto';
   caricaScaduti(); });
 caricaOrdini();
 </script></body></html>
@@ -1254,7 +1362,15 @@ details.sez>div{padding-bottom:10px}
     <select id="specchiato"><option value="">no</option><option value="1">si</option></select></div>
    <div><label title="Pulizia di polvere e graffi con la lettura a infrarosso: piu' lenta, da scegliere rullo per rullo">Digital ICE</label>
     <select id="ice"><option value="">no</option><option value="1">si</option></select></div>
+   <div><label title="Come e' stata sviluppata la pellicola: un forzato e' piu' contrastato e piu' granuloso, e si inverte di conseguenza">Sviluppo</label>
+    <select id="sviluppo"><option value="0">normale</option>
+     <option value="1">forzato +1</option><option value="2">forzato +2</option>
+     <option value="3">forzato +3</option><option value="-1">tirato -1</option></select></div>
   </div>
+  <div style="font-size:11px;color:var(--dim);margin-top:6px">
+   La pellicola si riconosce da sola dal codice DX sul bordo: se il tipo non
+   e' quello scelto qui (per esempio una diapositiva registrata come
+   negativo), il rullo si corregge e l'ordine lo annota.</div>
   <div style="font-size:11px;color:var(--dim);margin-top:6px">
    Lasciare vuoto: i fotogrammi si contano leggendo la striscia e ci si ferma
    quando la pellicola finisce. Il tetto del formato (72 per il mezzo formato,
@@ -1371,6 +1487,12 @@ details.sez>div{padding-bottom:10px}
   <input type="range" id="grana_aggiungi" min="0" max="0.1" step="0.01" value="0">
   <label title="Schiarisce le grandi zone scure e scurisce quelle chiare, senza toccare il dettaglio">Densità locale <b id="v_densita_locale">0,0</b></label>
   <input type="range" id="densita_locale" min="0" max="1" step="0.1" value="0">
+  <div class="griglia2" style="margin-top:10px">
+   <div><label title="Solo per le pellicole in bianco e nero: la carta su cui si stampa">Tono B/N</label>
+    <select id="tono_bn"><!--TONI--></select></div>
+   <div><label title="Solo per le pellicole in bianco e nero: il bagno di viraggio">Viraggio</label>
+    <select id="viraggio"><!--VIRAGGI--></select></div>
+  </div>
   <div style="margin-top:12px">
    <label><input type="checkbox" id="ritaglio" checked style="width:auto"> Ritaglio automatico</label>
    <label><input type="checkbox" id="auto_ruota" style="width:auto"> Orientamento automatico</label>
@@ -1538,6 +1660,11 @@ details.sez>div{padding-bottom:10px}
    <div class="bar" style="margin:0 0 3px"><div id="barra"></div></div>
    <div id="msg">pronto</div>
    <div id="avvisi" class="avvisi" onclick="apriScheda('diario')"></div>
+   <div id="pellicola" class="nota" style="font-size:11px;color:var(--dim)"></div>
+   <button class="sec" id="tasto_avvisa" style="display:none;margin-top:4px;width:100%;
+    font-size:12px;padding:5px 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
+    title="Apre la chat WhatsApp del cliente con il messaggio pronto"
+    onclick="avvisaOrdine()">Avvisa il cliente</button>
   </div>
   <button class="sec" onclick="espelli('davanti')" title="Fa uscire la pellicola da dove e' entrata. Il retro sta nella scheda Macchina">Espelli</button>
  </div>
@@ -1825,6 +1952,7 @@ function opzioni(){ return {
   graffi:num('graffi'), polvere:num('polvere'),
   nitidezza:num('nitidezza'), grana_aggiungi:num('grana_aggiungi'),
   densita_locale:num('densita_locale'),
+  tono_bn:val('tono_bn'), viraggio:val('viraggio'),
   auto_ruota:val('auto_ruota'), ritaglio:val('ritaglio'),
   /* pannello colore */
   esposizione:num('esposizione'),
@@ -2073,6 +2201,7 @@ function scansiona(){
 function azzeraCorrezioni(){
   var d={ir:1,grana_riduci:0,nitidezza:0,graffi:0,polvere:0,grana_aggiungi:0,densita_locale:0};
   Object.keys(d).forEach(function(k){ el(k).value=d[k]; mostraValore(k); });
+  el('tono_bn').value=''; el('viraggio').value=''; applica();
 }
 var DECIMALI={grana_aggiungi:2,esposizione:2,gamma_tono:2,saturazione:2,
               temperatura_k:0,tinta_vm:0,contrasto:0,luminosita:0,chiarezza:0,
@@ -2098,7 +2227,7 @@ function creaRullo(){
   post('/api/rulli',{ordine_id:parseInt(o),etichetta:val('etichetta'),
     formato:val('formato'),preset:val('preset'),profilo:val('profilo'),
     attesi:parseInt(val('attesi'))||0,specchiato:val('specchiato'),
-    ice:val('ice')})
+    ice:val('ice'),sviluppo:parseInt(val('sviluppo'))||0})
     .then(function(){caricaRulli();caricaOrdini();}); }
 
 function caricaOrdini(){ get('/api/ordini').then(function(r){
@@ -2217,11 +2346,33 @@ function mostraStato(s){
       ? ' · fotogramma '+j.frame+' di '+j.total : '';
     el('msg').textContent = j.message + conta;
     if(j.errors.length) el('avvisi').textContent = j.errors.join(' · ');
+    el('pellicola').textContent = j.pellicola ? ('Pellicola: '+j.pellicola) : '';
+    var ta = el('tasto_avvisa');
+    ta.style.display = (j.avviso_ordine && !j.running) ? '' : 'none';
+    ta.dataset.ordine = j.avviso_ordine || '';
     el('log').textContent = j.log.join('\n');
     /* Il tasto torna disponibile quando il lavoro e' finito davvero, non
        quando la richiesta di arresto e' partita: e' l'unico modo che ha
        l'operatore di sapere che la macchina si e' fermata. */
   }
+}
+
+/* Ordine finito: un tocco apre la chat col messaggio di serie (il tocco
+   serve: una finestra aperta da sola la bloccherebbe il browser). */
+function avvisaOrdine(){
+  var oid = parseInt(el('tasto_avvisa').dataset.ordine||'0');
+  if(!oid) return;
+  post('/api/archivio/avviso',{ordine_id:oid}).then(function(r){
+    if(r.errore){ el('msg').textContent=r.errore; return; }
+    el('msg').textContent = (r.ha_numero ? 'Chat con '+r.numero+'.' : 'Scegli il destinatario in WhatsApp.') +
+      (r.allegato && r.allegato.messaggio ? ' '+r.allegato.messaggio : '');
+    var mob = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
+              (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
+    var l = r.modo==='web' ? r.link_web : r.modo==='app' ? r.link_app
+          : (mob ? r.link : r.link_web);
+    if(l.indexOf('whatsapp://')===0) location.href=l; else window.open(l,'whatsapp');
+    el('tasto_avvisa').style.display='none';
+  });
 }
 
 function mostraSensori(){ get('/api/sensori').then(function(x){
@@ -2271,6 +2422,9 @@ Array.prototype.forEach.call(el('g_zoom').children,function(b){
 ['ir','grana_riduci','nitidezza','graffi','polvere','grana_aggiungi'].forEach(function(id){
   el(id).oninput=function(){ mostraValore(id); }; mostraValore(id); });
 
+/* tono e viraggio del bianco e nero: come i cursori, si vede subito */
+['tono_bn','viraggio'].forEach(function(id){
+  el(id).onchange=function(){ applica(); }; });
 /* i cursori del colore rielaborano da soli: si sposta e si guarda, senza
    dover premere niente. La pellicola non si muove: si rifa' solo il calcolo. */
 ['esposizione','temperatura_k','tinta_vm','contrasto','luminosita','gamma_tono',
@@ -2332,6 +2486,10 @@ def _vesti(pagina: str, icona: bool = True) -> str:
 
 
 PAGINA = _vesti(PAGINA)
+PAGINA = PAGINA.replace("<!--TONI-->", "".join(
+    '<option value="%s">%s</option>' % kv for kv in bianconero.TONI.items()))
+PAGINA = PAGINA.replace("<!--VIRAGGI-->", "".join(
+    '<option value="%s">%s</option>' % (k, v[0]) for k, v in bianconero.VIRAGGI.items()))
 PAGINA_ARCHIVIO = _vesti(PAGINA_ARCHIVIO)
 PAGINA_PIN = _vesti(PAGINA_PIN)
 
@@ -2611,7 +2769,8 @@ class Handler(BaseHTTPRequestHandler):
                 fuori.append(r)
             return self._json({"ordini": fuori,
                                "conservazione": s.cfg.conservazione_giorni,
-                               "pulizia": s.cfg.pulizia})
+                               "pulizia": s.cfg.pulizia,
+                               "whatsapp": self._whatsapp_impostazioni()})
 
         if u.path == "/api/archivio/ordine":
             oid = int(q.get("id", ["0"])[0] or 0)
@@ -2630,8 +2789,12 @@ class Handler(BaseHTTPRequestHandler):
                     p_raw = f.get("file_raw") or ""
                     f["esiste"] = bool(p_out and os.path.isfile(p_out))
                     f["esiste_raw"] = bool(p_raw and os.path.isfile(p_raw))
+                pell = pellicole_dx.da_chiave(r.dx)
                 rulli.append({"id": r.id, "etichetta": r.etichetta,
                               "formato": r.formato, "stato": r.stato,
+                              "pellicola": pell.descrizione() if pell else "",
+                              "sviluppo": pellicole_dx.SVILUPPI.get(r.sviluppo, "")
+                              if r.sviluppo else "",
                               "fotogrammi": fg})
             return self._json({
                 "ordine": {"id": o.id, "codice": o.codice, "stato": o.stato,
@@ -2680,6 +2843,16 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"errore": str(exc)}, 400)
             return self._scarica(dest, tipo="application/zip")
 
+        if u.path == "/api/archivio/foto.jpg":
+            # le foto da mandare, una per volta, in JPEG da 2048 px: le
+            # prende il tasto Condividi del tablet
+            oid = int(q.get("id", ["0"])[0] or 0)
+            n = int(q.get("n", ["0"])[0] or 0)
+            foto = consegne.foto_da_mandare(s.archivio, oid)
+            if not 0 <= n < len(foto):
+                return self._json({"errore": "foto inesistente"}, 404)
+            return self._immagine(consegne.jpeg_per_invio(foto[n]))
+
         if u.path == "/api/archivio/provino.jpg":
             oid = int(q.get("id", ["0"])[0] or 0)
             o = s.archivio.ordine(oid)
@@ -2695,6 +2868,16 @@ class Handler(BaseHTTPRequestHandler):
                 return self._immagine(f.read())
 
         self._json({"errore": "percorso sconosciuto"}, 404)
+
+    def _locale(self) -> bool:
+        """La richiesta viene dal PC della macchina (gli appunti sono i suoi)."""
+        return self.client_address[0] in ("127.0.0.1", "::1", "localhost")
+
+    def _whatsapp_impostazioni(self) -> Dict[str, object]:
+        c = self.servizio.cfg
+        return {"prefisso": c.whatsapp_prefisso, "modo": c.whatsapp_modo,
+                "fine_ordine": c.whatsapp_fine_ordine,
+                "appunti": c.whatsapp_appunti, "incolla": c.whatsapp_incolla}
 
     def _scarica(self, percorso: str, nome: str = "",
                  tipo: str = "application/octet-stream") -> None:
@@ -2883,6 +3066,14 @@ class Handler(BaseHTTPRequestHandler):
                     s.cfg.conservazione_giorni = max(1, int(d["conservazione_giorni"]))
                 if "whatsapp_prefisso" in d:
                     s.cfg.whatsapp_prefisso = str(d["whatsapp_prefisso"] or "39")
+                if d.get("whatsapp_modo") in ("auto", "web", "app"):
+                    s.cfg.whatsapp_modo = d["whatsapp_modo"]
+                if d.get("whatsapp_fine_ordine") in ("proponi", "apri", "niente"):
+                    s.cfg.whatsapp_fine_ordine = d["whatsapp_fine_ordine"]
+                if "whatsapp_appunti" in d:
+                    s.cfg.whatsapp_appunti = bool(d["whatsapp_appunti"])
+                if "whatsapp_incolla" in d:
+                    s.cfg.whatsapp_incolla = bool(d["whatsapp_incolla"])
                 if "pulizia" in d:
                     modo = str(d["pulizia"] or "segnala")
                     if modo not in consegne.PULIZIE:
@@ -2975,9 +3166,29 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(s.pulizia_scaduti())
 
             if u.path == "/api/archivio/avviso":
-                return self._json(consegne.avviso(
-                    s.archivio, int(d.get("ordine_id", 0)),
-                    d.get("modello", ""), s.cfg.whatsapp_prefisso))
+                oid = int(d.get("ordine_id", 0))
+                av = consegne.avviso(s.archivio, oid, d.get("modello", ""),
+                                     s.cfg.whatsapp_prefisso)
+                av["modo"] = s.cfg.whatsapp_modo
+                av["locale"] = self._locale()
+                av["n_foto"] = len(consegne.foto_da_mandare(s.archivio, oid))
+                s.job.avviso_ordine = 0
+                # sul PC della macchina il provino va negli appunti prima
+                # che la chat si apra
+                if av["locale"] and s.cfg.whatsapp_appunti:
+                    try:
+                        av["allegato"] = s.prepara_whatsapp(oid, "provino", True)
+                    except (ValueError, OSError) as exc:
+                        av["allegato"] = {"messaggio": str(exc)}
+                return self._json(av)
+
+            if u.path == "/api/archivio/appunti":
+                try:
+                    return self._json(s.prepara_whatsapp(
+                        int(d.get("ordine_id", 0)), d.get("cosa", "provino"),
+                        self._locale()))
+                except (ValueError, OSError) as exc:
+                    return self._json({"errore": str(exc)}, 400)
 
             if u.path == "/api/archivio/provino":
                 oid = int(d.get("ordine_id", 0))
@@ -3006,7 +3217,7 @@ class Handler(BaseHTTPRequestHandler):
                     int(d["ordine_id"]), d.get("etichetta", "rullo"),
                     d.get("formato", "135-full"), d.get("preset", "standard"),
                     d.get("profilo", "c41"), int(d.get("attesi", 36)),
-                    ice=bool(d.get("ice")))
+                    ice=bool(d.get("ice")), sviluppo=int(d.get("sviluppo") or 0))
                 if d.get("specchiato"):
                     s.archivio.rullo_specchiatura(rid, True, confermata=True)
                 return self._json({"id": rid})

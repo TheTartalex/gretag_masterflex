@@ -130,6 +130,8 @@ class Rullo:
     ice: bool = False
     # il codice DX letto dalla macchina ("DX 115-3"), vuoto se non letto
     dx: str = ""
+    # sviluppo in stop: 0 normale, +1/+2/+3 forzato, -1 tirato
+    sviluppo: int = 0
 
 
 # --------------------------------------------------------------------------
@@ -155,6 +157,7 @@ class Archivio:
             for tabella, colonna, tipo in (
                     ("rulli", "ice", "INTEGER NOT NULL DEFAULT 0"),
                     ("rulli", "dx", "TEXT DEFAULT ''"),
+                    ("rulli", "sviluppo", "INTEGER NOT NULL DEFAULT 0"),
                     ("fotogrammi", "numero_bordo", "TEXT DEFAULT ''"),
                     # 1 = da stampare, -1 = scartato, 0 = niente
                     ("fotogrammi", "voto", "INTEGER NOT NULL DEFAULT 0"),
@@ -352,14 +355,15 @@ class Archivio:
 
     def rullo_crea(self, ordine_id: int, etichetta: str, formato: str,
                    preset: str, profilo: str = "c41", attesi: int = 0,
-                   ice: bool = False) -> int:
+                   ice: bool = False, sviluppo: int = 0) -> int:
         with self._conn() as c:
             cur = c.execute(
                 "INSERT INTO rulli (ordine_id, etichetta, formato, preset, "
-                "profilo, attesi, stato, creato, ice) "
-                "VALUES (?,?,?,?,?,?,?,?,?)",
+                "profilo, attesi, stato, creato, ice, sviluppo) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?)",
                 (ordine_id, etichetta, formato, preset, profilo, attesi,
-                 "da_scansionare", time.time(), 1 if ice else 0))
+                 "da_scansionare", time.time(), 1 if ice else 0,
+                 max(-1, min(3, int(sviluppo or 0)))))
             return int(cur.lastrowid)
 
     def rulli(self, ordine_id: int) -> List[Rullo]:
@@ -375,6 +379,7 @@ class Archivio:
             d["conf_specchio"] = bool(d["conf_specchio"])
             d["ice"] = bool(d.get("ice", 0))
             d["dx"] = d.get("dx") or ""
+            d["sviluppo"] = int(d.get("sviluppo") or 0)
             out.append(Rullo(**d))
         return out
 
@@ -391,6 +396,7 @@ class Archivio:
         d["conf_specchio"] = bool(d["conf_specchio"])
         d["ice"] = bool(d.get("ice", 0))
         d["dx"] = d.get("dx") or ""
+        d["sviluppo"] = int(d.get("sviluppo") or 0)
         return Rullo(**d)
 
     def rullo_specchiatura(self, rullo_id: int, specchiato: bool,
@@ -407,6 +413,23 @@ class Archivio:
     def rullo_dx(self, rullo_id: int, dx: str) -> None:
         with self._conn() as c:
             c.execute("UPDATE rulli SET dx = ? WHERE id = ?", (dx or "", rullo_id))
+
+    def rullo_profilo(self, rullo_id: int, profilo: str) -> None:
+        """Il profilo di inversione corretto dal codice DX."""
+        with self._conn() as c:
+            c.execute("UPDATE rulli SET profilo = ? WHERE id = ?", (profilo, rullo_id))
+
+    def ordine_aggiungi_nota(self, ordine_id: int, riga: str) -> None:
+        """Aggiunge una riga alla nota dell'ordine (senza ripeterla)."""
+        o = self.ordine(ordine_id)
+        if o is None or not riga:
+            return
+        nota = (o.note or "").strip()
+        if riga in nota:
+            return
+        with self._conn() as c:
+            c.execute("UPDATE ordini SET note = ? WHERE id = ?",
+                      ((nota + "\n" if nota else "") + riga, int(ordine_id)))
 
     def rullo_stato(self, rullo_id: int, stato: str) -> None:
         if stato not in STATI_RULLO:

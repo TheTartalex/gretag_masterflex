@@ -27,7 +27,7 @@ from typing import Callable, Dict, List, Optional
 
 import numpy as np
 
-from . import colore
+from . import bianconero, colore
 from . import enhance as enh
 from . import framing, invert, irclean, orient, registration
 from .acquire import RawScan
@@ -112,6 +112,18 @@ class ProcessOptions:
     # correzione di densita' locale (0 = spenta): schiarisce e scurisce per zone
     densita_locale: float = 0.0
 
+    # --- bianco e nero (bianconero.py): solo con un profilo monocromatico ---
+    tono_bn: str = ""                   # "", alto, basso, esteso, duro
+    viraggio: str = ""                  # "", seppia, selenio, caldo, freddo, cianotipia
+
+    # --- dalla pellicola riconosciuta (pellicole_dx.py) ---
+    # riduzione di grana di serie per la grana attesa; si usa solo se
+    # l'operatore non ne ha scelta una (grain_reduction == 0)
+    grana_pellicola: float = 0.0
+    grana_pellicola_solo_croma: bool = True
+    pellicola: str = ""                 # nome, per i metadati del file
+    iso_pellicola: int = 0
+
 
 @dataclass
 class ProcessResult:
@@ -193,7 +205,11 @@ def _bilancia(img: np.ndarray, opts: ProcessOptions, rapida: bool = False) -> np
         img = invert.auto_white_balance(img, opts.auto_wb)
     if opts.auto_levels:
         nero = 0.5 if opts.classe_esposizione == "velato" else 0.1
-        img = invert.auto_levels(img, black_pct=nero)
+        bianco = 99.8
+        if opts.tono_bn == "esteso" and opts.profile.monochrome:
+            # la gamma estesa non taglia: quel che la curva salva deve esserci
+            nero, bianco = 0.02, 99.97
+        img = invert.auto_levels(img, black_pct=nero, white_pct=bianco)
     if opts.curve:
         img = invert.apply_curve(img, opts.curve)
     return _ritocco_classe(img, opts.classe_esposizione, rapida)
@@ -221,6 +237,15 @@ def _ritocco_classe(img: np.ndarray, classe: str, rapida: bool = False) -> np.nd
     return img
 
 
+def _monocroma(img: np.ndarray) -> bool:
+    """La base e' gia' in bianco e nero (canali uguali)? Un campione basta:
+    l'inversione monocromatica li copia identici."""
+    if img is None or img.ndim != 3 or img.shape[2] < 3:
+        return False
+    c = img[::37, ::37]
+    return bool(np.array_equal(c[..., 0], c[..., 1]) and np.array_equal(c[..., 1], c[..., 2]))
+
+
 def finiture(base: np.ndarray, opts: ProcessOptions):
     """Dalla base al fotogramma finito: i controlli dell'operatore e l'sRGB.
 
@@ -235,6 +260,9 @@ def finiture(base: np.ndarray, opts: ProcessOptions):
     """
     if opts.densita_locale > 0:
         base = enh.densita_locale(base, opts.densita_locale)
+    mono = bool(opts.profile.monochrome) or _monocroma(base)
+    if mono and opts.tono_bn:
+        base = bianconero.tono(base, opts.tono_bn)
     img = colore.applica(base, opts)
 
     if abs(opts.saturation - 1.0) > 1e-3:
@@ -251,7 +279,14 @@ def finiture(base: np.ndarray, opts: ProcessOptions):
             dust_repair=opts.dust_repair,
             sharpen=opts.sharpen,
             grain_add=opts.grain_add)
+    if opts.grain_reduction <= 0 and opts.grana_pellicola > 0:
+        # la grana che ci si aspetta da questa pellicola: poca, e solo se
+        # l'operatore non ha scelto lui
+        img = enh.reduce_grain(img, opts.grana_pellicola,
+                               chroma_only=opts.grana_pellicola_solo_croma and not mono)
 
+    if mono and opts.viraggio:
+        img = bianconero.viraggio(img, opts.viraggio)
     img = invert.to_srgb(img)
     # La LUT per ultima, sull'sRGB finito: e' li' che un look .cube si
     # aspetta di lavorare, e resta fuori dal grezzo e dalla base.
@@ -470,6 +505,37 @@ def _data_exif(meta: Optional[Dict[str, object]]) -> str:
     return _t.strftime("%Y:%m:%d %H:%M:%S", _t.localtime(float(quando)))
 
 
+def _xmp(meta: Dict[str, object]) -> bytes:
+    """Pacchetto XMP con pellicola e ISO: e' dove Lightroom, Bridge e
+    exiftool cercano le parole chiave e la sensibilita' di un TIFF."""
+    from xml.sax.saxutils import escape
+    parole = [str(p) for p in (meta.get("parole") or []) if p]
+    iso = int(meta.get("iso") or 0)
+    righe = ['<?xpacket begin="\ufeff" id="W5M0MpCehiHzreSzNTczkc9d"?>',
+             '<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF '
+             'xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">',
+             '<rdf:Description rdf:about="" '
+             'xmlns:dc="http://purl.org/dc/elements/1.1/" '
+             'xmlns:exif="http://ns.adobe.com/exif/1.0/">']
+    if meta.get("descrizione"):
+        righe.append('<dc:description><rdf:Alt><rdf:li xml:lang="x-default">%s'
+                     '</rdf:li></rdf:Alt></dc:description>'
+                     % escape(str(meta["descrizione"])))
+    if parole:
+        righe.append("<dc:subject><rdf:Bag>%s</rdf:Bag></dc:subject>" % "".join(
+            "<rdf:li>%s</rdf:li>" % escape(p) for p in parole))
+    if iso:
+        righe.append("<exif:ISOSpeedRatings><rdf:Seq><rdf:li>%d</rdf:li>"
+                     "</rdf:Seq></exif:ISOSpeedRatings>" % iso)
+    righe.append('</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end="w"?>')
+    return "".join(righe).encode("utf-8")
+
+
+def _xp(testo: str) -> bytes:
+    """I campi XP* di Windows (Tag, Commenti in Esplora risorse): UTF-16."""
+    return (str(testo) + "\0").encode("utf-16-le")
+
+
 def export(img: np.ndarray, path: str, fmt: str = "tiff16",
            jpeg_quality: int = 95,
            meta: Optional[Dict[str, object]] = None) -> str:
@@ -481,7 +547,12 @@ def export(img: np.ndarray, path: str, fmt: str = "tiff16",
     (ordine, rullo, fotogramma, numero di bordo, pellicola), data di
     scansione, dpi veri, scanner e programma. Cosi' un file preso
     dall'archivio dice da solo cos'e', anche fuori da filmscan. Il nome del
-    cliente no: i file vanno al cliente e magari oltre."""
+    cliente no: i file vanno al cliente e magari oltre.
+
+    La pellicola riconosciuta dal DX ("pellicola", "iso") va nella
+    descrizione, nella sensibilita' EXIF (ISOSpeedRatings: i programmi la
+    mostrano come l'ISO della "fotocamera"), nelle parole chiave di Windows
+    (XPKeywords) e, nei TIFF, nell'XMP."""
     from PIL import Image
 
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
@@ -490,6 +561,10 @@ def export(img: np.ndarray, path: str, fmt: str = "tiff16",
     descrizione = _ascii(meta.get("descrizione", ""))
     dpi = float(meta.get("dpi") or 0) or None
     data = _data_exif(meta)
+    iso = int(meta.get("iso") or 0)
+    parole = [str(p) for p in (meta.get("parole") or []) if p]
+    xmp = _xmp(meta) if (parole or iso) else b""
+    xp = _xp("; ".join(parole)) if parole else b""
 
     if fmt == "tiff16":
         # PIL non sa scrivere TIFF RGB a 16 bit: serve tifffile (o imageio).
@@ -503,13 +578,17 @@ def export(img: np.ndarray, path: str, fmt: str = "tiff16",
                 resolution=(dpi, dpi) if dpi else None,
                 resolutionunit="INCH" if dpi else None,
                 extratags=[(271, "s", 0, MARCA, True),
-                           (272, "s", 0, MODELLO, True)])
+                           (272, "s", 0, MODELLO, True)]
+                + ([(700, "B", len(xmp), xmp, True)] if xmp else [])
+                + ([(40094, "B", len(xp), xp, True)] if xp else []))
         except ImportError:
             import imageio.v3 as iio
             iio.imwrite(path, data16)
     elif fmt == "tiff8":
         info = {270: descrizione, 271: MARCA, 272: MODELLO, 305: PROGRAMMA,
                 306: data}
+        if xmp:
+            info[700] = xmp
         Image.fromarray((arr * 255).astype(np.uint8), "RGB").save(
             path, format="TIFF", tiffinfo=info,
             **({"dpi": (dpi, dpi)} if dpi else {}))
@@ -523,6 +602,10 @@ def export(img: np.ndarray, path: str, fmt: str = "tiff16",
                             (305, PROGRAMMA), (306, data)):
             if valore:
                 exif[tag] = valore
+        if xp:
+            exif[0x9C9E] = xp                     # XPKeywords
+        if iso:
+            exif.get_ifd(0x8769)[0x8827] = iso    # ISOSpeedRatings
         pil.save(path, format="JPEG", quality=jpeg_quality, subsampling=0,
                  exif=exif.tobytes(), **({"dpi": (dpi, dpi)} if dpi else {}))
     return path
@@ -558,6 +641,9 @@ def export_negativo(lineare: np.ndarray, path: str, fmt: str = "dng",
                   resolution=(dpi, dpi) if dpi else None,
                   resolutionunit="INCH" if dpi else None)
     marca = [(271, "s", 0, MARCA, True), (272, "s", 0, MODELLO, True)]
+    if meta.get("parole") or meta.get("iso"):
+        xmp = _xmp(meta)
+        marca.append((700, "B", len(xmp), xmp, True))
     if fmt == "tiff":
         tifffile.imwrite(path, dati, photometric="rgb", extratags=marca, **comuni)
         return path

@@ -110,8 +110,13 @@ class StatisticheRullo(object):
     Thread-safe: le alimenta il ciclo di lettura e le legge il thread di
     elaborazione."""
 
-    def __init__(self, memoria: Optional[Dict[str, object]] = None):
+    def __init__(self, memoria: Optional[Dict[str, object]] = None,
+                 scala_densita: float = 1.0):
         self._lock = threading.Lock()
+        # pendenza attesa della pellicola rispetto a un C-41 normale
+        # (pellicole_dx.attese): un forzato e' piu' denso senza essere
+        # sovraesposto, e le soglie delle classi si scalano con lei
+        self.scala = max(0.5, min(2.0, float(scala_densita or 1.0)))
         self._fot: Dict[int, Fotogramma] = {}
         self.memoria = memoria or None
         self._base: Optional[np.ndarray] = None
@@ -174,14 +179,15 @@ class StatisticheRullo(object):
         """Sottoesposto, sovraesposto, velato, piatto o normale. Le soglie sono
         in densita' sopra la base, e relative al rullo dove ha senso: un rullo
         intero un po' chiaro non e' fatto di fotogrammi tutti sottoesposti."""
+        k = self.scala
         rel = f.livello - self._livello_mediano
-        if f.livello < 0.30 or (rel < -0.35 and f.livello < 0.55):
+        if f.livello < 0.30 * k or (rel < -0.35 * k and f.livello < 0.55 * k):
             return "sottoesposto"
-        if f.livello > 1.55 or rel > 0.45:
+        if f.livello > 1.55 * k or rel > 0.45 * k:
             return "sovraesposto"
-        if f.minimo > 0.35 and f.escursione < 0.50:
+        if f.minimo > 0.35 * k and f.escursione < 0.50 * k:
             return "velato"
-        if f.escursione < 0.30:
+        if f.escursione < 0.30 * k:
             return "piatto"
         return "normale"
 

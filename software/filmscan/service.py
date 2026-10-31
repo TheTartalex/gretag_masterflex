@@ -43,6 +43,7 @@ from .orders import Archivio
 from .orient import RollMirror
 from .pipeline import (ProcessOptions, anteprima_rapida, export, export_mask,
                        export_negativo, finiture, process)
+from . import pellicole_dx
 from .rullo import MemoriaPellicole, StatisticheRullo, chiave_dx
 
 
@@ -68,6 +69,10 @@ class JobState:
     anteprime: int = 0
     # fotogrammi letti e non ancora elaborati
     in_elaborazione: int = 0
+    # la pellicola riconosciuta dal codice DX (striscia in finestra)
+    pellicola: str = ""
+    # ordine finito (tutti i rulli letti): l'interfaccia propone l'avviso
+    avviso_ordine: int = 0
 
     def as_dict(self) -> Dict[str, object]:
         return {"running": self.running, "kind": self.kind,
@@ -78,7 +83,9 @@ class JobState:
                 "chiusura": self.chiusura,
                 "posizionamento": self.posizionamento,
                 "anteprime": self.anteprime,
-                "in_elaborazione": self.in_elaborazione}
+                "in_elaborazione": self.in_elaborazione,
+                "pellicola": self.pellicola,
+                "avviso_ordine": self.avviso_ordine}
 
 
 def _peso(raw) -> int:
@@ -402,6 +409,64 @@ class ScanService:
             self.log("Fine rullo richiesto: si chiude dopo il fotogramma in "
                      "corso.")
         return self.stato()
+
+    def _leggi_dx(self, backend) -> str:
+        """La chiave DX della striscia nel carrello ("DX 109-9"), "" se la
+        macchina non la sa dire. Mai bloccante."""
+        try:
+            return chiave_dx(backend.codice_dx())
+        except Emergenza:
+            raise
+        except Exception as exc:                        # noqa: BLE001
+            self.log("Codice DX non letto: %s" % exc)
+            return ""
+
+    def _riparti_esposizione(self, preset):
+        """(gains, da_misurare, misure_opache, verifica_unica) come a inizio
+        rullo: per una pellicola nuova l'esposizione per canale si rimisura
+        (una B/N non ha la maschera arancione di una colore)."""
+        gains = self._esposizione_fissa(preset)
+        return (gains, gains is None and preset.auto_exposure
+                and preset.channel_exposure is None, 0, True)
+
+    def _profilo_da_dx(self, ordine, rullo, chiave: str) -> Dict[str, object]:
+        """Il DX della prima striscia contro quel che si e' scelto a mano.
+        Se il tipo di pellicola e' diverso, il rullo si corregge da solo
+        (profilo in archivio, nota nell'ordine) e si dice. Restituisce i
+        cambi per la lettura: {"argento": True} (niente IR), {"preset": ...}.
+
+        Una scelta a mano B/N su una pellicola a colori si rispetta (puo'
+        essere il cliente a volerla in bianco e nero); il resto no: una
+        diapositiva invertita come negativo, o l'IR su un B/N all'argento,
+        sono errori, non scelte."""
+        pell = pellicole_dx.da_chiave(chiave)
+        if pell is None or not pell.conosciuta:
+            if pell is not None:
+                self.log("Pellicola: %s." % pell.descrizione())
+            return {}
+        cambi: Dict[str, object] = {"argento": pell.argento}
+        nuovo = pell.profilo
+        if (not nuovo or nuovo == rullo.profilo
+                or not getattr(self.cfg, "pellicola_da_dx", True)):
+            return cambi
+        if nuovo == "c41" and rullo.profilo in ("bn", "bn_c41"):
+            self.log("Il DX dice %s, il rullo e' registrato in bianco e nero: "
+                     "resta in bianco e nero, come scelto." % pell.descrizione())
+            return cambi
+        prima = PROFILES.get(rullo.profilo)
+        prima = prima.name if prima else rullo.profilo
+        self.archivio.rullo_profilo(rullo.id, nuovo)
+        rullo.profilo = nuovo
+        riga = ('"%s": pellicola %s (dal codice %s); a mano era %s, '
+                "corretto da solo" % (rullo.etichetta, pell.descrizione(), chiave, prima))
+        self.archivio.ordine_aggiungi_nota(ordine.id, riga)
+        self.job.errors.append(riga)
+        self.log("Attenzione: " + riga + ".")
+        if nuovo in ("diapositiva", "bn_diapositiva") and rullo.preset != "diapositiva":
+            cambi["preset"] = "diapositiva"
+        elif rullo.preset == "bn" and nuovo in ("c41",):
+            cambi["preset"] = "standard"
+        return cambi
 
     def _prossima_striscia(self, backend, formato: str):
         """Fine di una striscia di un rullo tagliato in piu' pezzi: espelle,
@@ -1250,35 +1315,93 @@ class ScanService:
         del rullo, cioe' il bilanciamento del singolo fotogramma."""
         if not corr:
             return opts
+        if corr.get("profilo"):
+            opts = ScanService._con_pellicola(opts, corr)
+        if not corr.get("base") or not corr.get("densita"):
+            return opts
         return dataclasses.replace(
             opts, base_rullo=tuple(corr["base"]),
             correzione_densita=tuple(corr["densita"]),
             classe_esposizione=str(corr.get("classe", "")),
             avvisi_rullo=list(corr.get("avvisi", [])))
 
-    def _chiudi_statistiche(self, rullo_id: int, stat: StatisticheRullo,
-                            chiave: str, memoria: MemoriaPellicole) -> None:
+    @staticmethod
+    def _con_pellicola(opts: ProcessOptions, extra) -> ProcessOptions:
+        """Le opzioni con quel che si sa della pellicola (_extra_pellicola):
+        profilo di inversione, pendenza attesa, grana attesa, nome e ISO per
+        i metadati. Senza pellicola riconosciuta resta il profilo del rullo,
+        con la pendenza dello sviluppo scelto."""
+        profilo = PROFILES.get(extra.get("profilo") or "", opts.profile)
+        if not profilo.positive and extra.get("gamma"):
+            profilo = dataclasses.replace(profilo, gamma_negativo=float(extra["gamma"]))
+        opts = dataclasses.replace(
+            opts, profile=profilo,
+            grana_pellicola=float(extra.get("riduzione_grana") or 0.0),
+            grana_pellicola_solo_croma=bool(extra.get("solo_croma", True)),
+            pellicola=str(extra.get("nome_pellicola") or ""),
+            iso_pellicola=int(extra.get("iso") or 0))
+        if extra.get("argento"):
+            # B/N all'argento: opaco all'infrarosso, la maschera IR
+            # coprirebbe l'immagine intera
+            opts.ir_strength = 0.0
+        return opts
+
+    def _extra_pellicola(self, rullo, chiave: str) -> Dict[str, object]:
+        """Pellicola (dal codice DX) e sviluppo del rullo, in un dizionario
+        che si salva con le correzioni dei fotogrammi: Riapri e Applica al
+        rullo lo ritrovano anche se la striscia era di un'altra pellicola."""
+        pell = pellicole_dx.da_chiave(chiave)
+        profilo = rullo.profilo
+        if (pell is not None and pell.profilo
+                and getattr(self.cfg, "pellicola_da_dx", True)):
+            profilo = pell.profilo
+        sviluppo = int(getattr(rullo, "sviluppo", 0) or 0)
+        att = pellicole_dx.attese_pellicola(pell, profilo, sviluppo)
+        conosciuta = pell is not None and pell.conosciuta
+        return {"pellicola": chiave or "",
+                "nome_pellicola": pell.descrizione() if conosciuta else "",
+                "tipo": pell.tipo if conosciuta else "",
+                "iso": pell.iso if conosciuta else 0,
+                "argento": bool(conosciuta and pell.argento),
+                "profilo": profilo, "sviluppo": sviluppo,
+                "gamma": att["gamma"], "scala_densita": att["scala_densita"],
+                "nome_grana": att["nome_grana"],
+                "riduzione_grana": att["riduzione_grana"],
+                "solo_croma": att["solo_croma"], "note": att["note"]}
+
+    def _chiudi_statistiche(self, rullo_id: int, gruppi: Dict[str, dict],
+                            memoria: MemoriaPellicole) -> None:
         """A fine rullo: statistiche salvate (servono a Riapri, Salva e
-        Applica al rullo), memoria della pellicola aggiornata, diario."""
+        Applica al rullo), memoria della pellicola aggiornata, diario. Un
+        gruppo per pellicola: le strisce di pellicole diverse hanno ognuna
+        il suo equilibrio e la sua memoria."""
         try:
-            r = stat.riepilogo()
-            if not r["fotogrammi"]:
+            dati = {"pellicole": {}, "fotogrammi": {}}
+            for chiave, g in gruppi.items():
+                stat = g["stat"]
+                r = stat.riepilogo()
+                if not r["fotogrammi"]:
+                    continue
+                dati["pellicole"][chiave or "?"] = dict(r, pellicola=g["extra"])
+                for n in stat.numeri():
+                    dati["fotogrammi"][str(n)] = dict(stat.correzione(n), **g["extra"])
+                memoria.aggiorna(chiave, stat)
+                classi = ", ".join("%s %d" % kv for kv in sorted(r["classi"].items()))
+                self.log("%s: %d fotogrammi nell'equilibrio (%s)." % (
+                    g["extra"].get("nome_pellicola") or chiave or "Rullo",
+                    r["fotogrammi"], classi))
+                velo = stat.velo_di_base()
+                if velo is not None and velo > 0.08:
+                    avviso = ("base della pellicola %.2f D piu' densa del solito per %s: "
+                              "pellicola velata o sviluppo diverso" % (velo, chiave))
+                    self.job.errors.append(avviso)
+                    self.log("Attenzione: " + avviso)
+            if not dati["fotogrammi"]:
                 return
-            dati = {"pellicola": chiave, "riepilogo": r,
-                    "fotogrammi": dict((str(n), stat.correzione(n)) for n in stat.numeri())}
             percorso = self._file_statistiche(rullo_id)
             with open(percorso + ".tmp", "w", encoding="utf-8") as f:
                 json.dump(dati, f, indent=1)
             os.replace(percorso + ".tmp", percorso)
-            memoria.aggiorna(chiave, stat)
-            classi = ", ".join("%s %d" % kv for kv in sorted(r["classi"].items()))
-            self.log("Rullo: %d fotogrammi nell'equilibrio (%s)." % (r["fotogrammi"], classi))
-            velo = stat.velo_di_base()
-            if velo is not None and velo > 0.08:
-                avviso = ("base della pellicola %.2f D piu' densa del solito per %s: "
-                          "pellicola velata o sviluppo diverso" % (velo, chiave))
-                self.job.errors.append(avviso)
-                self.log("Attenzione: " + avviso)
         except Exception as exc:                        # noqa: BLE001
             self.log("Statistiche del rullo non salvate: %s" % exc)
 
@@ -1299,24 +1422,41 @@ class ScanService:
         if not rullo.ice:
             opts.ir_strength = 0.0
         opts.negativo_lineare = self.cfg.negativo_lineare in ("tiff", "dng")
-        return opts
+        return self._con_pellicola(opts, self._extra_pellicola(
+            rullo, getattr(rullo, "dx", "")))
 
     @staticmethod
-    def _meta_file(ordine, rullo, numero: int, bordo: str, raw) -> Dict[str, object]:
+    def _meta_file(ordine, rullo, numero: int, bordo: str, raw,
+                   opts: Optional[ProcessOptions] = None) -> Dict[str, object]:
         """Cosa scrivere dentro il file: ordine, rullo, fotogramma, numero
-        di bordo, pellicola, data di scansione, dpi veri."""
+        di bordo, pellicola (quella riconosciuta dal DX se c'e'), ISO, data
+        di scansione, dpi veri."""
         parti = ["Ordine %s" % ordine.codice, "rullo %s" % rullo.etichetta,
                  "fotogramma %d" % numero]
         if bordo:
             parti.append("bordo %s" % bordo)
-        profilo = PROFILES.get(rullo.profilo)
-        parti.append("pellicola %s" % (profilo.name if profilo else rullo.profilo))
+        nome = getattr(opts, "pellicola", "") if opts is not None else ""
+        profilo = opts.profile if opts is not None else PROFILES.get(rullo.profilo)
+        parole = []
+        if nome:
+            parti.append("pellicola %s" % nome)
+            parole.append(nome.split(",")[0])
+        else:
+            parti.append("pellicola %s" % (profilo.name if profilo else rullo.profilo))
+        if profilo is not None:
+            parole.append(profilo.name)
         if getattr(rullo, "dx", ""):
             parti.append(rullo.dx)
+            parole.append(rullo.dx)
+        sviluppo = int(getattr(rullo, "sviluppo", 0) or 0)
+        if sviluppo:
+            parti.append("sviluppo %s" % pellicole_dx.SVILUPPI.get(sviluppo, sviluppo))
         parti.append("scansione Gretag Masterflex D1008")
         return {"descrizione": " - ".join(parti),
                 "dpi": getattr(raw.meta, "dpi", 0) or 0,
-                "data": getattr(raw.meta, "timestamp", 0) or None}
+                "data": getattr(raw.meta, "timestamp", 0) or None,
+                "iso": getattr(opts, "iso_pellicola", 0) if opts is not None else 0,
+                "parole": parole}
 
     def _esporta(self, raw, opts, dest: str, nome: str, rullo_id: int,
                  numero: int, bordo: str, raw_path: str, ordine_rullo):
@@ -1325,7 +1465,7 @@ class ScanService:
         usano il rullo, Salva fotogramma e Applica a tutto il rullo."""
         ordine, rullo = ordine_rullo
         res = process(raw, opts)
-        meta = self._meta_file(ordine, rullo, numero, bordo, raw)
+        meta = self._meta_file(ordine, rullo, numero, bordo, raw, opts)
         ext = {"tiff16": ".tif", "tiff8": ".tif",
                "png": ".png", "jpeg": ".jpg"}.get(self.cfg.export_format, ".tif")
         out_path = os.path.join(dest, nome + ext)
@@ -1624,6 +1764,7 @@ class ScanService:
         self._serve_calibrazione()
 
         def job():
+            nonlocal preset
             backend = self._require()
             backend.seleziona_formato(rullo.formato)
             backend.esposizione_auto(self.cfg.esposizione_auto)
@@ -1682,32 +1823,101 @@ class ScanService:
 
             # Statistiche di rullo (rullo.py): base ed equilibrio dei grigi
             # su tutti i fotogrammi, partendo da quel che si sa della
-            # pellicola (codice DX) se la macchina lo dice.
-            dx = None
-            try:
-                dx = backend.codice_dx()
-            except Emergenza:
-                raise
-            except Exception as exc:                    # noqa: BLE001
-                self.log("Codice DX non letto: %s" % exc)
-            chiave = chiave_dx(dx)
+            # pellicola (codice DX) se la macchina lo dice. Un gruppo per
+            # pellicola: se fra le strisce ne entra una di un'altra
+            # pellicola, ha profilo, equilibrio ed esposizione suoi.
+            memoria = self._memoria_pellicole()
+            gruppi: Dict[str, dict] = {}
+
+            def gruppo(chiave):
+                g = gruppi.get(chiave)
+                if g is None:
+                    extra = self._extra_pellicola(rullo, chiave)
+                    nota = memoria.per(chiave)
+                    g = gruppi[chiave] = {
+                        "stat": StatisticheRullo(nota, extra["scala_densita"]),
+                        "extra": extra, "chiave": chiave}
+                    self.log("Pellicola: %s%s%s." % (
+                        extra["nome_pellicola"] or chiave or "codice DX non letto",
+                        (", grana attesa %s" % extra["nome_grana"])
+                        if extra["nome_grana"] else "",
+                        (", conosciuta da %d rull%s" % (
+                            nota.get("rulli", 1),
+                            "o" if nota.get("rulli", 1) == 1 else "i"))
+                        if nota else ""))
+                    for n in extra["note"]:
+                        self.log("Pellicola: " + n)
+                self.job.pellicola = (g["extra"]["nome_pellicola"]
+                                      or g["chiave"] or "")
+                return g
+
+            chiave = self._leggi_dx(backend)
             if chiave:
                 self.archivio.rullo_dx(rullo_id, chiave)
                 rullo.dx = chiave
-            memoria = self._memoria_pellicole()
-            nota = memoria.per(chiave)
-            stat = StatisticheRullo(nota)
-            self.log("Pellicola: %s%s." % (
-                chiave or "codice DX non letto",
-                (", conosciuta da %d rull%s" % (nota.get("rulli", 1),
-                                                "o" if nota.get("rulli", 1) == 1 else "i"))
-                if nota else ""))
+                cambi = self._profilo_da_dx(ordine, rullo, chiave)
+                if cambi.get("argento"):
+                    preset = dataclasses.replace(preset, use_ir=False)
+                    if ice_sdk:
+                        try:
+                            backend.digital_ice(False)
+                            self.log("Digital ICE (ASF) spento: B/N all'argento.")
+                        except Emergenza:
+                            raise
+                        except Exception as exc:        # noqa: BLE001
+                            self.log("Digital ICE (ASF) non spento: %s" % exc)
+                        ice_sdk = False
+                if cambi.get("preset") and cambi["preset"] in PRESETS:
+                    preset = dataclasses.replace(
+                        PRESETS[cambi["preset"]],
+                        use_ir=preset.use_ir and PRESETS[cambi["preset"]].use_ir
+                        and not cambi.get("argento"))
+                    self.log("Preset cambiato in %s per questa pellicola."
+                             % preset.name)
+            corrente = {"g": gruppo(chiave)}
+
+            def nuova_striscia(n: int) -> bool:
+                """Striscia n inserita: se il DX dice un'altra pellicola, la
+                si elabora a parte e lo si dice. True se e' cambiata."""
+                ch = self._leggi_dx(backend)
+                prima = corrente["g"]
+                if not ch or ch == prima["chiave"]:
+                    return False
+                g = gruppo(ch)
+                corrente["g"] = g
+                nome = g["extra"]["nome_pellicola"] or ch
+                if not prima["chiave"]:
+                    # prima il DX non si era letto: e' probabilmente la
+                    # stessa pellicola, non un cambio
+                    self.log("Striscia %d: pellicola riconosciuta (%s)." % (n, nome))
+                    return True
+                avviso = ("striscia %d di un'altra pellicola (%s, prima %s): "
+                          "elaborata a parte, con profilo, equilibrio ed "
+                          "esposizione suoi" % (
+                              n, nome, prima["extra"]["nome_pellicola"] or prima["chiave"]))
+                self.job.errors.append(avviso)
+                self.log("Attenzione: " + avviso + ".")
+                self.archivio.ordine_aggiungi_nota(
+                    ordine.id, '"%s", striscia %d: %s (diversa dal resto del '
+                    'rullo)' % (rullo.etichetta, n, nome))
+                if g["extra"]["argento"] and ice_sdk:
+                    try:
+                        backend.digital_ice(False)
+                        self.log("Digital ICE (ASF) spento: B/N all'argento.")
+                    except Emergenza:
+                        raise
+                    except Exception as exc:            # noqa: BLE001
+                        self.log("Digital ICE (ASF) non spento: %s" % exc)
+                if preset.monochrome and not g["extra"]["tipo"].startswith("bn"):
+                    self.log("Attenzione: il preset del rullo legge un canale solo, "
+                             "la striscia %d e' a colori: esce in bianco e nero." % n)
+                return True
 
             def elabora(compito):
                 """Un fotogramma letto: elaborazione completa, file, registro.
                 Gira nel thread di elaborazione; un errore qui perde il
                 fotogramma (il grezzo resta), non il rullo."""
-                raw, nome, numero, bordo, vuoto = compito
+                raw, nome, numero, bordo, vuoto, g = compito
                 raw_path = ""
                 try:
                     # Il grezzo si salva qui e non nel ciclo di lettura: la
@@ -1724,11 +1934,12 @@ class ScanService:
                     # il primo aspetta che ce ne siano 4 (o che la striscia
                     # sia finita). La lettura intanto va avanti.
                     scadenza = time.time() + 180.0
-                    while (len(stat) < 4 and not elab.lettura_finita.is_set()
+                    while (len(g["stat"]) < 4 and not elab.lettura_finita.is_set()
                            and time.time() < scadenza):
                         time.sleep(0.2)
                     res = self._esporta(raw, self._opzioni_fotogramma(
-                                            opts, stat.correzione(numero)),
+                                            opts, dict(g["stat"].correzione(numero),
+                                                       **g["extra"])),
                                         dest, nome, rullo_id,
                                         numero, bordo, raw_path,
                                         (ordine, rullo))
@@ -1822,6 +2033,10 @@ class ScanService:
                         if not continua:
                             break
                         strisce += 1
+                        if nuova_striscia(strisce):
+                            # altra pellicola, altra esposizione: si rimisura
+                            (gains, da_misurare, misure_opache,
+                             verifica_unica) = self._riparti_esposizione(preset)
                         fuoco_da_fare = True
                         continue
 
@@ -1955,7 +2170,8 @@ class ScanService:
                         # rimettere la pellicola. Il numero resta quello
                         # della striscia, come lo conta il cliente.
                         elab.metti((raw, nome, i + 1, bordo,
-                                    "non esposto: escursione %.2f D" % escursione),
+                                    "non esposto: escursione %.2f D" % escursione,
+                                    corrente["g"]),
                                    _peso(raw), lambda: None)
                         self.job.in_elaborazione += 1
                         vuoti += 1
@@ -1970,9 +2186,10 @@ class ScanService:
                     if not opaca:
                         # letto a x1 perche' opaco: scala diversa dagli altri,
                         # non entra nelle statistiche del rullo
-                        stat.aggiungi(i + 1, raw)
+                        corrente["g"]["stat"].aggiungi(i + 1, raw)
                     self._mostra_rapida(raw, self._opzioni_fotogramma(
-                        opts, stat.correzione(i + 1)), (rullo_id, i + 1))
+                        opts, dict(corrente["g"]["stat"].correzione(i + 1),
+                                   **corrente["g"]["extra"])), (rullo_id, i + 1))
                     self.archivio.fotogramma_registra(
                         rullo_id, i + 1, stato="elaborazione",
                         numero_bordo=bordo)
@@ -1984,7 +2201,7 @@ class ScanService:
                         self.job.message = ("Fotogramma %d letto: memoria "
                                             "piena, aspetto l'elaborazione "
                                             "dei precedenti" % numero)
-                    elab.metti((raw, nome, numero, bordo, ""), _peso(raw),
+                    elab.metti((raw, nome, numero, bordo, "", corrente["g"]), _peso(raw),
                                in_attesa)
                     del raw
 
@@ -2049,6 +2266,10 @@ class ScanService:
                     if not continua:
                         break
                     strisce += 1
+                    if nuova_striscia(strisce):
+                        # altra pellicola, altra esposizione: si rimisura
+                        (gains, da_misurare, misure_opache,
+                         verifica_unica) = self._riparti_esposizione(preset)
                     inizio_striscia = True
                     fuoco_da_fare = True
                 except Emergenza:
@@ -2071,6 +2292,10 @@ class ScanService:
                         if not continua:
                             break
                         strisce += 1
+                        if nuova_striscia(strisce):
+                            # altra pellicola, altra esposizione: si rimisura
+                            (gains, da_misurare, misure_opache,
+                             verifica_unica) = self._riparti_esposizione(preset)
                         inizio_striscia = True
                         fuoco_da_fare = True
                 if conta:
@@ -2116,7 +2341,7 @@ class ScanService:
             # tutti i file
             self._chiudi_elaborazione()
             fatti = elaborati["ok"]
-            self._chiudi_statistiche(rullo_id, stat, chiave, memoria)
+            self._chiudi_statistiche(rullo_id, gruppi, memoria)
 
             # una striscia piu' corta del previsto non e' un problema: e' la
             # normalita' con pellicole di lunghezza variabile
@@ -2157,9 +2382,85 @@ class ScanService:
                     fatti, rullo.attesi, (", %d vuoti" % vuoti) if vuoti else "",
                     (", in %d strisce" % strisce) if strisce > 1 else ""))
                 self.job.message = "Rullo terminato: %d fotogrammi" % fatti
+            if not self._stop.is_set() and stato == "completato":
+                self._fine_ordine(ordine.id)
 
         self._avvia("rullo", job,
                     total=rullo.attesi or FORMATS[rullo.formato].max_fotogrammi)
+
+    # ------------------------------------------------------------------
+    # avviso al cliente (WhatsApp)
+
+    def prepara_whatsapp(self, ordine_id: int, cosa: str = "provino",
+                         locale: bool = False) -> Dict[str, object]:
+        """L'allegato dell'avviso: "provino" (il provino a contatto) o "foto"
+        (quelle da stampare, se no tutte, in JPEG). Sul PC della macchina
+        (locale) va negli appunti, e si incolla nella chat con Ctrl+V (o da
+        solo, cfg.whatsapp_incolla); da un altro dispositivo lo si prende
+        dal browser con Condividi."""
+        from . import appunti, consegne
+        o = self.archivio.ordine(ordine_id)
+        if o is None:
+            raise ValueError("ordine inesistente")
+        cartella = self.archivio.cartella_ordine(self.cfg.out_dir, ordine_id)
+        if cosa == "foto":
+            file = consegne.copie_per_invio(self.archivio, ordine_id,
+                                            os.path.join(cartella, "whatsapp"))
+            if not file:
+                raise ValueError("nessuna foto esportata per questo ordine")
+        else:
+            dest = os.path.join(cartella, "provino-%s.jpg" % o.codice)
+            consegne.provino_contatto(self.archivio, ordine_id, dest)
+            file = [dest]
+        esito: Dict[str, object] = {"cosa": cosa, "file": len(file),
+                                    "appunti": False, "messaggio": ""}
+        if not (locale and self.cfg.whatsapp_appunti and appunti.WINDOWS):
+            return esito
+        ok = (appunti.copia_file(file) if cosa == "foto"
+              else appunti.copia_immagine(file[0]))
+        esito["appunti"] = bool(ok)
+        quale = "Il provino e'" if cosa != "foto" else "%d foto sono" % len(file)
+        if not ok:
+            esito["messaggio"] = ("Appunti occupati da un altro programma: "
+                                  "l'allegato e' nella cartella dell'ordine.")
+        elif self.cfg.whatsapp_incolla:
+            appunti.incolla_in_whatsapp(self.cfg.whatsapp_attesa_s, esito=self.log)
+            esito["messaggio"] = ("%s negli appunti: si incolla da solo appena "
+                                  "la chat e' aperta, poi Invio." % quale)
+        else:
+            esito["messaggio"] = ("%s negli appunti: nella chat Ctrl+V, poi "
+                                  "Invio." % quale)
+        return esito
+
+    def _fine_ordine(self, ordine_id: int) -> None:
+        """Rullo finito: se era l'ultimo dell'ordine, l'avviso al cliente.
+        "proponi": un tasto nell'interfaccia (job.avviso_ordine); "apri": sul
+        PC della macchina la chat si apre da sola con il provino negli
+        appunti (os.startfile: nessun blocco dei popup)."""
+        modo = getattr(self.cfg, "whatsapp_fine_ordine", "proponi")
+        if modo not in ("proponi", "apri"):
+            return
+        try:
+            rulli = self.archivio.rulli(ordine_id)
+            if not rulli or any(r.stato in ("da_scansionare", "in_corso") for r in rulli):
+                return
+            self.job.avviso_ordine = ordine_id
+            if modo != "apri":
+                self.log("Ordine finito: si puo' avvisare il cliente.")
+                return
+            from . import appunti, consegne
+            av = consegne.avviso(self.archivio, ordine_id, "",
+                                 self.cfg.whatsapp_prefisso)
+            esito = self.prepara_whatsapp(ordine_id, "provino", locale=True)
+            link = av["link_app"] if self.cfg.whatsapp_modo == "app" else av["link_web"]
+            if appunti.apri(link):
+                self.log("Ordine finito: chat WhatsApp aperta%s. %s" % (
+                    (" con " + str(av["numero"])) if av["ha_numero"] else "",
+                    esito.get("messaggio", "")))
+            else:
+                self.log("Ordine finito: si puo' avvisare il cliente.")
+        except Exception as exc:                        # noqa: BLE001
+            self.log("Avviso di fine ordine non preparato: %s" % exc)
 
     def ricevi_da_originale(self, rullo_id: int) -> None:
         """Collegamento "programma originale": si scansiona da PhxScanner, e

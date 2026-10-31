@@ -29,6 +29,10 @@ filmscan/
   webui.py            interfaccia web: traduce HTTP <-> service
   config.py           geometria, formati, preset, impostazioni
   orders.py, consegne.py   archivio ordini, registro, consegne
+  appunti.py          appunti di Windows e WhatsApp sul PC della macchina
+  rullo.py            equilibrio di rullo, classi di esposizione, memoria per pellicola
+  pellicole_dx.py     dal codice DX alla pellicola (elenco I3A 2009) e cosa aspettarsi
+  bianconero.py       toni e viraggi del bianco e nero
   registration.py, invert.py, irclean.py, colore.py, enhance.py,
   framing.py, orient.py    elaborazione
   originale.py        convivenza con il programma originale

@@ -272,6 +272,29 @@ class AppConfig:
     # senza + e senza spazi: 39335...). Vuoto = si prende dalla scheda cliente.
     whatsapp_prefisso: str = "39"
 
+    # Dove si apre la chat: "auto" (tablet e telefono: l'app; PC: WhatsApp
+    # Web nella stessa scheda), "web" (sempre web.whatsapp.com), "app"
+    # (whatsapp://, per WhatsApp Desktop o l'app di un dispositivo
+    # collegato). Il numero dell'attivita' puo' stare su un telefono
+    # qualsiasi: PC e tablet sono dispositivi collegati.
+    whatsapp_modo: str = "auto"
+    # Sul PC della macchina il provino (o le foto) va negli appunti quando
+    # si apre la chat: nella chat basta Ctrl+V.
+    whatsapp_appunti: bool = True
+    # ...e lo incolla da solo, ma solo se in primo piano c'e' davvero
+    # una finestra di WhatsApp (titolo), dopo whatsapp_attesa_s secondi.
+    whatsapp_incolla: bool = False
+    whatsapp_attesa_s: float = 6.0
+    # A ordine finito (tutti i rulli letti): "niente", "proponi" (tasto
+    # nell'interfaccia) o "apri" (sul PC della macchina apre da solo la
+    # chat con il provino negli appunti).
+    whatsapp_fine_ordine: str = "proponi"
+
+    # La pellicola riconosciuta dal codice DX corregge il profilo del rullo
+    # (diapositiva, B/N all'argento o cromogenico) e ne da' pendenza e
+    # grana attese. False: vale solo quel che si sceglie a mano.
+    pellicola_da_dx: bool = True
+
     # --- percorsi ---
     raw_dir: str = "./scansioni/raw"
     out_dir: str = "./scansioni/export"

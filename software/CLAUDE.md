@@ -100,6 +100,19 @@ reintrodurle.
   la decide `_separa_piani`; se la macchina rifiuta, o se la verifica del
   primo fotogramma (`_lettura_unica_torna`) non torna, `_lettura_unica`
   diventa False e si legge un canale per volta. Non togliere il ritorno.
+- **Pellicola dal DX, un gruppo per pellicola.** `pellicole_dx.py` traduce
+  il DX con l'elenco I3A 2009: niente numeri aggiunti a memoria. Nel rullo
+  ogni striscia rilegge il DX (`nuova_striscia`); le correzioni salvate dei
+  fotogrammi portano con se' pellicola, profilo e pendenza
+  (`_extra_pellicola`), ed e' da li' che Riapri e Applica le ritrovano. Non
+  passare a `process` le opzioni del rullo senza `_opzioni_fotogramma`: si
+  perderebbe la pellicola della striscia.
+- **Toni e viraggi B/N stanno in `finiture`**, come i cursori: cambiarli
+  non rilegge niente. Valgono solo su immagini monocromatiche.
+- **WhatsApp non si pilota.** Niente tasti premuti nel browser al posto
+  dell'operatore: si apre la chat e si mette l'allegato negli appunti.
+  L'unica eccezione, `whatsapp_incolla`, preme Ctrl+V solo se la finestra
+  in primo piano si chiama WhatsApp, ed e' spenta di serie.
 - **La fine della striscia la dice il carrello** (`ERR_MOVE` →
   `FinePellicola`). Un fotogramma uniforme non e' fine pellicola: puo'
   essere non esposto, e ne capitano 3-4 di fila (`fotogramma_vuoto`).
