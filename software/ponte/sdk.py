@@ -208,6 +208,8 @@ NOMI_STATI_SDK = {0: "pronto", 7: "appena caricato",
                   10: "scanner non ancora collegato",
                   # visti sulla riserva il 31/10/2026, nome non ancora certo
                   1: "pellicola letta (dopo get_media_info)",
+                  # 0 -> 4 a calibrate_all, 4 -> 0 alla fine; intanto
+                  # l'evento 85 ogni 1-2 s (riserva, 31/10/2026: 61 s)
                   4: "calibrazione in corso (calibrate_all)"}
 # Gli stati in cui lo scanner non c'e' ancora: solo qui l'agente rifiuta i
 # comandi da se'. Negli altri decide l'SDK (ERR_ILLEGAL_IN_THIS_STATE se non
@@ -627,6 +629,14 @@ class Scanner(object):
         try:
             self.eventi.append((time.time(), int(numero)))
             del self.eventi[:-200]
+            # l'85 arriva ogni 1-2 s durante calibrate_all: una riga ogni 20
+            if int(numero) == 85:
+                self._n85 = getattr(self, "_n85", 0) + 1
+                if self._n85 % 20 != 1:
+                    return
+                self._log("SDK, evento asincrono 85 (calibrazione in corso, "
+                          "%d finora)" % self._n85)
+                return
             self._log("SDK, evento asincrono %d" % numero)
         except Exception:
             pass
@@ -1035,13 +1045,38 @@ class Scanner(object):
 
     @staticmethod
     def _leggibile(indirizzo, n):
-        """True se n byte da 'indirizzo' si possono leggere senza far
-        cadere il processo (IsBadReadPtr). Le sonde leggono strutture di cui
-        non sappiamo ancora tutto: meglio un 'non leggibile' che un crash."""
-        if not indirizzo or _kernel32 is None:
+        """True se n byte da 'indirizzo' si possono leggere, chiesto a
+        VirtualQuery: memoria impegnata, leggibile, non di guardia. Prima era
+        IsBadReadPtr, che prova a leggere e si prende l'eccezione: il
+        registro dei crash la annotava come "access violation" anche se
+        l'agente andava avanti, e sulle pagine di guardia le rovina."""
+        if not indirizzo or indirizzo < 0x10000 or _kernel32 is None:
             return False
+
+        class _MBI(ctypes.Structure):
+            _fields_ = [("BaseAddress", ctypes.c_void_p),
+                        ("AllocationBase", ctypes.c_void_p),
+                        ("AllocationProtect", ctypes.c_uint32),
+                        ("RegionSize", ctypes.c_size_t),
+                        ("State", ctypes.c_uint32),
+                        ("Protect", ctypes.c_uint32),
+                        ("Type", ctypes.c_uint32)]
+        leggibili = 0x02 | 0x04 | 0x08 | 0x20 | 0x40 | 0x80
         try:
-            return not _kernel32.IsBadReadPtr(ctypes.c_void_p(indirizzo), ctypes.c_size_t(n))
+            fine = indirizzo + n
+            pos = indirizzo
+            while pos < fine:
+                m = _MBI()
+                if not _kernel32.VirtualQuery(ctypes.c_void_p(pos), ctypes.byref(m),
+                                              ctypes.sizeof(m)):
+                    return False
+                if (m.State != 0x1000 or not (m.Protect & leggibili)
+                        or m.Protect & 0x101):          # GUARD o NOACCESS
+                    return False
+                pos = (m.BaseAddress or 0) + m.RegionSize
+                if pos <= indirizzo:
+                    return False
+            return True
         except Exception:
             return False
 
@@ -1059,7 +1094,11 @@ class Scanner(object):
         p = ctypes.c_void_p()
         self._verifica(self._m["info_supporto"](self._obj, ctypes.byref(p)),
                        "codice DX (get_media_info)")
-        fuori = {"media_info": self._esadecimale(p.value, 64)}
+        # 256 byte, non 64: dove stia il DX non e' ancora certo (riserva,
+        # 31/10/2026: a +0x10 c'era 0xffff, non un puntatore) e serve vederla
+        # tutta, prima e dopo che la pellicola si e' mossa
+        fuori = {"media_info": self._esadecimale(p.value, 256)
+                 or self._esadecimale(p.value, 64)}
         if not self._leggibile(p.value, 0x14):
             return fuori
         tipo = ctypes.c_uint32.from_address(p.value + 0x0C).value

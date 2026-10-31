@@ -149,9 +149,12 @@ class Registro(object):
         except OSError:
             pass
 
-    def __call__(self, testo):
+    def __call__(self, testo, schermo=None):
+        """'schermo': la versione corta per la finestra; nel file va sempre
+        'testo' intero (prima si troncava anche li', e la risposta del DX
+        arrivava a meta': riserva, 31/10/2026)."""
         riga = "%s  %s" % (time.strftime("%H:%M:%S"), testo)
-        print(riga)
+        print("%s  %s" % (riga[:8], schermo) if schermo is not None else riga)
         try:
             nome = "agente-%s.log" % time.strftime("%Y%m%d")
             with open(os.path.join(self.cartella, nome), "a") as f:
@@ -549,7 +552,8 @@ class Agente(object):
             except OSError:
                 pass
             durata = time.time() - t0
-            self.log("  -> %s  (%.1f s)" % (esito.strip()[:120], durata))
+            self.log("  -> %s  (%.1f s)" % (esito.strip()[:4000], durata),
+                     schermo="  -> %s  (%.1f s)" % (esito.strip()[:120], durata))
             if durata > COMANDO_LENTO:
                 self.log("  ATTENZIONE: '%s' ha impiegato %.0f s" % (comando, durata))
             n += 1
