@@ -427,7 +427,9 @@ class ScanService:
 
     def _leggi_dx(self, backend) -> str:
         """La chiave DX della striscia nel carrello ("DX 109-9"), "" se la
-        macchina non la sa dire. Mai bloccante."""
+        macchina non la sa dire o se la lettura e' spenta. Mai bloccante."""
+        if not getattr(self.cfg, "leggi_dx", True):
+            return ""
         try:
             return chiave_dx(backend.codice_dx())
         except Emergenza:
@@ -1177,13 +1179,15 @@ class ScanService:
                 "avanzamento_automatico": self.cfg.avanzamento_automatico,
                 "autofocus": self.cfg.autofocus,
                 "negativo_lineare": self.cfg.negativo_lineare,
+                "leggi_dx": bool(self.cfg.leggi_dx),
                 "pin_fisso": bool(self.cfg.pin_fisso)}
 
     def imposta_macchina(self, valori: Dict[str, object]) -> Dict[str, bool]:
         if self.job.running:
             raise ScannerError("c'e' un lavoro in corso: cambiare le "
                                "impostazioni della macchina a lavoro finito")
-        for k in ("esposizione_auto", "pressore_auto", "avanzamento_automatico"):
+        for k in ("esposizione_auto", "pressore_auto", "avanzamento_automatico",
+                  "leggi_dx"):
             if k in valori:
                 setattr(self.cfg, k, bool(valori[k]))
         if "autofocus" in valori:

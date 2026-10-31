@@ -294,6 +294,10 @@ class AppConfig:
     # (diapositiva, B/N all'argento o cromogenico) e ne da' pendenza e
     # grana attese. False: vale solo quel che si sceglie a mano.
     pellicola_da_dx: bool = True
+    # Leggere il codice DX a inizio rullo e a ogni striscia (get_media_info).
+    # Dopo la lettura l'SDK va nello stato 1 (riserva, 31/10/2026): se le
+    # letture ne soffrono, qui si spegne senza toccare altro.
+    leggi_dx: bool = True
 
     # Calibra azzera i motori (Gretag Reset) "se_serve": non se lo scanner si
     # e' caricato oggi e dopo l'ultima emergenza, perche' al caricamento il

@@ -205,7 +205,15 @@ EV_FILM_INSERTED = 200
 STATO_SDK_PRONTO = 0
 STATO_SDK_NON_COLLEGATO = 10
 NOMI_STATI_SDK = {0: "pronto", 7: "appena caricato",
-                  10: "scanner non ancora collegato"}
+                  10: "scanner non ancora collegato",
+                  # visti sulla riserva il 31/10/2026, nome non ancora certo
+                  1: "pellicola letta (dopo get_media_info)",
+                  4: "calibrazione in corso (calibrate_all)"}
+# Gli stati in cui lo scanner non c'e' ancora: solo qui l'agente rifiuta i
+# comandi da se'. Negli altri decide l'SDK (ERR_ILLEGAL_IN_THIS_STATE se non
+# puo'). Fino al 31/10/2026 si accettava solo lo stato 0: dopo la lettura
+# del DX l'SDK passa allo stato 1 e l'agente rifiutava ogni lettura.
+STATI_NON_PRONTI = (7, 10)
 
 
 # Messaggi del carrello Capri (UserErrorDescriptionV1.0x.html del pacchetto
@@ -595,14 +603,14 @@ class Scanner(object):
             pass
 
     def pronto(self):
-        """True quando l'SDK accetta i comandi (stato 0).
+        """True quando lo scanner c'e' (stato diverso da 7 e 10).
 
         Lo stato arriva con gli eventi EV_STATE_CHANGE. Se non ne e' ancora
         arrivato nessuno, lo si chiede con get_gate_type, che non muove
         niente: nello stato 10 risponde ERR_NO_SCANNER.
         """
         if self.stato_sdk is not None:
-            return self.stato_sdk == STATO_SDK_PRONTO
+            return self.stato_sdk not in STATI_NON_PRONTI
         try:
             self.tipo_gate()
         except ErroreScanner as exc:

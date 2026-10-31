@@ -1536,6 +1536,8 @@ details.sez>div{padding-bottom:10px}
    <div class="nota-imp">Giù durante ogni lettura, così la pellicola resta piatta; su prima di muoverla.</div>
    <label><input type="checkbox" id="imp_avanzamento_automatico" style="width:auto" onchange="impostaMacchina()"> Avanzamento automatico</label>
    <div class="nota-imp">Il carrello cerca da solo il fotogramma. Spento: ogni fotogramma si mette in finestra a mano, con il video e i passi da 1 e 20 mm.</div>
+   <label><input type="checkbox" id="imp_leggi_dx" style="width:auto" onchange="impostaMacchina()"> Leggi il codice DX</label>
+   <div class="nota-imp">A inizio rullo e a ogni striscia: riconosce la pellicola. Se dopo la lettura lo scanner rifiuta le letture, spegnerla e mandare i registri.</div>
    <label>Autofocus</label>
    <select id="imp_autofocus" onchange="impostaMacchina()">
     <option value="gi">gi_focus, ricerca completa (di serie)</option>
@@ -2093,7 +2095,7 @@ function muovi(mm){ post('/api/muovi',{mm:mm}).then(mostraStato); }
    invece chiede il nome del tecnico: e' lui che dice che si puo' ripartire. */
 /* Le impostazioni della macchina: le spunte seguono lo stato del server
    finche' nessuno le tocca, poi si salvano al cambio. */
-var IMP=['esposizione_auto','pressore_auto','avanzamento_automatico'];
+var IMP=['esposizione_auto','pressore_auto','avanzamento_automatico','leggi_dx'];
 function impostaMacchina(){
   var d={autofocus:val('imp_autofocus'), negativo_lineare:val('imp_negativo_lineare')};
   IMP.forEach(function(k){ d[k]=el('imp_'+k).checked; });

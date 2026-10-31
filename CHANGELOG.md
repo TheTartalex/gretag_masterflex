@@ -52,6 +52,17 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-10-31 — letture bloccate dopo il codice DX
+
+- **Dopo la lettura del DX a inizio rullo l'SDK passa allo stato 1** e
+  l'agente, che accettava comandi solo nello stato 0, rifiutava ogni
+  lettura ("non ancora pronto (stato 1)"). Ora l'agente si ferma da sé solo
+  negli stati 7 e 10 (scanner non collegato); negli altri decide l'SDK.
+- Nomi provvisori per gli stati 1 (dopo `get_media_info`) e 4 (durante
+  `calibrate_all`).
+- Impostazioni macchina: "Leggi il codice DX" (`leggi_dx`), per spegnere la
+  lettura del DX senza toccare altro.
+
 ### 2026-10-31 — una cartella sola per i registri
 
 - `software/log` (`registri.py`): `programma` (diario di filmscan su file,

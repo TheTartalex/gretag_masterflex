@@ -409,6 +409,12 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
   4** e manda di continuo l'**evento 85**: non sono nella tabella dei nomi,
   probabilmente calibrazione in corso. Da annotare come finisce. Calibra
   non rifà più l'azzeramento se lo scanner si è caricato oggi.
+- **Letture bloccate dopo il DX**: `get_media_info` porta l'SDK nello
+  stato 1, e l'agente rifiutava tutto quello che non era stato 0. Ora
+  blocca solo 7 e 10. Il DX letto non si è ancora decodificato (la
+  struttura al +0x10 non è un puntatore: vale 0x30): serve la riga intera
+  `media_info` dal registro dell'agente. Se le letture nello stato 1 non
+  vanno, si spegne "Leggi il codice DX" in Macchina.
 - **Registri in una cartella sola**, `software\log`: programma, agente,
   SDK, collaudi, diagnosi; lo zip da mandare si fa con la voce 6 o con
   Macchina → Scarica i registri. Il ponte resta in `C:\MasterflexD\ponte`
