@@ -52,6 +52,23 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-10-31 — collegamento remoto: registri e aggiornamenti senza chiavetta
+
+- `remoto.py`: invio dello zip dei registri a un repository GitHub privato,
+  dopo aver tolto nomi, telefoni ed email dei clienti (da `ordini.db`) e il
+  PIN; controllo, scarico e installazione dell'ultimo commit di `main`
+  (con `manutenzione.py aggiorna`, backup del codice, dati intatti).
+- Interfaccia, Macchina → Registri e aggiornamenti: stato, "Invia i registri
+  adesso", "Installa l'aggiornamento". Il servizio controlla ogni ora e
+  manda i registri ogni 6 ore (mai a lavoro in corso).
+- I collaudi automatici mandano i registri appena finiti.
+- `MASTERFLEX.bat`: voce 15 "Collegamento remoto" (configura, invia,
+  aggiorna, stato); all'avvio automatico l'aggiornamento si installa da
+  solo prima di partire (`aggiorna_all_avvio`), un errore di rete non
+  ferma niente.
+- Token e versione installata in `software/remoto.json` e `versione.json`,
+  esclusi da git.
+
 ### 2026-10-31 — collaudi automatici, agente avviabile da solo
 
 - `collaudo_auto.py senza`: senza pellicola e senza domande. Stato,

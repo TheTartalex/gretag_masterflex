@@ -67,6 +67,7 @@ echo     4  Collaudo dello scanner: automatico, senza e con pellicola
 echo     5  Collaudo del programma (senza macchina)
 echo     6  Diagnosi e registri: uno zip da inviare ^(cartella log^)
 echo    13  Firmware del carrello: controllo versione ^(richiesta 1.15^)
+echo    15  Collegamento remoto: registri e aggiornamenti senza chiavetta
 echo.
 echo    MANUTENZIONE
 echo     7  Installa / ripara (Python, librerie, cartelle, firewall)
@@ -93,6 +94,7 @@ if "%SCELTA%"=="3"  call :azione simulazione
 if "%SCELTA%"=="4"  call :azione collaudo-scanner
 if "%SCELTA%"=="5"  call :azione collaudo
 if "%SCELTA%"=="6"  call :azione diagnosi
+if "%SCELTA%"=="15" call :azione remoto
 if "%SCELTA%"=="7"  call :azione installa
 if "%SCELTA%"=="8"  call :azione aggiorna
 if "%SCELTA%"=="9"  call :azione avvio-automatico
@@ -120,6 +122,7 @@ if /i "%~1"=="avvia"             goto :avvia
 if /i "%~1"=="avvia-senza-motori" goto :avvia
 if /i "%~1"=="simulazione"       goto :avvia
 if /i "%~1"=="agente"            goto :agente_solo
+if /i "%~1"=="remoto"            goto :remoto
 if /i "%~1"=="collaudo-scanner"  goto :collaudo_scanner
 if /i "%~1"=="collaudo"          goto :collaudo
 if /i "%~1"=="diagnosi"          goto :diagnosi
@@ -188,6 +191,22 @@ echo  Avvio dell'interfaccia web: si connette da sola appena lo scanner e' pront
 echo.
 echo  Interfaccia chiusa. L'agente resta aperto nella sua finestra:
 echo  chiuderla per fermare anche quello.
+exit /b 0
+
+
+REM ===========================================================================
+:remoto
+REM  Registri e aggiornamenti attraverso GitHub (remoto.py). Se l'aggiornamento
+REM  porta un MASTERFLEX.bat nuovo, lo si scambia qui, come per "Aggiorna".
+REM ===========================================================================
+"%PY%" remoto.py menu
+if exist "%~dp0MASTERFLEX.bat.nuovo" (
+    move /y "%~dp0MASTERFLEX.bat.nuovo" "%~dp0MASTERFLEX.bat" >nul
+    echo.
+    echo  Aggiornato. Rilanciare MASTERFLEX.bat.
+    pause
+    exit
+)
 exit /b 0
 
 
@@ -346,6 +365,15 @@ REM  nessuno.
 REM ===========================================================================
 set "AUTO=1"
 title Masterflex D1008 - avvio automatico
+REM  Prima di partire, l'aggiornamento dal collegamento remoto, se c'e' ed e'
+REM  configurato cosi' (remoto.json, aggiorna_all_avvio). Un errore di rete
+REM  non ferma niente. Con un MASTERFLEX.bat nuovo si riparte con quello.
+"%PY%" remoto.py aggiorna --se-disponibile --all-avvio
+if exist "%~dp0MASTERFLEX.bat.nuovo" (
+    move /y "%~dp0MASTERFLEX.bat.nuovo" "%~dp0MASTERFLEX.bat" >nul
+    start "Masterflex D1008" cmd /c call "%~f0" automatico
+    exit
+)
 echo.
 echo  Avvio automatico, modo: !MODO_ULTIMO!
 if /i "!MODO_ULTIMO!"=="osservatore" goto :osservatore

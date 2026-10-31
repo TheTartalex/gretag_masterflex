@@ -48,6 +48,9 @@ software/diagnosi/
 software/collaudi/
 # registri di programma, agente, SDK, collaudi (filmscan/registri.py)
 software/log/
+# collegamento remoto: il token di GitHub e la versione installata
+software/remoto.json
+software/versione.json
 software/impostazioni.json
 software/lut/
 software/modo-avvio.txt

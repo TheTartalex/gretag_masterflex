@@ -37,6 +37,14 @@ crash), `sdk\` (copie di `SDKCacheDir\log_*.txt`), `collaudi\`,
 MASTERFLEX.bat voce 6 o da Macchina → Scarica i registri. Quando manda uno
 zip `registri-*.zip`, si parte da lì. Codice: `software/filmscan/registri.py`.
 
+**Collegamento remoto** (`software/remoto.py`, decisione 0010): la
+macchina manda da sola i registri, senza i dati dei clienti, al repository
+privato `TheTartalex/gretag_masterflex_registri` (`<macchina>/<AAAA-MM>/`).
+Per leggerli: `add_repo` su quel repository, poi clone. Gli aggiornamenti la
+macchina li prende dal ramo `main` di questo repository: **quello che va su
+`main` arriva alla riserva al suo prossimo avvio**. Su `main` va solo il
+codice pronto per la macchina, come prima i pacchetti.
+
 ## Macchine
 
 - **Produzione**: non si tocca finché non c'è un pacchetto completo provato.

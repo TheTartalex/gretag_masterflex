@@ -240,6 +240,12 @@ class ScanService:
         # Disconnetti ferma anche la connessione automatica: altrimenti si
         # ricollegherebbe da sola cinque secondi dopo
         self._ferma_auto = threading.Event()
+        # collegamento remoto (software/remoto.py): registri che partono da
+        # soli, aggiornamento disponibile. Un thread suo, che non tocca mai
+        # la macchina; senza remoto.json non fa niente.
+        self.remoto: Dict[str, object] = {}
+        threading.Thread(target=self._ciclo_remoto, name="remoto",
+                         daemon=True).start()
 
     # ------------------------------------------------------------------
 
@@ -278,7 +284,81 @@ class ScanService:
                 "emergenza": self.emergenza,
                 "impostazioni_macchina": self.impostazioni_macchina(),
                 "driver": self.cfg.driver, "job": self.job.as_dict(),
+                "remoto": self.remoto,
                 "ambiente": check_environment(dpi=self.cfg.optical_dpi)}
+
+    # ------------------------------------------------------------------
+    # collegamento remoto
+
+    @staticmethod
+    def _modulo_remoto():
+        try:
+            import remoto                               # software/remoto.py
+            return remoto
+        except ImportError:
+            return None
+
+    def _ciclo_remoto(self) -> None:
+        """Ogni ora: c'e' un aggiornamento? Ogni cfg invio_ore: i registri,
+        mai a lavoro in corso (a rullo finito ci pensa il giro dopo)."""
+        time.sleep(60.0)
+        ultimo_invio = 0.0
+        while True:
+            r = self._modulo_remoto()
+            cfg = r.carica() if r else None
+            if cfg is None:
+                self.remoto = {"configurato": False}
+            else:
+                stato: Dict[str, object] = {"configurato": True,
+                                            "macchina": cfg.get("macchina"),
+                                            "ramo": cfg.get("ramo")}
+                try:
+                    stato["controllo"] = r.controlla(cfg)
+                except Exception as exc:                # noqa: BLE001
+                    stato["errore"] = r.spiega(exc)
+                ore = float(cfg.get("invio_ore") or 0)
+                if (ore > 0 and time.time() - ultimo_invio > ore * 3600
+                        and not self.job.running):
+                    try:
+                        r.invia(cfg, 2, "automatico", scrivi=self.log)
+                        ultimo_invio = time.time()
+                    except Exception as exc:            # noqa: BLE001
+                        self.log("Registri non inviati: %s" % r.spiega(exc))
+                stato["invio"] = (r.carica() or {}).get("stato", {}).get("invio")
+                self.remoto = stato
+            time.sleep(3600.0)
+
+    def remoto_invia(self, motivo: str = "") -> str:
+        r = self._modulo_remoto()
+        cfg = r.carica() if r else None
+        if cfg is None:
+            raise ScannerError("collegamento remoto non configurato: MASTERFLEX.bat, "
+                             "voce Collegamento remoto")
+        try:
+            dove = r.invia(cfg, 2, motivo or "dall'interfaccia", scrivi=self.log)
+        except Exception as exc:                        # noqa: BLE001
+            raise ScannerError("registri non inviati: %s" % r.spiega(exc))
+        self.remoto = dict(self.remoto, invio={"file": dove,
+                                               "quando": time.strftime("%Y-%m-%d %H:%M")})
+        return dove
+
+    def remoto_installa(self) -> str:
+        """Installa l'aggiornamento del ramo. Il codice nuovo vale dal
+        prossimo avvio di MASTERFLEX."""
+        if self.job.running:
+            raise ScannerError("c'e' un lavoro in corso: aggiornare a lavoro finito")
+        r = self._modulo_remoto()
+        cfg = r.carica() if r else None
+        if cfg is None:
+            raise ScannerError("collegamento remoto non configurato")
+        try:
+            sha = r.installa(cfg, scrivi=self.log)
+        except Exception as exc:                        # noqa: BLE001
+            raise ScannerError("aggiornamento non installato: %s" % r.spiega(exc))
+        self.log("Aggiornamento %s installato: vale dal prossimo avvio di "
+                 "MASTERFLEX (riavviare il PC o chiudere e riaprire)." % sha[:7])
+        self.remoto = dict(self.remoto, installato=sha[:7])
+        return sha[:7]
 
     # ------------------------------------------------------------------
 

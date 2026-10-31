@@ -45,3 +45,4 @@ Cosa diventa più facile, cosa più difficile, cosa resta da verificare.
 | [0007](0007-osservatore-programma-originale.md) | Immagini dal programma originale con un osservatore esterno | 2026-10-26 | Proposta |
 | [0008](0008-avvio-automatico-e-modi.md) | Avvio da amministratore, chiusura del programma originale, due modi di lavoro | 2026-10-26 | Proposta |
 | [0009](0009-pellicola-dal-dx.md) | La pellicola dal codice DX corregge il rullo da sola | 2026-10-31 | Proposta |
+| [0010](0010-collegamento-remoto.md) | Collegamento remoto attraverso GitHub | 2026-10-31 | Proposta |

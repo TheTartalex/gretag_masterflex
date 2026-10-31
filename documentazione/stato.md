@@ -409,6 +409,10 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
   4** e manda di continuo l'**evento 85**: non sono nella tabella dei nomi,
   probabilmente calibrazione in corso. Da annotare come finisce. Calibra
   non rifà più l'azzeramento se lo scanner si è caricato oggi.
+- **Collegamento remoto** ([decisione 0010](decisioni/0010-collegamento-remoto.md)):
+  da configurare sulla riserva (MASTERFLEX.bat voce 15) dopo aver creato
+  il repository privato `gretag_masterflex_registri` e il token. Da lì in
+  poi registri e aggiornamenti senza chiavetta.
 - **Collaudi automatici** (voce 4 → 1 senza pellicola, 4 → 2 con
   pellicola): da fare sulla riserva, e mandare lo zip che preparano da
   soli. Rispondono al pressore (si rialza da solo?), al DX (dove sta,

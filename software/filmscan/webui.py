@@ -1522,7 +1522,12 @@ details.sez>div{padding-bottom:10px}
    <div id="amb" style="font-size:11px;color:var(--dim);margin-top:10px"></div>
   </section>
   <section class="pannello">
-   <h2>Registri</h2>
+   <h2>Registri e aggiornamenti</h2>
+   <div class="nota-imp" id="remoto_stato">Collegamento remoto: ...</div>
+   <div class="row">
+    <button class="sec" onclick="remotoInvia()">Invia i registri adesso</button>
+    <button class="sec" id="tasto_aggiorna" onclick="remotoInstalla()" disabled>Installa l'aggiornamento</button>
+   </div>
    <button class="sec" onclick="location.href=url('/api/registri.zip')">Scarica i registri (ultimi 7 giorni)</button>
    <div class="nota-imp">Programma, agente, SDK, collaudi e diagnosi in uno zip
     solo, da mandare quando c'e' un problema. Stanno nella cartella
@@ -2096,6 +2101,18 @@ function muovi(mm){ post('/api/muovi',{mm:mm}).then(mostraStato); }
 /* Le impostazioni della macchina: le spunte seguono lo stato del server
    finche' nessuno le tocca, poi si salvano al cambio. */
 var IMP=['esposizione_auto','pressore_auto','avanzamento_automatico','leggi_dx'];
+function remotoInvia(){
+  el('remoto_stato').textContent='Invio dei registri in corso...';
+  post('/api/remoto/invia',{}).then(function(r){
+    el('remoto_stato').textContent = r.errore ? r.errore : ('Registri inviati: '+r.file); });
+}
+function remotoInstalla(){
+  if(!confirm("Installo l'aggiornamento? Vale dal prossimo avvio di MASTERFLEX.")) return;
+  el('remoto_stato').textContent='Scarico e installo...';
+  post('/api/remoto/installa',{}).then(function(r){
+    el('remoto_stato').textContent = r.errore ? r.errore
+      : ('Installato '+r.versione+': chiudere e riaprire MASTERFLEX (o riavviare il PC).'); });
+}
 function impostaMacchina(){
   var d={autofocus:val('imp_autofocus'), negativo_lineare:val('imp_negativo_lineare')};
   IMP.forEach(function(k){ d[k]=el('imp_'+k).checked; });
@@ -2303,6 +2320,21 @@ function mostraStato(s){
     });
     var af=el('imp_autofocus');
     if(af && document.activeElement!==af) af.value=s.impostazioni_macchina.autofocus;
+    var rs=el('remoto_stato'), rm=s.remoto||{};
+    if(rs){
+      var c=rm.controllo||{}, t;
+      if(!rm.configurato) t='Collegamento remoto non configurato (MASTERFLEX.bat, Collegamento remoto).';
+      else {
+        t='Macchina "'+rm.macchina+'", ramo '+rm.ramo+'. ';
+        if(rm.errore) t+='Errore: '+rm.errore+'. ';
+        else if(c.remota) t+=(c.disponibile ? 'Aggiornamento disponibile: '+c.remota.breve+' - '+c.remota.messaggio+'. '
+                                            : 'Codice aggiornato ('+c.remota.breve+'). ');
+        if(rm.installato) t+='Installato '+rm.installato+': vale dal prossimo avvio. ';
+        if(rm.invio) t+='Ultimo invio dei registri: '+rm.invio.quando+'.';
+      }
+      rs.textContent=t;
+      el('tasto_aggiorna').disabled=!(rm.configurato && c.disponibile && !rm.installato);
+    }
     var ps=el('pin_stato');
     if(ps) ps.textContent = s.impostazioni_macchina.pin_fisso ? '(impostato)' : '(non impostato)';
     var nl=el('imp_negativo_lineare');
@@ -3227,6 +3259,12 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/api/opzioni":
                 s.options = _opzioni(d)
                 return self._json({"ok": True})
+
+            if u.path == "/api/remoto/invia":
+                return self._json({"file": s.remoto_invia(d.get("motivo", ""))})
+
+            if u.path == "/api/remoto/installa":
+                return self._json({"versione": s.remoto_installa()})
 
             if u.path == "/api/ordini":
                 o = s.archivio.ordine_crea(d.get("cliente", ""), d.get("note", ""))

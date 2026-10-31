@@ -296,6 +296,15 @@ class Banco(object):
             print("  %s" % pacco)
         except Exception as exc:                        # noqa: BLE001
             print("Zip dei registri non preparato: %s" % exc)
+        # con il collegamento remoto parte da solo: niente chiavetta
+        try:
+            import remoto
+            cfg = remoto.carica()
+            if cfg is not None:
+                print("Invio dei registri con il collegamento remoto...")
+                print("  inviato: %s" % remoto.invia(cfg, 1, self.r.dati.get("tipo", "collaudo")))
+        except Exception as exc:                        # noqa: BLE001
+            print("Invio remoto non riuscito: %s" % exc)
 
 
 # ---------------------------------------------------------------------------

@@ -66,7 +66,7 @@ AGGIORNAMENTO_URL = ("https://github.com/TheTartalex/gretag_masterflex/"
 # ektest.exe non sta in software/ nel repository: lo aggiunge prepara.sh
 # allo zip, dal pacchetto collaudato del driver.
 CODICE = ["filmscan", "ponte", "run.py", "selftest.py", "manutenzione.py",
-          "processi.py", "collaudo_scanner.py", "collaudo_auto.py",
+          "processi.py", "collaudo_scanner.py", "collaudo_auto.py", "remoto.py",
           "requirements.txt", "CLAUDE.md", "README.md", "MASTERFLEX.bat",
           "AVVIA AGENTE.bat", "ektest.exe"]
 
