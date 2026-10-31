@@ -13,6 +13,8 @@ REM     MASTERFLEX.bat osservatore          man in the middle (programma origina
 REM     MASTERFLEX.bat automatico           l'ultimo modo usato, senza domande
 REM                                         (lo lancia l'Utilita' di pianificazione)
 REM     MASTERFLEX.bat installa | aggiorna | collaudo | diagnosi
+REM     MASTERFLEX.bat agente               solo l'agente dello scanner, motori
+REM                                         attivi (lo usa "AVVIA AGENTE.bat")
 REM
 REM  Sostituisce i dodici .bat della cartella windows\ della versione di
 REM  settembre. Il lavoro vero sta in manutenzione.py (solo libreria standard),
@@ -61,7 +63,7 @@ echo    14  Man in the middle - programma originale + osservatore:
 echo        non chiude niente e non avvia l'agente
 echo.
 echo    COLLAUDI
-echo     4  Collaudo dello scanner: colori, intensita', trascinamento
+echo     4  Collaudo dello scanner: automatico, senza e con pellicola
 echo     5  Collaudo del programma (senza macchina)
 echo     6  Diagnosi e registri: uno zip da inviare ^(cartella log^)
 echo    13  Firmware del carrello: controllo versione ^(richiesta 1.15^)
@@ -117,6 +119,7 @@ if not defined PY (
 if /i "%~1"=="avvia"             goto :avvia
 if /i "%~1"=="avvia-senza-motori" goto :avvia
 if /i "%~1"=="simulazione"       goto :avvia
+if /i "%~1"=="agente"            goto :agente_solo
 if /i "%~1"=="collaudo-scanner"  goto :collaudo_scanner
 if /i "%~1"=="collaudo"          goto :collaudo
 if /i "%~1"=="diagnosi"          goto :diagnosi
@@ -189,51 +192,63 @@ exit /b 0
 
 
 REM ===========================================================================
+:agente_solo
+REM  Solo l'agente, nella sua finestra, motori attivi: per i collaudi e per
+REM  riaprirlo se si e' chiuso. Se gira gia' non fa niente. Prima chiude i
+REM  programmi del software originale (tengono scheda e COM5), come l'avvio.
+REM ===========================================================================
+"%PY%" -c "import manutenzione as m,sys;sys.exit(0 if m.agente_attivo(r'%PONTE%') else 1)" >nul 2>&1
+if not errorlevel 1 (
+    echo  L'agente dello scanner e' gia' in esecuzione.
+    exit /b 0
+)
+if not exist "%PONTE%" mkdir "%PONTE%" 2>nul
+echo  Chiusura dei programmi del software originale ^(C:\MasterflexD^)...
+"%PY%" manutenzione.py termina --quiete 3 --massimo 30
+echo  Avvio dell'agente scanner ^(motori attivi^)...
+start "Agente scanner" cmd /k call "%PY%" ponte\agente.py --condivisa "%PONTE%" --scanner "%SCANNER%" --apertura %APERTURA%
+echo  L'SDK impiega 40-150 secondi a collegare lo scanner: la finestra
+echo  "Agente scanner" scrive "scanner pronto" quando ha finito.
+exit /b 0
+
+
+REM ===========================================================================
 :collaudo_scanner
 REM ===========================================================================
 echo.
-echo  COLLAUDO DELLO SCANNER - serve l'agente in esecuzione
+echo  COLLAUDO DELLO SCANNER - l'agente si avvia da solo se non gira
 echo.
-echo    1  Colori e intensita': R, G, B a esposizioni diverse (nessun motore)
-echo    2  Trascinamento A MANO: si sposta la pellicola con le mani e si
-echo       guarda quali sensori cambiano (nessun motore)
-echo    3  Trascinamento COMANDATO a piccoli passi, con lo spostamento misurato
-echo       sull'immagine (muove il trasporto)
-echo    4  Prova guidata dei motori, con l'agente in questa finestra
-echo    5  Strumenti originali del carrello ^(COM5^): selftest di servizio,
-echo       SensorTest, Compad ^(guide, flag, versione^)
-echo    6  Sonde dell'SDK: codice DX, acquisizione "capture" con e senza
-echo       Digital ICE, Digital ICE diretto ^(muove la pellicola^)
-echo    7  Pressore: giu', su e se dopo una lettura si rialza da solo
-echo       ^(non muove la pellicola^)
+echo    1  AUTOMATICO senza pellicola: tutte le prove, nessuna domanda.
+echo       Percorso pellicola vuoto. Alla fine lo zip dei registri.
+echo    2  AUTOMATICO con pellicola: chiede solo di inserire una striscia
+echo       ^(non di un cliente^), poi fa tutto da solo e la espelle.
+echo    3  Strumenti originali del carrello ^(COM5^): selftest, SensorTest, Compad
 echo    0  Indietro
 echo.
 set "C="
 set /p "C=  Scelta: "
 if "%C%"=="0" exit /b 0
-if "%C%"=="4" (
-    "%PY%" -c "import manutenzione as m,sys;sys.exit(0 if m.agente_attivo(r'%PONTE%') else 1)" >nul 2>&1
-    if not errorlevel 1 (
-        echo  Chiudere prima la finestra dell'agente: la scheda puo' averla un solo programma.
-        exit /b 1
-    )
-    "%PY%" ponte\agente.py --condivisa "%PONTE%" --scanner "%SCANNER%" --apertura %APERTURA% --prova-motori
-    exit /b !errorlevel!
-)
-if "%C%"=="5" goto :strumenti_carrello
+if "%C%"=="3" goto :strumenti_carrello
 set "CS="
-if "%C%"=="1" set "CS=colori"
-if "%C%"=="2" set "CS=sensori"
-if "%C%"=="3" set "CS=passi"
-if "%C%"=="6" set "CS=sdk"
-if "%C%"=="7" set "CS=pressore"
+if "%C%"=="1" set "CS=auto"
+if "%C%"=="2" set "CS=auto-pellicola"
 if not defined CS exit /b 0
 set "DOVE=%PONTE%"
 set "AG="
-set /p "AG=  Agente sulla macchina vera (V) o in simulazione (S)? [V] "
+set /p "AG=  Macchina vera (V) o simulazione (S)? [V] "
+set "SIM="
 if /i "%AG%"=="S" set "DOVE=C:\MasterflexD\ponte-prova"
-"%PY%" collaudo_scanner.py %CS% --ponte "%DOVE%"
-exit /b !errorlevel!
+if /i "%AG%"=="S" set "SIM=--simula"
+if /i not "%AG%"=="S" call :agente_solo
+if "%CS%"=="auto" (
+    "%PY%" collaudo_auto.py senza --ponte "%DOVE%" --scanner "%SCANNER%" %SIM%
+    exit /b !errorlevel!
+)
+if "%CS%"=="auto-pellicola" (
+    "%PY%" collaudo_auto.py pellicola --ponte "%DOVE%" --scanner "%SCANNER%" %SIM%
+    exit /b !errorlevel!
+)
+exit /b 0
 
 
 REM ===========================================================================

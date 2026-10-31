@@ -31,6 +31,9 @@ filmscan/
   orders.py, consegne.py   archivio ordini, registro, consegne
   appunti.py          appunti di Windows e WhatsApp sul PC della macchina
   registri.py         la cartella log: programma, agente, SDK, collaudi, zip da mandare
+collaudo_auto.py      collaudi automatici: senza pellicola, e con pellicola (una domanda sola)
+collaudo_scanner.py   prove manuali (solo riga di comando) e misure usate dagli automatici
+AVVIA AGENTE.bat      avvia solo l'agente dello scanner, se si e' chiuso
   rullo.py            equilibrio di rullo, classi di esposizione, memoria per pellicola
   pellicole_dx.py     dal codice DX alla pellicola (elenco I3A 2009) e cosa aspettarsi
   bianconero.py       toni e viraggi del bianco e nero

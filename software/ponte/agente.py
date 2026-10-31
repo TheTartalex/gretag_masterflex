@@ -906,6 +906,23 @@ def principale(argv=None):
         os.makedirs(a.condivisa)
     log = Registro(a.condivisa)
     log.registra_crash()
+    # Il pid subito, prima di aprire l'SDK (che puo' metterci decine di
+    # secondi): altrimenti in quel tempo l'agente sembra spento, e il
+    # collaudo automatico ne avviava un secondo sulla stessa cartella. Due
+    # agenti si rubano i file del ponte (31/10/2026, in simulazione).
+    pid = os.path.join(a.condivisa, "agente.pid")
+    try:
+        with open(pid, "w") as f:
+            f.write(str(os.getpid()))
+    except (IOError, OSError):
+        pass
+
+    def via_pid():
+        try:
+            os.remove(pid)
+        except OSError:
+            pass
+
     if not a.simula:
         copia_log_sdk(a.scanner, log)
 
@@ -953,11 +970,13 @@ def principale(argv=None):
                 print("")
                 print("  L'agente si ferma qui. Per provare l'interfaccia senza")
                 print("  macchina: MASTERFLEX.bat, voce \"simulazione\".")
+                via_pid()
                 return 2
             banner_simulazione("lo scanner non si e' aperto (vedi sopra)")
             scanner = AgenteSimulato()
 
     if a.prova_motori:
+        via_pid()
         return prova_motori(scanner, log, a.max_passi)
 
     agente = Agente(a.condivisa, scanner, log=log, motori=not a.senza_motori,
@@ -967,12 +986,6 @@ def principale(argv=None):
     # Il file pid dice agli altri strumenti (diagnosi, ektest) che la scheda
     # e' in mano all'agente: con EKframePnP, come con l'originale, chiudere
     # l'handle di un secondo programma spegne la scheda anche per questo.
-    pid = os.path.join(a.condivisa, "agente.pid")
-    try:
-        with open(pid, "w") as f:
-            f.write(str(os.getpid()))
-    except (IOError, OSError):
-        pass
     try:
         if a.una_volta:
             agente.giro()

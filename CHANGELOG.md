@@ -52,6 +52,33 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-10-31 — collaudi automatici, agente avviabile da solo
+
+- `collaudo_auto.py senza`: senza pellicola e senza domande. Stato,
+  temperature, tensioni, sensori, tempi del ponte, azzeramento fino a
+  pronto, calibrazione della macchina, letture a finestra vuota (R, G, B da
+  0,125x a 2x, linearità, profilo delle colonne), buio, rumore nel tempo,
+  IR, tetto d'esposizione, lettura unica (RGB e RGBI), pressore, fuoco,
+  piccoli movimenti, rifiuti attesi senza pellicola (DX, fotogramma
+  successivo), video.
+- `collaudo_auto.py pellicola`: chiede solo di inserire una striscia, poi
+  DX all'inserimento e dopo ogni movimento, letture, esposizione per
+  canale, quattro fotogrammi (lettura unica o un canale per volta),
+  nitidezza con il pressore su e giù, tre autofocus, tetto d'esposizione,
+  ritorno e regolazione fine, sonde capture e ICE, espulsione.
+- Tutti e due: passo fallito → recupero (pressore su, attesa dello
+  scanner, mezzo millimetro indietro) e un altro tentativo; agente morto o
+  muto per 8 s → riavvio (`MASTERFLEX.bat agente`) e si riprende. Alla
+  fine lo zip dei registri.
+- Menu collaudi: solo i due automatici e gli strumenti del carrello; le
+  prove manuali restano da riga di comando. Il collaudo avvia l'agente se
+  non gira.
+- `AVVIA AGENTE.bat` nella cartella del software, e azione
+  `MASTERFLEX.bat agente`.
+- L'agente scrive `agente.pid` appena parte, prima di aprire l'SDK: prima,
+  nei secondi dell'apertura, sembrava spento e se ne poteva avviare un
+  secondo sulla stessa cartella del ponte (i due si rubano i file).
+
 ### 2026-10-31 — pressore e DX spenti di serie, prova del pressore
 
 - Dalla riserva: con il DX acceso il rullo dà errore; con il pressore

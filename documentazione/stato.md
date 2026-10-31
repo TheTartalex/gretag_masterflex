@@ -409,6 +409,12 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
   4** e manda di continuo l'**evento 85**: non sono nella tabella dei nomi,
   probabilmente calibrazione in corso. Da annotare come finisce. Calibra
   non rifà più l'azzeramento se lo scanner si è caricato oggi.
+- **Collaudi automatici** (voce 4 → 1 senza pellicola, 4 → 2 con
+  pellicola): da fare sulla riserva, e mandare lo zip che preparano da
+  soli. Rispondono al pressore (si rialza da solo?), al DX (dove sta,
+  prima e dopo il movimento: la pellicola era una Kodak colore 200 o 400),
+  al tetto d'esposizione, all'autofocus. `AVVIA AGENTE.bat` per riaprire
+  l'agente se si chiude.
 - **31/10, pomeriggio**: senza DX la macchina scansiona; col DX acceso dà
   errore; col pressore automatico il pressore scende e il "su" fallisce
   (l'SDK va in errore). DX e pressore spenti di serie. Da fare: registri
