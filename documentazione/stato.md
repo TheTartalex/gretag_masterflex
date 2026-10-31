@@ -397,6 +397,13 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
   telefono collegati allo stesso account), allegato negli appunti del PC
   della macchina, Condividi dal tablet, avviso proposto o aperto da solo a
   ordine finito.
+- **Dalla riserva (31/10)**: Calibra si fermava dopo l'azzeramento, perché
+  l'SDK ricollega lo scanner per ~40 s e il comando seguente veniva
+  rifiutato: ora si aspetta. Il collaudo colori si è fermato su un file del
+  ponte bloccato per un istante (errno 13): ora si riprova. Misure a
+  finestra vuota: dati a 12 bit, già saturi a 0,5x (p50 4095): l'SDK porta
+  il bianco oltre il fondo scala. Le sonde dell'SDK erano partite senza
+  pellicola (DX: errore 12): ora il collaudo arma il carrello e aspetta.
 - Da provare sulla riserva: che `get_media_info` dia davvero il DX ai byte
   +4/+5 (sonda già nel collaudo, voce 6); l'incolla negli appunti con il
   browser che c'è su Win7 (WhatsApp Web potrebbe non accettare Chrome 109:

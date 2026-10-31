@@ -52,6 +52,22 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-10-31 — dalla riserva: calibrazione, ponte, collaudo
+
+- **Calibra si fermava dopo l'azzeramento**: dopo il Gretag Reset l'SDK
+  ricarica lo scanner (stato 7 → 10 → 0, ~40 s) e l'agente rifiutava il
+  comando successivo con "non ancora pronto". `PonteSdkBackend` ora aspetta
+  e ripete i comandi rifiutati così (fino a 180 s); la calibrazione lo dice.
+- **File del ponte bloccati per un istante** (PermissionError, errno 13,
+  sulla risposta di un `grab`): le letture di risposte e grezzi si
+  ripetono per 2 s invece di far cadere collaudo o fotogramma.
+- Collaudo colori: saturazione misurata sul fondo scala vero (12 bit,
+  4095; prima 65000, che dava 0% con mezzo fotogramma saturo); esposizioni
+  di serie da 0,125x.
+- Collaudo SDK: senza pellicola arma il carrello e aspetta la striscia,
+  invece di lanciare le sonde a vuoto (DX: errore 12, nessuna pellicola).
+- Calibrazione: la nota dice quanta parte del flat è a fondo scala.
+
 ### 2026-10-31 — pellicola dal DX, bianco e nero, WhatsApp
 
 - `pellicole_dx.py`: i 355 codici dell'elenco I3A "DX Codes for 135-Size

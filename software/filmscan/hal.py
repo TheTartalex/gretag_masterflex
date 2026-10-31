@@ -37,6 +37,33 @@ CHANNELS = ("R", "G", "B", "IR")
 
 # --------------------------------------------------------------------------
 
+def _con_riprova(azione, secondi: float = 2.0):
+    """Un file del ponte appena scritto dall'agente, su Windows, puo' essere
+    ancora aperto da qualcun altro per un istante (la sostituzione in corso,
+    o l'antivirus che lo controlla): l'apertura fallisce con PermissionError
+    (errno 13). Sulla riserva, 31/10/2026, ha fermato il collaudo colori a
+    meta'. Si riprova per un paio di secondi prima di arrendersi."""
+    fine = time.time() + secondi
+    while True:
+        try:
+            return azione()
+        except PermissionError:
+            if time.time() >= fine:
+                raise
+            time.sleep(0.02)
+
+
+def _testo(percorso: str) -> str:
+    with open(percorso) as f:
+        return f.read()
+
+
+def _json_file(percorso: str):
+    import json
+    with open(percorso) as f:
+        return json.load(f)
+
+
 class ScannerError(RuntimeError):
     pass
 
@@ -530,7 +557,27 @@ class PonteSdkBackend(ScannerBackend):
     def _emergenza(self) -> bool:
         return os.path.exists(os.path.join(self.root, FILE_EMERGENZA))
 
+    # Dopo un Gretag Reset l'SDK ricarica lo scanner (stato 7, poi 10, poi
+    # 0): sulla riserva ~40 s (31/10/2026), all'avvio anche 100-150 s. In
+    # quel tempo l'agente rifiuta i comandi con "non ancora pronto", e la
+    # calibrazione si fermava subito dopo l'azzeramento. Il comando rifiutato
+    # non e' partito, quindi ripeterlo e' sicuro.
+    ATTESA_PRONTO = 180.0
+
     def _send(self, comando: str, attesa: Optional[float] = None) -> str:
+        fine = time.time() + self.ATTESA_PRONTO
+        while True:
+            try:
+                return self._send_una(comando, attesa)
+            except Emergenza:
+                raise
+            except ScannerError as exc:
+                if ("non ancora pronto" not in str(exc) or comando in ("ping", "stato")
+                        or time.time() >= fine):
+                    raise
+                time.sleep(2.0)
+
+    def _send_una(self, comando: str, attesa: Optional[float] = None) -> str:
         if self._emergenza() and comando not in ("ping", "stato", "pressore_su"):
             raise Emergenza("STOP EMERGENZA attivo: '%s' non inviato" % comando)
         # Il contatore evita che due comandi uguali nello stesso millisecondo
@@ -549,8 +596,7 @@ class PonteSdkBackend(ScannerBackend):
                                   else self.ATTESA_COMANDO)
         while time.time() < scadenza:
             if os.path.exists(ack):
-                with open(ack) as f:
-                    risposta = f.read().strip()
+                risposta = _con_riprova(lambda: _testo(ack)).strip()
                 try:
                     os.remove(ack)
                 except OSError:
@@ -960,11 +1006,9 @@ class PonteSdkBackend(ScannerBackend):
     def _leggi_piani(self, nome: str):
         """Il grezzo di una lettura unica: (dati 1D, larghezza, altezza,
         piani)."""
-        import json
         percorso = os.path.join(self.root, "raw", nome)
-        with open(percorso[:-4] + ".json") as f:
-            meta = json.load(f)
-        dati = np.fromfile(percorso, dtype="<u2")
+        meta = _con_riprova(lambda: _json_file(percorso[:-4] + ".json"))
+        dati = _con_riprova(lambda: np.fromfile(percorso, dtype="<u2"))
         for p in (percorso, percorso[:-4] + ".json"):
             try:
                 os.remove(p)
@@ -1017,13 +1061,11 @@ class PonteSdkBackend(ScannerBackend):
         if not os.path.exists(percorso):
             raise ScannerError("l'agente non ha depositato %s" % nome)
 
-        import json
         meta_path = percorso[:-4] + ".json"
-        with open(meta_path) as f:
-            meta = json.load(f)
+        meta = _con_riprova(lambda: _json_file(meta_path))
         w, h = int(meta["larghezza"]), int(meta["altezza"])
         n = int(meta.get("campioni", w * h))
-        dati = np.fromfile(percorso, dtype="<u2")
+        dati = _con_riprova(lambda: np.fromfile(percorso, dtype="<u2"))
         # Il video dell'SDK dichiara a parte quanti campioni ha: grigio
         # (w*h), RGB intercalato (3*w*h, si tiene il verde) o altro.
         if n == w * h:

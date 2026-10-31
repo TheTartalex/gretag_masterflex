@@ -148,6 +148,18 @@ def run_calibration(backend: ScannerBackend, channels=CHANNELS,
 
     _tick(progress, "Calibrazione completata", 1.0)
     nota = "" if buio else "senza dark frame: il backend non controlla la lampada"
+    # Con l'SDK la finestra vuota satura gia' a 0,5x (12 bit, riserva
+    # 31/10/2026): l'SDK porta il bianco oltre il fondo scala perche' la base
+    # della pellicola riempia la scala. Il flat al centro e' quindi tagliato
+    # e la vignettatura la corregge l'SDK, non lui. Lo si scrive nella nota.
+    tagliati = []
+    for ch, f in flat.items():
+        fondo = 4095.0 if float(f.max()) <= 4095.5 else 65535.0
+        quota = float((f + dark[ch] >= fondo - 0.5).mean())
+        if quota > 0.01:
+            tagliati.append("%s %d%%" % (ch, round(quota * 100)))
+    if tagliati:
+        nota = "; ".join(x for x in (nota, "flat a fondo scala: " + ", ".join(tagliati)) if x)
     return Calibration(dark, flat, time.time(), nota)
 
 

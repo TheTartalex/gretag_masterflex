@@ -162,13 +162,18 @@ def misura(img):
     scure = col < 0.05 * med_col
     sx = int(np.argmax(~scure)) if not scure.all() else len(col)
     dx = int(np.argmax(~scure[::-1])) if not scure.all() else len(col)
+    fondo = 4095.0 if float(x.max()) <= 4095 else 65535.0
     return {
         "larghezza": int(x.shape[1]), "altezza": int(x.shape[0]),
         "minimo": float(x.min()), "massimo": float(x.max()),
         "media": float(x.mean()),
         "p1": float(np.percentile(x, 1)), "p50": float(np.percentile(x, 50)),
         "p99": float(np.percentile(x, 99)),
-        "saturati_pct": float((x >= 65000).mean() * 100),
+        # L'SDK restituisce 12 bit (0..4095), non 16: la soglia dei 65000
+        # dava 0% di saturati anche con mezzo fotogramma a 4095 (riserva,
+        # 31/10/2026). Il fondo scala si deduce dai dati.
+        "fondo_scala": fondo,
+        "saturati_pct": float((x >= fondo).mean() * 100),
         "neri_pct": float((x <= 300).mean() * 100),
         "rumore": rumore,
         # Righe verticali: variazione fra colonne; orizzontali: fra righe.
@@ -474,6 +479,25 @@ def cmd_sdk(a):
     print("Nel carrello serve una striscia di negativo (meglio con un po' di")
     print("polvere), caricata con Carica come per una scansione.")
     chiedi("Invio quando e' pronta: ")
+    # Senza pellicola il DX risponde 12 (ERR_NO_FILM_LOADED) e il capture
+    # aspetta una striscia che non arriva: sulla riserva, 31/10/2026, il
+    # rapporto si e' fermato li'. Se l'SDK non la vede, si arma il carrello
+    # (come Carica) e si aspetta che la prenda.
+    if not b.pellicola_sdk():
+        try:
+            b.prepara_carico("135-full")
+            print("Carrello pronto: inserire la striscia finche' il carrello la prende.")
+        except ScannerError as exc:
+            r.avviso("carrello non armato: %s" % exc)
+        fine = time.time() + 180.0
+        while time.time() < fine and not b.pellicola_sdk():
+            time.sleep(0.5)
+    if not b.pellicola_sdk():
+        r.avviso("nessuna pellicola nel carrello secondo l'SDK dopo 3 minuti: "
+                 "le sonde servono con una striscia caricata, non le faccio")
+        r.chiudi()
+        return 1
+    r("Pellicola nel carrello: si parte.")
     prove = [("codice DX", "dx", 15.0),
              ("capture senza ICE", "sonda_capture_%d_0" % a.risoluzione, 120.0),
              ("capture con ICE (ASF)", "sonda_capture_%d_1" % a.risoluzione, 120.0),
@@ -518,7 +542,9 @@ def main(argv=None):
                     help="ImageResolution dell'SDK (0 = 2100x1400)")
     ap.add_argument("--canali", default="R,G,B")
     ap.add_argument("--ir", action="store_true", help="prova anche il canale IR (3)")
-    ap.add_argument("--esposizioni", default="0.5,1,2,4")
+    # a finestra vuota l'SDK satura gia' a 0,5x (riserva, 31/10/2026): le
+    # esposizioni basse servono a vedere il profilo vero della luce
+    ap.add_argument("--esposizioni", default="0.125,0.25,0.5,1,2")
     ap.add_argument("--durata", type=float, default=120.0)
     ap.add_argument("--intervallo", type=float, default=0.3)
     ap.add_argument("--passi", type=int, default=20)

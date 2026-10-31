@@ -1670,6 +1670,10 @@ class ScanService:
             try:
                 if backend.azzera_motori():
                     self.log("Motori azzerati (Gretag Reset).")
+                    # dopo il reset l'SDK ricollega lo scanner (~40 s): il
+                    # backend aspetta e riprova da solo, qui lo si dice
+                    self.progress("Lo scanner si ricollega dopo l'azzeramento "
+                                  "(circa 40 s)", 0.01)
             except MotoriBloccati:
                 self.log("Azzeramento dei motori saltato: l'agente e' a "
                          "motori bloccati. Tamburo e guide restano dove sono.")
