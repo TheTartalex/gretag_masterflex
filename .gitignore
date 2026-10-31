@@ -72,3 +72,7 @@ desktop.ini
 
 # Pacchetti di aggiornamento prodotti da strumenti/aggiornamento/prepara.sh
 dist/
+
+# Schermate fatte col simulatore per mostrarle ad Alessandro: non vanno nel
+# repository (pesano, e si rifanno in un minuto)
+schermate/
