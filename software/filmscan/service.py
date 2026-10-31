@@ -18,6 +18,7 @@ import dataclasses
 import datetime
 import io
 import json
+import logging
 import os
 import queue
 import re
@@ -43,8 +44,12 @@ from .orders import Archivio
 from .orient import RollMirror
 from .pipeline import (ProcessOptions, anteprima_rapida, export, export_mask,
                        export_negativo, finiture, process)
-from . import pellicole_dx
+from . import pellicole_dx, registri
 from .rullo import MemoriaPellicole, StatisticheRullo, chiave_dx
+
+
+# il diario su file: software/log/programma (registri.configura_programma)
+_registro = logging.getLogger("filmscan.servizio")
 
 
 @dataclass
@@ -178,6 +183,7 @@ class _CodaIniziale(Exception):
 class ScanService:
 
     def __init__(self, cfg: AppConfig, archivio: Optional[Archivio] = None):
+        registri.configura_programma()
         self.cfg = cfg
         self.archivio = archivio or Archivio(
             os.path.join(os.path.dirname(os.path.abspath(cfg.out_dir)) or ".",
@@ -239,6 +245,13 @@ class ScanService:
 
     def log(self, msg: str) -> None:
         self.job.log.append("%s  %s" % (time.strftime("%H:%M:%S"), msg))
+        # e su file (software/log/programma): il diario dell'interfaccia si
+        # perde alla chiusura, e per capire un problema e' il pezzo piu' utile
+        m = str(msg)
+        if m.startswith(("ERRORE", "Attenzione", "ATTENZIONE", "STOP")):
+            _registro.warning(m)
+        else:
+            _registro.info(m)
 
     def progress(self, msg: str, frac: float) -> None:
         self.job.message = msg
@@ -940,7 +953,9 @@ class ScanService:
             except Exception as exc:                    # noqa: BLE001
                 self.job.errors.append(str(exc))
                 self.log("ERRORE: %s" % exc)
-                self.log(traceback.format_exc(limit=2).strip().replace("\n", " | "))
+                self.job.log.append(traceback.format_exc(limit=2).strip().replace("\n", " | "))
+                # nel file il traceback intero, non le ultime due righe
+                _registro.exception("lavoro '%s' fallito", kind)
             finally:
                 # i fotogrammi gia' letti si elaborano e si salvano anche
                 # dopo uno STOP EMERGENZA: non toccano la macchina

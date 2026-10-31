@@ -698,11 +698,8 @@ def cmd_termina(argv):
         return di_serie
 
     import processi
-    cartella_log = os.path.join(PONTE, "log")
-    try:
-        os.makedirs(cartella_log)
-    except OSError:
-        pass
+    from filmscan import registri
+    cartella_log = registri.sottocartella("programma")
     registro = os.path.join(cartella_log, "avvio-%s.log"
                             % datetime.date.today().strftime("%Y%m%d"))
 
@@ -782,9 +779,8 @@ def cmd_diagnosi(argv):
     Il file si allega alla segnalazione; non va nel repository (percorsi e
     nomi della macchina).
     """
-    cartella = os.path.join(QUI, "diagnosi")
-    if not os.path.isdir(cartella):
-        os.makedirs(cartella)
+    from filmscan import registri
+    cartella = registri.sottocartella("diagnosi")
     nome = os.path.join(cartella, "diagnosi-%s.txt"
                         % datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
     vero_stdout = sys.stdout
@@ -814,8 +810,8 @@ def cmd_diagnosi(argv):
         titolo("Agente e ponte")
         print("  Agente attivo: %s" % ("si" if agente_attivo() else "no"))
         _stato_ponte(PONTE)
-        log_dir = os.path.join(PONTE, "log")
-        ultimi = sorted(os.listdir(log_dir))[-1:] if os.path.isdir(log_dir) else []
+        log_dir = registri.sottocartella("agente")
+        ultimi = sorted(n for n in os.listdir(log_dir) if n.startswith("agente-"))[-1:]
         if not ultimi:
             print("  Nessun registro dell'agente in %s: l'agente non e' mai" % log_dir)
             print("  partito su questa cartella, oppure non ci puo' scrivere.")
@@ -828,7 +824,7 @@ def cmd_diagnosi(argv):
             print(_coda(sdk_log, 200))
 
         titolo("Ultimi collaudi")
-        coll = os.path.join(QUI, "collaudi")
+        coll = registri.sottocartella("collaudi")
         recenti = sorted(os.listdir(coll))[-3:] if os.path.isdir(coll) else []
         if not recenti:
             print("  Nessun collaudo in %s" % coll)
@@ -853,10 +849,21 @@ def cmd_diagnosi(argv):
         sys.stdout = vero_stdout
     with io.open(nome, "w", encoding="utf-8") as f:
         f.write(buf.getvalue())
+    # e tutto il resto: registri di programma, agente, SDK e collaudi degli
+    # ultimi 7 giorni, in uno zip solo
+    try:
+        pacco = registri.raccogli(7, PONTE, SCANNER,
+                                  os.path.join(QUI, "impostazioni.json"))
+    except Exception as exc:                            # noqa: BLE001
+        pacco = ""
+        print("  Zip dei registri non preparato: %s" % exc)
     print("")
     print("  Diagnosi salvata in:")
     print("    %s" % nome)
-    print("  Allegarla alla segnalazione del problema.")
+    if pacco:
+        print("  Con i registri degli ultimi 7 giorni, da mandare:")
+        print("    %s" % pacco)
+    print("  Cartella dei registri: %s" % registri.cartella_log())
     return 0
 
 

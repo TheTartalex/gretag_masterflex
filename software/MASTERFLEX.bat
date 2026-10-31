@@ -63,7 +63,7 @@ echo.
 echo    COLLAUDI
 echo     4  Collaudo dello scanner: colori, intensita', trascinamento
 echo     5  Collaudo del programma (senza macchina)
-echo     6  Diagnosi: raccoglie lo stato in un file da inviare
+echo     6  Diagnosi e registri: uno zip da inviare ^(cartella log^)
 echo    13  Firmware del carrello: controllo versione ^(richiesta 1.15^)
 echo.
 echo    MANUTENZIONE
@@ -366,6 +366,8 @@ REM ===========================================================================
 :diagnosi
 REM ===========================================================================
 "%PY%" manutenzione.py diagnosi
+REM la cartella dei registri, con lo zip da mandare in da-mandare
+if exist "%~dp0log" start "" explorer "%~dp0log\da-mandare"
 exit /b !errorlevel!
 
 

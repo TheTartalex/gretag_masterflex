@@ -113,6 +113,13 @@ reintrodurle.
   perderebbe la pellicola della striscia.
 - **Toni e viraggi B/N stanno in `finiture`**, come i cursori: cambiarli
   non rilegge niente. Valgono solo su immagini monocromatiche.
+- **Registri in `software/log`** (`registri.py`): niente file nostri in
+  `C:\MasterflexD`. Il servizio scrive col logger `filmscan.*` (il diario
+  con `self.log`, gli errori dei lavori con il traceback intero), il ponte
+  annota rifiuti e file bloccati, l'agente e l'osservatore scrivono in
+  `log/agente` con una regola di percorso loro (sono solo libreria
+  standard e girano da `ponte/`). Una cosa nuova che puo' andare storta va
+  scritta li', non solo a schermo.
 - **WhatsApp non si pilota.** Niente tasti premuti nel browser al posto
   dell'operatore: si apre la chat e si mette l'allegato negli appunti.
   L'unica eccezione, `whatsapp_incolla`, preme Ctrl+V solo se la finestra

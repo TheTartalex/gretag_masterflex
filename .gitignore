@@ -46,6 +46,8 @@ software/out/
 software/backup/
 software/diagnosi/
 software/collaudi/
+# registri di programma, agente, SDK, collaudi (filmscan/registri.py)
+software/log/
 software/impostazioni.json
 software/lut/
 software/modo-avvio.txt

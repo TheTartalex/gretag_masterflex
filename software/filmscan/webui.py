@@ -34,6 +34,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
 import os
 import secrets
 import threading
@@ -45,7 +46,7 @@ from typing import Dict, List, Optional
 from urllib.parse import parse_qs, urlparse
 
 from . import compat
-from . import bianconero, consegne, pellicole_dx
+from . import bianconero, consegne, pellicole_dx, registri
 from .config import AppConfig, FORMATS, PRESETS
 from .invert import PROFILES
 from .orders import Archivio
@@ -1521,6 +1522,13 @@ details.sez>div{padding-bottom:10px}
    <div id="amb" style="font-size:11px;color:var(--dim);margin-top:10px"></div>
   </section>
   <section class="pannello">
+   <h2>Registri</h2>
+   <button class="sec" onclick="location.href=url('/api/registri.zip')">Scarica i registri (ultimi 7 giorni)</button>
+   <div class="nota-imp">Programma, agente, SDK, collaudi e diagnosi in uno zip
+    solo, da mandare quando c'e' un problema. Stanno nella cartella
+    <b>log</b> del software; lo zip resta anche in log\da-mandare.</div>
+  </section>
+  <section class="pannello">
    <h2>Impostazioni macchina</h2>
    <label><input type="checkbox" id="imp_esposizione_auto" style="width:auto" onchange="impostaMacchina()"> Esposizione automatica</label>
    <div class="nota-imp">Tempi di esposizione calibrati dalla macchina (li aggiorna Calibra) e misura per canale a inizio rullo. Spenta: tempi di fabbrica, uguali per tutti i canali. Cambiandola va rifatta la calibrazione.</div>
@@ -2517,6 +2525,9 @@ class Handler(BaseHTTPRequestHandler):
             return                       # il client se n'e' andato: normale
         print("  errore servendo %s: %s: %s"
               % (client_address[0], type(exc).__name__, exc))
+        # nel registro su file il traceback intero: a schermo una riga
+        logging.getLogger("filmscan.web").exception(
+            "errore servendo %s", client_address[0])
 
     def log_message(self, fmt, *args):      # silenzia il log su stdout
         pass
@@ -2842,6 +2853,13 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as exc:
                 return self._json({"errore": str(exc)}, 400)
             return self._scarica(dest, tipo="application/zip")
+
+        if u.path == "/api/registri.zip":
+            # tutto quello che serve per capire un problema, in uno zip
+            percorso = registri.raccogli(
+                7, getattr(s.backend, "root", None) or r"C:\MasterflexD\ponte",
+                r"C:\MasterflexD\Scanner", self.impostazioni)
+            return self._scarica(percorso, tipo="application/zip")
 
         if u.path == "/api/archivio/foto.jpg":
             # le foto da mandare, una per volta, in JPEG da 2048 px: le

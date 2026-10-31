@@ -27,6 +27,16 @@ Le parti del progetto:
   per la scheda di acquisizione, perché il vecchio `EKframe.sys` non funziona
   sulla macchina di riserva.
 
+## Registri: dove guardare quando c'è un problema
+
+Tutto in `software\log` sulla macchina (mai in `C:\MasterflexD`, che è del
+programma originale): `programma\` (diario di filmscan, errori con
+traceback, comunicazione col ponte), `agente\` (comandi e risposte,
+crash), `sdk\` (copie di `SDKCacheDir\log_*.txt`), `collaudi\`,
+`diagnosi\`, `da-mandare\` (gli zip). Alessandro lo zip lo prende da
+MASTERFLEX.bat voce 6 o da Macchina → Scarica i registri. Quando manda uno
+zip `registri-*.zip`, si parte da lì. Codice: `software/filmscan/registri.py`.
+
 ## Macchine
 
 - **Produzione**: non si tocca finché non c'è un pacchetto completo provato.

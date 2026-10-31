@@ -67,7 +67,10 @@ class Rapporto(object):
 
     def __init__(self, tipo):
         data = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        self.cartella = os.path.join(QUI, "collaudi", "%s-%s" % (tipo, data))
+        # nella cartella dei registri, con il resto (filmscan/registri.py)
+        from filmscan import registri
+        self.cartella = os.path.join(registri.sottocartella("collaudi"),
+                                     "%s-%s" % (tipo, data))
         os.makedirs(self.cartella)
         self._f = open(os.path.join(self.cartella, "rapporto.txt"), "w",
                        encoding="utf-8")

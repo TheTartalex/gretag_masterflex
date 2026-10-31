@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import abc
 import glob
+import logging
 import os
 import time
 from dataclasses import dataclass
@@ -37,6 +38,11 @@ CHANNELS = ("R", "G", "B", "IR")
 
 # --------------------------------------------------------------------------
 
+# la comunicazione col ponte che non va (tentativi, rifiuti, comandi senza
+# risposta) finisce nel registro del programma, software/log/programma
+_registro = logging.getLogger("filmscan.ponte")
+
+
 def _con_riprova(azione, secondi: float = 2.0):
     """Un file del ponte appena scritto dall'agente, su Windows, puo' essere
     ancora aperto da qualcun altro per un istante (la sostituzione in corso,
@@ -47,8 +53,9 @@ def _con_riprova(azione, secondi: float = 2.0):
     while True:
         try:
             return azione()
-        except PermissionError:
+        except PermissionError as exc:
             if time.time() >= fine:
+                _registro.error("file del ponte bloccato da piu' di %.0f s: %s", secondi, exc)
                 raise
             time.sleep(0.02)
 
@@ -571,6 +578,7 @@ class PonteSdkBackend(ScannerBackend):
 
     def _send(self, comando: str, attesa: Optional[float] = None) -> str:
         fine = time.time() + self.ATTESA_PRONTO
+        primo = True
         while True:
             try:
                 return self._send_una(comando, attesa)
@@ -579,7 +587,12 @@ class PonteSdkBackend(ScannerBackend):
             except ScannerError as exc:
                 if ("non ancora pronto" not in str(exc) or comando in ("ping", "stato")
                         or time.time() >= fine):
+                    _registro.warning("comando '%s': %s", comando, exc)
                     raise
+                if primo:
+                    _registro.info("comando '%s' rifiutato: scanner non ancora "
+                                   "pronto, si riprova ogni 2 s", comando)
+                    primo = False
                 time.sleep(2.0)
 
     def _send_una(self, comando: str, attesa: Optional[float] = None) -> str:

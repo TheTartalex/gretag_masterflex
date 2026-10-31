@@ -82,6 +82,7 @@ import argparse
 import faulthandler
 import json
 import os
+import shutil
 import sys
 import time
 import traceback
@@ -103,15 +104,45 @@ MAX_ALIMENTAZIONE = 15.0      # secondi di trascinamento acceso senza comandi
 COMANDO_LENTO = 30.0          # oltre, il comando finisce nel registro come lento
 
 
+# I registri stanno nella cartella del software (software/log), con quelli
+# di filmscan, dei collaudi e le copie dell'SDK: vedi filmscan/registri.py.
+# Prima l'agente scriveva in <ponte>/log, dentro C:\MasterflexD.
+CARTELLA_LOG = os.environ.get("MASTERFLEX_LOG") or os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "log")
+
+
+def copia_log_sdk(scanner, log=None):
+    """All'avvio, prima che l'SDK lo riscriva: copia di SDKCacheDir/log_*.txt
+    in software/log/sdk, con data e ora del file."""
+    sorgente = os.path.join(scanner, "SDKCacheDir")
+    dest = os.path.join(CARTELLA_LOG, "sdk")
+    try:
+        if not os.path.isdir(sorgente):
+            return
+        if not os.path.isdir(dest):
+            os.makedirs(dest)
+        for n in sorted(os.listdir(sorgente)):
+            if not (n.lower().startswith("log") and n.lower().endswith(".txt")):
+                continue
+            p = os.path.join(sorgente, n)
+            quando = time.strftime("%Y%m%d-%H%M%S", time.localtime(os.path.getmtime(p)))
+            nome = os.path.join(dest, "%s-%s" % (quando, n))
+            if not os.path.exists(nome):
+                shutil.copy2(p, nome)
+    except (IOError, OSError) as exc:
+        if log:
+            log("copia del registro dell'SDK non riuscita: %s" % exc)
+
+
 class Registro(object):
-    """Scrive a schermo e in <condivisa>/log/agente-AAAAMMGG.log.
+    """Scrive a schermo e in software/log/agente/agente-AAAAMMGG.log.
 
     Il file serve a chi deve capire dopo cosa e' successo: la finestra
     dell'agente si chiude, il file resta e si allega alla segnalazione.
     """
 
-    def __init__(self, condivisa):
-        self.cartella = os.path.join(condivisa, "log")
+    def __init__(self, condivisa=None):
+        self.cartella = os.path.join(CARTELLA_LOG, "agente")
         self.avvisato = False
         try:
             os.makedirs(self.cartella)
@@ -871,6 +902,8 @@ def principale(argv=None):
         os.makedirs(a.condivisa)
     log = Registro(a.condivisa)
     log.registra_crash()
+    if not a.simula:
+        copia_log_sdk(a.scanner, log)
 
     def banner_simulazione(motivo=""):
         print("")

@@ -52,6 +52,17 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-10-31 — una cartella sola per i registri
+
+- `software/log` (`registri.py`): `programma` (diario di filmscan su file,
+  errori con traceback, problemi del ponte, crash di Python), `agente`
+  (agente, osservatore, crash), `sdk` (copia del registro dell'SDK a ogni
+  avvio dell'agente), `collaudi`, `diagnosi`, `da-mandare`. File più vecchi
+  di 60 giorni tolti da soli. Niente più file nostri in `C:\MasterflexD`
+  (prima: `ponte\log`).
+- Zip da mandare: MASTERFLEX.bat voce 6 (con la diagnosi, poi apre la
+  cartella) o Macchina → Scarica i registri; il PIN fisso non ci finisce.
+
 ### 2026-10-31 — Calibra senza azzeramento doppio
 
 - L'agente pubblica in `stato.json` quando lo scanner si è caricato

@@ -409,6 +409,10 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
   4** e manda di continuo l'**evento 85**: non sono nella tabella dei nomi,
   probabilmente calibrazione in corso. Da annotare come finisce. Calibra
   non rifà più l'azzeramento se lo scanner si è caricato oggi.
+- **Registri in una cartella sola**, `software\log`: programma, agente,
+  SDK, collaudi, diagnosi; lo zip da mandare si fa con la voce 6 o con
+  Macchina → Scarica i registri. Il ponte resta in `C:\MasterflexD\ponte`
+  (lo scambio comandi con l'agente), ma i registri non ci vanno più.
 - Da provare sulla riserva: che `get_media_info` dia davvero il DX ai byte
   +4/+5 (sonda già nel collaudo, voce 6); l'incolla negli appunti con il
   browser che c'è su Win7 (WhatsApp Web potrebbe non accettare Chrome 109:

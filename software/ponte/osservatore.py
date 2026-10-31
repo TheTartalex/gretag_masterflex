@@ -543,8 +543,22 @@ def principale(argv=None):
         print("Serve Windows e Python a 32 bit, come PhxScanner.")
         return 2
 
+    # anche su file, in software/log/agente con quelli dell'agente
+    cartella_log = os.environ.get("MASTERFLEX_LOG") or os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "log")
+    cartella_log = os.path.join(cartella_log, "agente")
+
     def log(testo):
-        print("%s  %s" % (time.strftime("%H:%M:%S"), testo))
+        riga = "%s  %s" % (time.strftime("%H:%M:%S"), testo)
+        print(riga)
+        try:
+            if not os.path.isdir(cartella_log):
+                os.makedirs(cartella_log)
+            with open(os.path.join(cartella_log, "osservatore-%s.log"
+                                   % time.strftime("%Y%m%d")), "a") as f:
+                f.write(riga + "\n")
+        except (IOError, OSError):
+            pass
 
     pid = trova_processo(a.processo)
     if not pid:
