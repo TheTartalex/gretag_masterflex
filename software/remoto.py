@@ -89,6 +89,22 @@ def _annota(chiave, valore):
 
 # --- HTTP -----------------------------------------------------------------
 
+def _contesto():
+    """TLS con i certificati di Windows PIU' quelli di Mozilla che viaggiano
+    con il software (certificati/cacert.pem, dal pacchetto certifi): Windows 7
+    non ha piu' Windows Update, e i suoi certificati radice invecchiano. Per
+    rinnovarli basta un aggiornamento del software, che arriva da qui."""
+    import ssl
+    ctx = ssl.create_default_context()
+    pem = os.path.join(QUI, "certificati", "cacert.pem")
+    if os.path.exists(pem):
+        try:
+            ctx.load_verify_locations(cafile=pem)
+        except (ssl.SSLError, OSError):
+            pass
+    return ctx
+
+
 def _richiesta(cfg, metodo, url, dati=None, timeout=60, grezzo=False):
     from urllib.request import Request, urlopen
     corpo = None if dati is None else json.dumps(dati).encode("utf-8")
@@ -100,7 +116,7 @@ def _richiesta(cfg, metodo, url, dati=None, timeout=60, grezzo=False):
     r.add_header("User-Agent", "masterflex-d1008")
     if corpo is not None:
         r.add_header("Content-Type", "application/json")
-    risposta = urlopen(r, timeout=timeout)
+    risposta = urlopen(r, timeout=timeout, context=_contesto())
     contenuto = risposta.read()
     return contenuto if grezzo else json.loads(contenuto.decode("utf-8") or "null")
 
@@ -117,8 +133,9 @@ def spiega(exc):
         return ("repository o ramo non trovato (404): nome sbagliato, oppure il "
                 "token non ha accesso a quel repository")
     if "CERTIFICATE" in testo.upper():
-        return ("certificato di GitHub non riconosciuto da Windows 7: aggiornare i "
-                "certificati radice (Windows Update) e riprovare (%s)" % testo)
+        return ("certificato di GitHub non riconosciuto, neanche con l'elenco di "
+                "certificati del software (certificati/cacert.pem): controllare data "
+                "e ora del PC, poi portare un software aggiornato (%s)" % testo)
     return testo
 
 

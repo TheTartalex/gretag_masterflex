@@ -1,0 +1,6 @@
+cacert.pem: l'elenco dei certificati radice di Mozilla, preso dal pacchetto
+Python certifi 2026.10.23 (licenza MPL 2.0, https://github.com/certifi/python-certifi).
+
+Serve a remoto.py per parlare con GitHub: Windows 7 non riceve piu' Windows
+Update, e i suoi certificati radice invecchiano. Si rinnova con un
+aggiornamento del software (pip download certifi, poi certifi/cacert.pem).

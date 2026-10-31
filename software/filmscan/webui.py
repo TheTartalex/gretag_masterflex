@@ -1528,6 +1528,7 @@ details.sez>div{padding-bottom:10px}
     <button class="sec" onclick="remotoInvia()">Invia i registri adesso</button>
     <button class="sec" id="tasto_aggiorna" onclick="remotoInstalla()" disabled>Installa l'aggiornamento</button>
    </div>
+   <button class="sec" id="tasto_riavvia" onclick="riavviaTutto()">Riavvia interfaccia e agente</button>
    <button class="sec" onclick="location.href=url('/api/registri.zip')">Scarica i registri (ultimi 7 giorni)</button>
    <div class="nota-imp">Programma, agente, SDK, collaudi e diagnosi in uno zip
     solo, da mandare quando c'e' un problema. Stanno nella cartella
@@ -2107,11 +2108,34 @@ function remotoInvia(){
     el('remoto_stato').textContent = r.errore ? r.errore : ('Registri inviati: '+r.file); });
 }
 function remotoInstalla(){
-  if(!confirm("Installo l'aggiornamento? Vale dal prossimo avvio di MASTERFLEX.")) return;
+  if(!confirm("Installo l'aggiornamento? Poi si riavvia tutto con la versione nuova.")) return;
   el('remoto_stato').textContent='Scarico e installo...';
   post('/api/remoto/installa',{}).then(function(r){
-    el('remoto_stato').textContent = r.errore ? r.errore
-      : ('Installato '+r.versione+': chiudere e riaprire MASTERFLEX (o riavviare il PC).'); });
+    if(r.errore){ el('remoto_stato').textContent=r.errore; return; }
+    el('remoto_stato').textContent='Installato '+r.versione+'.';
+    el('tasto_riavvia').textContent='Riavvia con la versione nuova ('+r.versione+')';
+    el('tasto_riavvia').classList.add('principale');
+  });
+}
+/* Riavvio: l'interfaccia esce, riavvia.py chiude l'agente e fa ripartire
+   tutto (MASTERFLEX.bat automatico). La pagina aspetta il server nuovo e
+   torna alla radice: il token di prima non vale piu'. */
+function riavviaTutto(){
+  if(!confirm("Riavvio interfaccia e agente? Lo scanner si ricollega in 1-3 minuti.")) return;
+  post('/api/riavvia',{}).then(function(r){
+    if(r && r.errore){ alert(r.errore); return; }
+    document.body.innerHTML='<div style="padding:40px;font:18px sans-serif">'+
+      'Riavvio in corso con la versione installata.<br>La pagina si ricarica da sola '+
+      'appena l\'interfaccia e\' di nuovo su (di solito 10-20 secondi); lo scanner '+
+      'si ricollega da solo in 1-3 minuti.</div>';
+    var tentativi=0;
+    setTimeout(function prova(){
+      tentativi++;
+      fetch('/', {cache:'no-store'}).then(function(x){
+        if(x.ok) location.href='/'; else setTimeout(prova, 3000);
+      }).catch(function(){ if(tentativi<200) setTimeout(prova, 3000); });
+    }, 6000);
+  });
 }
 function impostaMacchina(){
   var d={autofocus:val('imp_autofocus'), negativo_lineare:val('imp_negativo_lineare')};
@@ -3265,6 +3289,10 @@ class Handler(BaseHTTPRequestHandler):
 
             if u.path == "/api/remoto/installa":
                 return self._json({"versione": s.remoto_installa()})
+
+            if u.path == "/api/riavvia":
+                s.riavvia()
+                return self._json({"ok": True})
 
             if u.path == "/api/ordini":
                 o = s.archivio.ordine_crea(d.get("cliente", ""), d.get("note", ""))

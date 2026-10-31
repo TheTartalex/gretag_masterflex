@@ -188,6 +188,9 @@ echo  L'agente e' gia' in esecuzione: uso quello.
 call :firewall silenzioso
 echo  Avvio dell'interfaccia web: si connette da sola appena lo scanner e' pronto...
 "%PY%" run.py --rete --porta %PORTA% --driver %DRIVER% --ponte "%CARTELLA%" --apri --connetti
+REM  uscita 3 = "Riavvia con la versione nuova": riavvia.py apre una finestra
+REM  nuova con tutto ripartito, questa si chiude subito
+if errorlevel 3 exit
 echo.
 echo  Interfaccia chiusa. L'agente resta aperto nella sua finestra:
 echo  chiuderla per fermare anche quello.
@@ -353,6 +356,7 @@ echo  Avvio dell'interfaccia web ^(collegamento: programma originale^)...
 echo  Nell'interfaccia: Connetti, scegliere ordine e rullo, Scansiona rullo;
 echo  poi scansionare dal programma originale. STOP per chiudere il rullo.
 "%PY%" run.py --rete --porta %PORTA% --driver originale --ponte "%PONTE%" --apri --connetti
+if errorlevel 3 exit
 exit /b 0
 
 

@@ -52,6 +52,18 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-10-31 — riavvio con la versione nuova, certificati propri
+
+- Tasto "Riavvia interfaccia e agente" (Macchina → Registri e
+  aggiornamenti; dopo un'installazione diventa "Riavvia con la versione
+  nuova"): l'interfaccia lancia `riavvia.py` ed esce con il codice 3,
+  `MASTERFLEX.bat` chiude la sua finestra; `riavvia.py` chiude l'agente
+  (comando nuovo `esci`, o d'ufficio dopo 30 s), le finestre rimaste,
+  scambia `MASTERFLEX.bat.nuovo` e riparte con `MASTERFLEX.bat automatico`.
+  La pagina si ricarica da sola quando il server nuovo risponde.
+- `certificati/cacert.pem` (certifi 2026.10.23, Mozilla): `remoto.py` li
+  usa insieme a quelli di Windows. Windows 7 non ha più Windows Update.
+
 ### 2026-10-31 — collegamento remoto: registri e aggiornamenti senza chiavetta
 
 - `remoto.py`: invio dello zip dei registri a un repository GitHub privato,

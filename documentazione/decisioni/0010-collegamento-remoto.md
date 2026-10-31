@@ -37,5 +37,9 @@ possano leggere, e che gli aggiornamenti arrivino da soli.
   tornare indietro.
 - Sulla produzione il collegamento si configura solo dopo che la riserva
   l'ha provato (regola 2), eventualmente con un ramo suo.
-- Windows 7 potrebbe non avere i certificati radice aggiornati: se GitHub
-  non risponde per il certificato, il messaggio lo dice.
+- Windows 7 non riceve più Windows Update e i suoi certificati radice
+  invecchiano: il software porta i suoi (`certificati/cacert.pem`, l'elenco
+  di Mozilla dal pacchetto certifi), che si rinnovano con un aggiornamento.
+- Dopo l'installazione il tasto "Riavvia con la versione nuova" rimette in
+  piedi interfaccia e agente con il codice nuovo (`riavvia.py`), senza
+  passare dal PC.

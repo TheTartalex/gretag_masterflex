@@ -452,6 +452,11 @@ class Agente(object):
         self.annuncia_pronto(self.s.pronto())
         while True:
             fatti = self.giro()
+            if self.esci:
+                # "esci" (riavvio dalla interfaccia): si chiude da solo, e
+                # il finally di principale() toglie il pid
+                self.log("chiuso su richiesta (riavvio con la versione nuova)")
+                break
             self.controlla_alimentazione()
             self.pubblica_stato()
             if self.pronto_annunciato is not True and time.time() >= self._prossimo_controllo:
@@ -461,6 +466,7 @@ class Agente(object):
                 time.sleep(pausa)
 
     pronto_annunciato = None
+    esci = False
     _prossimo_controllo = 0.0
     _stato_pubblicato = None
 
@@ -567,6 +573,10 @@ class Agente(object):
 
         if comando == "ping":
             return "vivo"
+
+        if comando == "esci":
+            self.esci = True
+            return "esco"
 
         # STOP EMERGENZA: filmscan ha scritto il file di blocco. Passano solo
         # le domande; ogni comando che muove o acquisisce si rifiuta finche'

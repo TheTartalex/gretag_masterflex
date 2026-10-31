@@ -342,6 +342,31 @@ class ScanService:
                                                "quando": time.strftime("%Y-%m-%d %H:%M")})
         return dove
 
+    def riavvia(self) -> None:
+        """Riavvia interfaccia e agente con il codice installato: lancia
+        riavvia.py staccato, poi questo processo esce con il codice 3 (che
+        MASTERFLEX.bat riconosce e chiude la sua finestra). Mai a lavoro in
+        corso: l'agente si chiude, e la macchina con lui."""
+        if self.job.running:
+            raise ScannerError("c'e' un lavoro in corso: riavviare a lavoro finito")
+        import subprocess
+        import sys as _sys
+        software = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        ponte = getattr(self.backend, "root", None) or r"C:\MasterflexD\ponte"
+        kw = {}
+        if os.name == "nt":
+            kw["creationflags"] = 0x00000008 | 0x00000200   # staccato, gruppo suo
+        subprocess.Popen([_sys.executable, os.path.join(software, "riavvia.py"),
+                          "--pid-web", str(os.getpid()), "--ponte", ponte],
+                         cwd=software, close_fds=True, **kw)
+        self.log("Riavvio con la versione installata: interfaccia e agente "
+                 "ripartono fra poco.")
+
+        def esci():
+            time.sleep(1.5)                 # la risposta HTTP deve partire
+            os._exit(3)
+        threading.Thread(target=esci, daemon=True).start()
+
     def remoto_installa(self) -> str:
         """Installa l'aggiornamento del ramo. Il codice nuovo vale dal
         prossimo avvio di MASTERFLEX."""

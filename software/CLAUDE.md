@@ -120,6 +120,11 @@ reintrodurle.
   `log/agente` con una regola di percorso loro (sono solo libreria
   standard e girano da `ponte/`). Una cosa nuova che puo' andare storta va
   scritta li', non solo a schermo.
+- **Riavvio dall'interfaccia**: `ScanService.riavvia` lancia `riavvia.py`
+  staccato ed esce con il codice 3; `MASTERFLEX.bat` con 3 chiude la sua
+  finestra (`if errorlevel 3 exit` dopo `run.py`). Non cambiare quel codice
+  d'uscita senza cambiare il .bat. `MASTERFLEX.bat.nuovo` lo scambia
+  `riavvia.py` solo a vecchia finestra chiusa.
 - **WhatsApp non si pilota.** Niente tasti premuti nel browser al posto
   dell'operatore: si apre la chat e si mette l'allegato negli appunti.
   L'unica eccezione, `whatsapp_incolla`, preme Ctrl+V solo se la finestra

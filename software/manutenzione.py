@@ -67,6 +67,7 @@ AGGIORNAMENTO_URL = ("https://github.com/TheTartalex/gretag_masterflex/"
 # allo zip, dal pacchetto collaudato del driver.
 CODICE = ["filmscan", "ponte", "run.py", "selftest.py", "manutenzione.py",
           "processi.py", "collaudo_scanner.py", "collaudo_auto.py", "remoto.py",
+          "riavvia.py", "certificati",
           "requirements.txt", "CLAUDE.md", "README.md", "MASTERFLEX.bat",
           "AVVIA AGENTE.bat", "ektest.exe"]
 
