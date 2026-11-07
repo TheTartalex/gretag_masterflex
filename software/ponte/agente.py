@@ -638,7 +638,11 @@ class Agente(object):
                              % comando)
 
         if comando == "sensori":
-            return json.dumps(self.s.sensori())
+            # diag_input fa cadere l'agente dentro l'SDK (access violation,
+            # riserva 7/11/2026, due volte): finche' non se ne capisce la
+            # firma, il comando si rifiuta invece di uccidere il processo
+            raise ValueError("sensori: diag_input fa cadere l'SDK, comando "
+                             "disattivato")
 
         if testa == "formato":
             self.s.scegli_formato(int(parti[1]))
@@ -916,6 +920,17 @@ def principale(argv=None):
         os.makedirs(a.condivisa)
     log = Registro(a.condivisa)
     log.registra_crash()
+    # Se l'SDK fa cadere il processo, niente finestra "Python ha smesso di
+    # funzionare": resterebbe aperta finche' qualcuno non la chiude, e intanto
+    # il processo morto non si toglie e nessuno puo' riavviare l'agente. Il
+    # registro dei crash (faulthandler) scrive comunque dove e' caduto.
+    if os.name == "nt":
+        try:
+            import ctypes
+            # SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX
+            ctypes.windll.kernel32.SetErrorMode(0x0001 | 0x0002 | 0x8000)
+        except Exception:
+            pass
     # Il pid subito, prima di aprire l'SDK (che puo' metterci decine di
     # secondi): altrimenti in quel tempo l'agente sembra spento, e il
     # collaudo automatico ne avviava un secondo sulla stessa cartella. Due

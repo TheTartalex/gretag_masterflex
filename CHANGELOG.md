@@ -52,6 +52,21 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-11-07 — dai primi registri arrivati da soli
+
+- **Lettura unica spenta di serie**: sulla riserva `scan_raw` canale 4 ha
+  dato "callback scan rgb failed", timeout dopo 60 s, e poi ogni lettura
+  (video compreso) ERR_GENERAL_FW 6 ("restore (add) buffer failed"). Si
+  riaccende solo dopo una prova riuscita.
+- **Ripristino automatico**: una lettura rifiutata con ERR_GENERAL_FW 6 fa
+  un Gretag Reset e si ripete una volta (`PonteSdkBackend._testa_bloccata`).
+- **Comando `sensori` disattivato** nell'agente: `diag_input` lo faceva
+  cadere (access violation, due volte). Tolto dal collaudo automatico.
+- L'agente spegne la finestra di Windows "Python ha smesso di funzionare":
+  bloccava il processo morto e quindi il riavvio automatico.
+- Collaudo automatico senza pellicola: la lettura unica va in fondo, con
+  la verifica del ripristino subito dopo.
+
 ### 2026-10-31 — riavvio con la versione nuova, certificati propri
 
 - Tasto "Riavvia interfaccia e agente" (Macchina → Registri e

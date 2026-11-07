@@ -327,7 +327,6 @@ def senza_pellicola(a) -> int:
     k.passo("stato", lambda: k.cmd("stato", 15))
     k.passo("temperatura", lambda: k.cmd("temperatura", 15))
     k.passo("tensioni", lambda: k.cmd("tensioni", 15))
-    k.passo("sensori", lambda: k.cmd("sensori", 15))
     k.passo("offset del formato 135", lambda: k.cmd("offsetxy_0", 15))
     k.passo("pellicola secondo l'SDK", lambda: k.b.pellicola_sdk())
     k.passo("ultimo caricamento", lambda: k.b.azzerato_alle())
@@ -405,19 +404,6 @@ def senza_pellicola(a) -> int:
         k.passo("G a %gx" % e, lambda e=e: round(cs.misura(k.leggi("G", e))["media"], 1),
                 tentativi=1, informativo=True)
 
-    k.titolo("Lettura unica (R, G, B in una scan_raw)")
-
-    def unica():
-        k.b._lettura_unica = None
-        piani = k.b.capture_frame(["R", "G", "B"], {"R": 0.25, "G": 0.25, "B": 0.25})
-        if piani is None:
-            return "non disponibile"
-        return dict((c, round(float(p.mean()), 1)) for c, p in piani.items())
-    k.passo("grabm R G B a 0.25x", unica)
-    k.passo("grabm R G B IR (canale 5)",
-            lambda: k.cmd("grabm_0_0.250_0.250_0.250_0.250", 60), tentativi=1,
-            informativo=True)
-
     k.titolo("Pressore senza pellicola")
     k.passo("su, gia' su", lambda: k.cmd("pressore_su", 30), tentativi=1, informativo=True)
     k.passo("giu'", lambda: k.cmd("pressore_giu", 30), tentativi=1)
@@ -449,6 +435,23 @@ def senza_pellicola(a) -> int:
     k.passo("carrello in attesa della pellicola", lambda: k.cmd("carica_1", 60))
     k.passo("pellicola secondo l'SDK", lambda: k.b.pellicola_sdk())
     k.passo("video del programma originale", lambda: k.cmd("video", 60), tentativi=1)
+
+    # Per ultima: sulla riserva (7/11/2026) la lettura unica ha mandato la
+    # testa in timeout, e dopo ogni lettura dava ERR_GENERAL_FW 6. Qui si
+    # vede se succede ancora e se il Gretag Reset automatico la rimette in
+    # piedi (PonteSdkBackend._testa_bloccata).
+    k.titolo("Lettura unica (R, G, B in una scan_raw) e ripristino")
+
+    def unica():
+        k.b._lettura_unica = None
+        piani = k.b.capture_frame(["R", "G", "B"], {"R": 0.25, "G": 0.25, "B": 0.25})
+        if piani is None:
+            return "non disponibile"
+        return dict((c, round(float(p.mean()), 1)) for c, p in piani.items())
+    k.passo("grabm R G B a 0.25x", unica, tentativi=1, informativo=True)
+    k.b._lettura_unica = False
+    k.passo("G dopo la lettura unica (con ripristino se serve)",
+            lambda: round(cs.misura(k.b.capture_line_block("G", 1 << 20, 0.25))["media"], 1))
 
     k.titolo("Fine")
     k.passo("stato finale", lambda: k.cmd("stato", 15))

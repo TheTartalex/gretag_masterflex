@@ -914,7 +914,12 @@ class PonteSdkBackend(ScannerBackend):
     _video_sdk: Optional[bool] = None
     # Lettura unica di R, G, B: None = da provare, True = va, False = la
     # macchina la rifiuta o i piani non tornano (si legge un canale per volta)
-    _lettura_unica: Optional[bool] = None
+    # Lettura unica (scan_raw canale 4): SPENTA di serie. Sulla riserva il
+    # 7/11/2026 la testa ha risposto "callback scan rgb failed", l'SDK e'
+    # andato in timeout dopo 60 s e da li' ogni lettura, video compreso,
+    # dava ERR_GENERAL_FW (42, dettaglio 6: "restore (add) buffer failed").
+    # Si riaccende solo con cfg.lettura_unica, dopo una prova riuscita.
+    _lettura_unica: Optional[bool] = False
     _disposizione: Optional[str] = None     # come stanno i piani nel buffer
 
     def anteprima_veloce(self) -> np.ndarray:
@@ -950,6 +955,7 @@ class PonteSdkBackend(ScannerBackend):
                                % channel)
         if self.max_esposizione is not None:
             exposure = min(exposure, self.max_esposizione)
+        ripristinata = False
         while True:
             try:
                 nome = self._send("grab_%s_%d_%.3f"
@@ -957,6 +963,9 @@ class PonteSdkBackend(ScannerBackend):
                                   attesa=self.ATTESA_ACQUISIZIONE)
                 break
             except ScannerError as exc:
+                if not ripristinata and self._testa_bloccata(exc):
+                    ripristinata = True
+                    continue
                 # Solo il rifiuto del firmware (codice 47) e solo sopra x1: a
                 # x1 lo stesso errore vuol dire altro (finestra sbagliata) e
                 # va riportato com'e'.
@@ -970,6 +979,25 @@ class PonteSdkBackend(ScannerBackend):
         # righe (il bordo del fotogramma) erano un pessimo campione per dire
         # se c'e' ancora pellicola.
         return self._leggi(nome)
+
+    def _testa_bloccata(self, exc) -> bool:
+        """ERR_GENERAL_FW con dettaglio 6: l'SDK ha perso il suo buffer
+        d'immagine dopo una lettura andata in timeout, e rifiuta tutte le
+        letture successive (riserva, 7/11/2026). Si prova a rimetterlo in
+        piedi con un Gretag Reset, che ricarica lo scanner (40-150 s), e si
+        ripete la lettura una volta. True se il reset e' riuscito."""
+        if "codice 42 (6," not in str(exc):
+            return False
+        _registro.warning("letture rifiutate (ERR_GENERAL_FW 6): Gretag Reset "
+                          "e nuova prova")
+        try:
+            self._send("azzera", attesa=self.ATTESA_AZZERAMENTO)
+            return True
+        except Emergenza:
+            raise
+        except ScannerError as e2:
+            _registro.error("Gretag Reset non riuscito: %s", e2)
+            return False
 
     def codice_dx(self) -> Optional[Dict[str, object]]:
         """Il codice DX (get_media_info dell'SDK, comando "dx" dell'agente).

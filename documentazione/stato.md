@@ -409,6 +409,12 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
   4** e manda di continuo l'**evento 85**: non sono nella tabella dei nomi,
   probabilmente calibrazione in corso. Da annotare come finisce. Calibra
   non rifà più l'azzeramento se lo scanner si è caricato oggi.
+- **7/11: primi registri arrivati da soli** (collegamento remoto attivo,
+  `gretag_masterflex_registri/riserva/2026-11/`). Trovati: la lettura
+  unica blocca la testa (ora spenta, con ripristino automatico); `sensori`
+  fa cadere l'agente (disattivato); `espelli` e a volte `carica` fanno
+  ricaricare lo scanner all'SDK (stato 0 → 7 → 10 → 0, fino a 2,5 min);
+  temperature della testa 70-87 °C. Da rifare il collaudo senza pellicola.
 - **Collegamento remoto** ([decisione 0010](decisioni/0010-collegamento-remoto.md)):
   da configurare sulla riserva (MASTERFLEX.bat voce 15) dopo aver creato
   il repository privato `gretag_masterflex_registri` e il token. Da lì in
