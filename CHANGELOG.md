@@ -52,6 +52,19 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-11-07 (sera) — esposizione sui toni medi, base della pellicola, desktop
+
+- **Esposizione automatica sui toni medi** dopo i livelli: la mediana del
+  centro va verso 0,21 lineare (~0,50 sullo schermo) per l'85% della
+  distanza. Prima il bianco preso dal punto più chiaro lasciava scure le
+  foto con riflessi (rullo 16: mediana 0,20, alte luci 0,48).
+- **Base della pellicola**: esclusi i fori delle perforazioni e la
+  finestra vuota con un margine (prima i loro bordi sfumati davano una base
+  0,94/0,89/0,94 al posto di 0,43/0,32/0,30). Le statistiche di rullo
+  salvate con la base vecchia (≥0,85 in tutti i canali) non si usano più.
+- **Desktop**: la causa sulla riserva è la policy HKCU NoDesktop=1.
+  "Togli i blocchi" ora riavvia explorer, così il desktop torna subito.
+
 ### 2026-11-07 (sera) — nitidezza, saturazione, luci
 
 - Nitidezza di serie 0,2 (era 0), saturazione della carta C-41 al 95,5%

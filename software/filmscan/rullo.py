@@ -65,15 +65,26 @@ def _riduci(piani: Dict[str, List[np.ndarray]]) -> Dict[str, np.ndarray]:
 def _base_fotogramma(piccoli: Dict[str, np.ndarray]) -> np.ndarray:
     """La base vista da un fotogramma: il percentile alto dei bordi, senza le
     zone dove passa luce piena (fuori dalla pellicola)."""
-    out = []
-    for c in ("R", "G", "B"):
-        p = piccoli[c]
-        b = max(2, min(p.shape) // 16)
-        bordi = np.concatenate([p[:b].ravel(), p[-b:].ravel(),
-                                p[:, :b].ravel(), p[:, -b:].ravel()])
-        bordi = bordi[bordi < LUCE_SENZA_PELLICOLA]
-        out.append(float(np.percentile(bordi, 97)) if bordi.size else np.nan)
-    return np.array(out, dtype=np.float64)
+    # Dove passa luce piena (fori delle perforazioni, finestra senza
+    # pellicola) in un canale qualsiasi, piu' qualche pixel attorno: i bordi
+    # sfumati dei fori stanno appena sotto la soglia e prima finivano nella
+    # base (riserva, 7/11/2026: base 0,94/0,89/0,94 invece di 0,43/0,32/0,30).
+    stack = np.stack([piccoli[c] for c in ("R", "G", "B")], axis=-1)
+    h, w = stack.shape[:2]
+    b = max(2, min(h, w) // 16)
+    chiaro = (stack >= LUCE_SENZA_PELLICOLA).any(axis=-1)
+    try:
+        from scipy import ndimage
+        chiaro = ndimage.binary_dilation(chiaro, iterations=3)
+    except ImportError:
+        pass
+    bordo = np.zeros((h, w), dtype=bool)
+    bordo[:b] = bordo[-b:] = True
+    bordo[:, :b] = bordo[:, -b:] = True
+    sel = stack[bordo & ~chiaro]
+    if sel.shape[0] < 50:
+        return np.array([np.nan] * 3, dtype=np.float64)
+    return np.percentile(sel, 97, axis=0).astype(np.float64)
 
 
 class Fotogramma(object):

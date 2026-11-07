@@ -1698,6 +1698,11 @@ class ScanService:
             opts = ScanService._con_pellicola(opts, corr)
         if not corr.get("base") or not corr.get("densita"):
             return opts
+        if min(float(v) for v in corr["base"]) >= 0.85:
+            # base salvata con la misura vecchia, presa sui fori delle
+            # perforazioni (luce piena): non e' la pellicola, si rifa' per
+            # fotogramma (rulli fatti prima del 7/11/2026 sera)
+            return opts
         if not opts.colore_auto:
             # colore a mano: resta solo la base della pellicola
             return dataclasses.replace(opts, base_rullo=tuple(corr["base"]))

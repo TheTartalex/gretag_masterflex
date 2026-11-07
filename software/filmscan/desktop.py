@@ -231,8 +231,24 @@ def togli_blocchi(cartella: str) -> str:
     nome = os.path.join(cartella, "desktop-blocchi-%s.json" % datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
     with io.open(nome, "w", encoding="utf-8") as f:
         json.dump(copia, f, indent=1)
-    return "tolti %d blocchi (copia in %s): valgono dal prossimo avvio di explorer" % (
-        sum(len(v) for v in copia.values()), os.path.basename(nome))
+    riavviato = _riavvia_explorer()
+    return "tolti %d blocchi (copia in %s)%s" % (
+        sum(len(v) for v in copia.values()), os.path.basename(nome),
+        ": explorer riavviato, il desktop dovrebbe ricomparire" if riavviato
+        else ": valgono dal prossimo accesso a Windows")
+
+
+def _riavvia_explorer() -> bool:
+    """Le policy di Explorer (NoDesktop...) si leggono all'avvio di
+    explorer: lo si chiude e lo si riapre, cosi' valgono subito."""
+    try:
+        subprocess.call(["taskkill", "/f", "/im", "explorer.exe"],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20)
+        time.sleep(2)
+        subprocess.Popen([os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "explorer.exe")])
+        return True
+    except Exception:                                   # noqa: BLE001
+        return False
 
 
 def rimetti_blocchi(cartella: str) -> str:
@@ -252,4 +268,5 @@ def rimetti_blocchi(cartella: str) -> str:
                 winreg.SetValueEx(k, n, 0, winreg.REG_DWORD, int(v))
         finally:
             winreg.CloseKey(k)
+    _riavvia_explorer()
     return "blocchi rimessi da %s" % copie[-1]

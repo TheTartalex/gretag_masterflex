@@ -93,18 +93,27 @@ def estimate_dmin(planes: Dict[str, np.ndarray],
     parte piu' trasparente di tutta la pellicola. Il percentile invece del massimo
     perche' un singolo pixel caldo rovinerebbe la stima.
     """
-    out = []
     presenti = [c for c in ("R", "G", "B") if c in planes]
     if len(presenti) == 1:
         presenti = presenti * 3
-    for ch in presenti:
-        img = planes[ch]
-        b = min(border_px, img.shape[0] // 4, img.shape[1] // 4)
-        edges = np.concatenate([
-            img[:b, :].ravel(), img[-b:, :].ravel(),
-            img[:, :b].ravel(), img[:, -b:].ravel()])
-        out.append(float(np.percentile(edges, 97)))
-    return tuple(out)
+    stack = np.stack([planes[c] for c in presenti], axis=-1)
+    h, w = stack.shape[:2]
+    b = min(border_px, h // 4, w // 4)
+    bordo = np.zeros((h, w), dtype=bool)
+    bordo[:b] = bordo[-b:] = True
+    bordo[:, :b] = bordo[:, -b:] = True
+    # niente fori delle perforazioni ne' finestra vuota (luce piena), con un
+    # margine: i loro bordi sfumati non sono la base (vedi rullo._base_fotogramma)
+    chiaro = (stack >= 0.97).any(axis=-1)
+    try:
+        from scipy import ndimage
+        chiaro = ndimage.binary_dilation(chiaro, iterations=6)
+    except ImportError:
+        pass
+    sel = stack[bordo & ~chiaro]
+    if sel.shape[0] < 50:
+        sel = stack[bordo]
+    return tuple(float(v) for v in np.percentile(sel, 97, axis=0))
 
 
 def sample_dmin_region(planes: Dict[str, np.ndarray],
