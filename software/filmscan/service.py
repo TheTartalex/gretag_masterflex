@@ -3469,7 +3469,7 @@ class ScanService:
             self._chiudi_statistiche(rullo_id, gruppi, memoria)
             if non_elaborati:
                 avviso = ("%d fotogramm%s NON elaborat%s (%s): i grezzi sono salvati, "
-                          "il tasto Completa li elabora"
+                          "il tasto Completa (sopra la striscia) li elabora"
                           % (len(non_elaborati), "o" if len(non_elaborati) == 1 else "i",
                              "o" if len(non_elaborati) == 1 else "i",
                              ", ".join(str(n) for n in sorted(non_elaborati))))

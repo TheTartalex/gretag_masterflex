@@ -1804,6 +1804,7 @@ details.sez>div{padding-bottom:10px}
 
  <div class="filmina">
   <div class="testa"><b>Rullo</b><span id="rullo_info"></span>
+   <button class="sec" id="tasto_completa" style="display:none;width:auto;padding:4px 12px;margin-top:4px;white-space:nowrap" onclick="completaRulloCorrente()" title="Elabora solo i fotogrammi del rullo rimasti da elaborare (elaborazione fermata o errore)">Completa</button>
    <span id="prov_info"></span></div>
   <div class="striscia" id="striscia"></div>
  </div>
@@ -2036,6 +2037,12 @@ function caricaStriscia(){
   get('/api/fotogrammi?rullo_id='+r).then(function(d){
     var f=d.fotogrammi||[];
     el('rullo_info').textContent = f.length ? (f.length+' fotogrammi') : '';
+    /* fotogrammi rimasti da elaborare: il tasto Completa sta qui, in vista */
+    var mancanti=f.filter(function(x){ return x.stato==='da_elaborare' || x.stato==='errore'; }).length;
+    var tc=el('tasto_completa');
+    tc.style.display = mancanti ? '' : 'none';
+    tc.textContent = 'Completa ('+mancanti+')';
+    tc.disabled = !!(ultimoJob && ultimoJob.running);
     if(!f.length){ s.innerHTML='<div class="vuota">Ancora niente. I fotogrammi compaiono qui mentre la scansione procede.</div>'; return; }
     s.innerHTML='';
     f.forEach(function(x){
@@ -2107,6 +2114,11 @@ function mostraBarraFot(){
   el('bf_scarta').classList.toggle('on',(fotoAperto.voto||0)<0);
   el('bf_completa').style.display =
     (fotoAperto.stato==='da_elaborare' || fotoAperto.stato==='errore') ? '' : 'none';
+}
+function completaRulloCorrente(){
+  var r=val('rullo_id'); if(!r) return;
+  if(ultimoJob && ultimoJob.running){ esito({errore:'Completa si usa a lavoro finito.'}); return; }
+  post('/api/rullo/applica',{rullo_id:parseInt(r,10), solo_mancanti:true}).then(esito);
 }
 function completaRullo(){
   if(!fotoAperto) return;
