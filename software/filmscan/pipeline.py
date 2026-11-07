@@ -194,7 +194,7 @@ def _negativo_rgb(planes: Dict[str, np.ndarray]) -> Optional[np.ndarray]:
     piani = []
     for c in canali:
         p = planes[c].astype(np.float32)
-        lo, hi = np.percentile(p, (0.5, 99.5))
+        lo, hi = np.percentile(invert.centro(p), (0.5, 99.5))
         piani.append(np.clip((p - lo) / max(hi - lo, 1e-6), 0, 1))
     return np.dstack(piani)
 

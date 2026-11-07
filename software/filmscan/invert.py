@@ -52,6 +52,8 @@ class FilmProfile:
     print_exposure: float = 1.0
     paper_black: float = 0.0
     paper_grade: float = 1.0
+    # saturazione della "carta": 1 = quella che esce dall'inversione
+    saturazione_carta: float = 1.0
     monochrome: bool = False
 
     # True per le pellicole invertibili (diapositive): l'immagine e' gia'
@@ -63,11 +65,11 @@ class FilmProfile:
 
 
 PROFILES: Dict[str, FilmProfile] = {
-    # paper_grade 1.6: la "carta". Con 1.0 l'uscita era la luce della scena
-    # tale e quale, e sui campioni della riserva (7/11/2026) risultava chiara
-    # e slavata: mediana della luminosita' 0,76 su un esterno al sole, ombre
-    # a 0,37. Con 1.6 0,65 e 0,19, piu' vicino a una stampa.
-    "c41": FilmProfile("C-41 generico", paper_grade=1.6),
+    # La "carta". Con paper_grade 1.0 l'uscita era la luce della scena tale e
+    # quale, chiara e slavata (campioni della riserva, 7/11/2026); 1.6 per
+    # canale era troppo contrastato e saturo. 1.3 sulla luminanza e
+    # saturazione all'88%: piu' morbido, senza gonfiare il colore.
+    "c41": FilmProfile("C-41 generico", paper_grade=1.3, saturazione_carta=0.88),
     "bn": FilmProfile("Bianco e nero", monochrome=True, paper_grade=1.15,
                       gamma_negativo=0.62),
     # XP2, BW400CN: coloranti come un C-41, quindi trasparenti all'IR, e
@@ -184,7 +186,7 @@ def invert_negative(planes: Dict[str, np.ndarray],
     # (MockBackend) metteva la densita' alta dove la scena era scura.
     gamma = max(float(profile.gamma_negativo), 0.1)
     positive = 10.0 ** np.clip(density / gamma, -6.0, 6.0)
-    positive = positive / max(float(np.percentile(positive, 99.5)), 1e-6)
+    positive = positive / max(float(np.percentile(centro(positive), 99.5)), 1e-6)
 
     if profile.monochrome:
         lum = positive.mean(axis=2, keepdims=True)
@@ -208,7 +210,7 @@ def _positive(stack: np.ndarray, profile: FilmProfile) -> np.ndarray:
       inseguire il minimo significherebbe scalare tutta l'immagine sul pixel
       piu' rumoroso del fotogramma.
     """
-    bianco = float(np.percentile(stack, 99.5))
+    bianco = float(np.percentile(centro(stack), 99.5))
     if bianco < 1e-6:
         bianco = 1.0
     out = np.clip(stack / bianco, 0.0, 1.0)
@@ -220,14 +222,40 @@ def _positive(stack: np.ndarray, profile: FilmProfile) -> np.ndarray:
     return _tone_curve(out, profile)
 
 
+# Colore ed esposizione si giudicano sul 60% centrale del fotogramma: ai
+# bordi ci sono interfotogramma, perforazioni, base nuda, bordi della
+# finestra, che non sono la fotografia e spostavano livelli e bianco
+# (Alessandro, 7/11/2026). La base della pellicola invece si misura proprio
+# sui bordi (base_film, rullo._base_fotogramma): li' non si tocca.
+FRAZIONE_CENTRO = 0.6
+
+
+def centro(a: np.ndarray, frazione: float = FRAZIONE_CENTRO) -> np.ndarray:
+    """La parte centrale di un'immagine (frazione del lato, per ogni lato)."""
+    h, w = a.shape[:2]
+    my = int(round(h * (1.0 - frazione) / 2.0))
+    mx = int(round(w * (1.0 - frazione) / 2.0))
+    if h - 2 * my < 4 or w - 2 * mx < 4:
+        return a
+    return a[my:h - my, mx:w - mx]
+
+
 def _tone_curve(img: np.ndarray, profile: FilmProfile) -> np.ndarray:
     """Curva finale slope / offset / power.
 
     E' l'equivalente digitale della scelta della carta e del tempo di esposizione
     in camera oscura: esposizione di stampa, nero della carta, gradazione.
     """
-    out = img * profile.print_exposure + profile.paper_black
-    out = np.clip(out, 1e-6, None) ** profile.paper_grade
+    out = np.clip(img * profile.print_exposure + profile.paper_black, 1e-6, None)
+    # La gradazione si applica alla luminanza e i canali la seguono in
+    # proporzione: applicata canale per canale aumentava anche la
+    # saturazione, e le immagini venivano troppo colorate e dure.
+    lum = out.mean(axis=2, keepdims=True)
+    out = out * (lum ** profile.paper_grade / np.maximum(lum, 1e-6))
+    s = float(getattr(profile, "saturazione_carta", 1.0))
+    if abs(s - 1.0) > 1e-3:
+        lum = out.mean(axis=2, keepdims=True)
+        out = lum + (out - lum) * s
     return np.clip(out, 0.0, 1.0).astype(np.float32)
 
 
@@ -237,16 +265,29 @@ def _tone_curve(img: np.ndarray, profile: FilmProfile) -> np.ndarray:
 
 def auto_white_balance(img: np.ndarray, strength: float = 1.0,
                        percentile: float = 99.0) -> np.ndarray:
-    """Grey-world temperato dai percentili alti.
+    """Bilanciamento del bianco automatico, sul 60% centrale.
 
-    Assume che la scena media sia neutra: falso su un tramonto o su una foto
-    prevalentemente verde, quindi 'strength' permette di dosarlo o spegnerlo.
+    Due stime insieme: i toni medi grigi in media (grey-world, sui pixel fra
+    il 5° e il 95° percentile di luminosita') e le luci uguali fra i canali
+    (white-patch, sul 99° percentile). Prima c'erano solo le luci: un cielo
+    o un muro colorato bastavano a dare una dominante (riserva, 7/11/2026:
+    esterno al sole uscito blu). Pesi 2/3 ai toni medi, 1/3 alle luci:
+    sui campioni il risultato piu' neutro senza appiattire le stanze.
+    'strength' lo dosa o lo spegne.
     """
     if strength <= 0:
         return img
-    high = np.percentile(img.reshape(-1, 3), percentile, axis=0)
-    high = np.where(high < 1e-6, 1.0, high)
-    gain = high.mean() / high
+    c = centro(img).reshape(-1, 3)
+    lum = c.mean(axis=1)
+    lo, hi = np.percentile(lum, (5.0, 95.0))
+    medi = c[(lum > lo) & (lum < hi)]
+    if medi.shape[0] < 100:
+        medi = c
+    m = np.maximum(medi.mean(axis=0), 1e-6)
+    grigi = m.mean() / m
+    high = np.maximum(np.percentile(c, percentile, axis=0), 1e-6)
+    luci = high.mean() / high
+    gain = grigi ** (2.0 / 3.0) * luci ** (1.0 / 3.0)
     gain = 1.0 + (gain - 1.0) * float(strength)
     return np.clip(img * gain.reshape(1, 1, 3), 0.0, 1.0).astype(np.float32)
 
@@ -256,7 +297,7 @@ def auto_levels(img: np.ndarray, black_pct: float = 0.1,
     """Livelli automatici sui percentili, calcolati sulla luminanza per non
     alterare il colore: se si tagliassero i canali separatamente si
     introdurrebbe una dominante."""
-    lum = img.mean(axis=2)
+    lum = centro(img).mean(axis=2)
     lo = float(np.percentile(lum, black_pct))
     hi = float(np.percentile(lum, white_pct))
     if hi - lo < 1e-6:

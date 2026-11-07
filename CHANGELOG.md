@@ -52,6 +52,16 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-11-07 (sera) — colore ed esposizione sul centro, più morbidi
+
+- Colore ed esposizione si valutano sul 60% centrale del negativo
+  (invert.centro): bianco della stampa, livelli, bilanciamento, statistiche
+  del rullo. La base resta misurata sui bordi.
+- Bilanciamento del bianco: 2/3 grigi medi e 1/3 luci (prima solo le
+  luci: un cielo bastava a dare una dominante blu).
+- Carta C-41 più morbida: gradazione 1,3 sulla luminanza (era 1,6 per
+  canale, che saturava e induriva), saturazione all'88%.
+
 ### 2026-11-07 (sera) — Preferenze e Geometria
 
 - **Preferenze**, sezione nuova fra Ritocco e Macchina: esposizione

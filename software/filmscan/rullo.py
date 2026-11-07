@@ -89,7 +89,10 @@ class Fotogramma(object):
         self.classe = "normale"
 
     def misura(self, base: np.ndarray) -> None:
-        stack = np.stack([self.piccoli[c] for c in ("R", "G", "B")], axis=-1)
+        # livello, colore e classe sul 60% centrale (invert.centro): i bordi
+        # sono interfotogramma e base nuda, non la fotografia
+        from .invert import centro
+        stack = centro(np.stack([self.piccoli[c] for c in ("R", "G", "B")], axis=-1))
         d = -np.log10(np.clip(stack / base.reshape(1, 1, 3), 1e-4, 1.0))
         dm = d.mean(axis=2)
         # si escludono base nuda e saturazioni: e' l'immagine che conta
