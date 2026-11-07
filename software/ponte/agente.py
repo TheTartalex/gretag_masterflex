@@ -731,6 +731,10 @@ class Agente(object):
 
         if comando == "espelli_retro":
             fatti, motivo = self.s.espelli_retro()
+            if "espulsa dal davanti" in motivo:
+                return ("dal retro non esce (%d fotogramm%s, poi il carrello si e' "
+                        "fermato): pellicola espulsa dal davanti"
+                        % (fatti, "o" if fatti == 1 else "i"))
             return ("pellicola espulsa dal retro: %d fotogramm%s, poi il "
                     "carrello si e' fermato (%s)"
                     % (fatti, "o" if fatti == 1 else "i", motivo))

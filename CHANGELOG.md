@@ -52,6 +52,15 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-11-07 — la pellicola non usciva dal retro
+
+- Espulsione dal retro: a fine striscia il carrello rifiuta il fotogramma
+  successivo (ERR_MOVE) con la pellicola ancora dentro, e l'agente diceva
+  "espulsa dal retro" anche se non lo era. Ora, se dal retro non esce, si
+  espelle con l'Eject del carrello (dal davanti) e lo si dice; se non esce
+  neanche così, errore con l'invito a toglierla a mano.
+- Espulsione di fine rullo di serie dal davanti.
+
 ### 2026-11-07 — ferma elaborazione, ritaglio e colore a mano, formati di scarico
 
 - Rullo: dopo "Fine rullo", il tasto diventa "Ferma elaborazione". Il

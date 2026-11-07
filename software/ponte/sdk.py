@@ -799,10 +799,23 @@ class Scanner(object):
             try:
                 self.fotogramma_successivo()
             except ErroreScanner as exc:
-                self.pellicola_inserita = False
                 self._log("espulsione dal retro: trasporto fermo dopo %d "
                           "fotogramm%s (%s)" % (fatti, "o" if fatti == 1 else "i", exc))
-                return fatti, str(exc)
+                # ERR_MOVE non vuol dire "pellicola uscita": a fine striscia il
+                # carrello rifiuta il fotogramma successivo con la pellicola
+                # ancora dentro (riserva, 7/11/2026: due volte "0 fotogrammi" e
+                # la striscia ferma nel carrello). Si chiude con l'espulsione
+                # vera del carrello (Eject), che esce dal davanti.
+                try:
+                    self.espelli()
+                    self._log("espulsione dal retro non possibile: pellicola "
+                              "espulsa dal davanti")
+                    return fatti, "%s; espulsa dal davanti" % exc
+                except ErroreScanner as exc2:
+                    raise ErroreScanner(
+                        "la pellicola non esce: dal retro il carrello rifiuta "
+                        "(%s), dal davanti anche (%s). Toglierla a mano."
+                        % (exc, exc2), [])
             fatti += 1
         raise ErroreScanner(
             "espulsione dal retro fermata dopo %d fotogrammi e %.0f s: il "

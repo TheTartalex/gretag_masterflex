@@ -226,7 +226,9 @@ class AppConfig:
     auto_eject: bool = True     # espelle a striscia completata
     # a striscia finita la pellicola e' gia' avanti: "retro" la fa uscire nel
     # verso in cui stava andando, "davanti" la riporta indietro tutta
-    verso_espulsione_fine_rullo: str = "retro"
+    # "davanti" di serie: dal retro la striscia, a fine pellicola, resta nel
+    # carrello (riserva, 7/11/2026); l'Eject del carrello esce dal davanti
+    verso_espulsione_fine_rullo: str = "davanti"
     # rullo tagliato in strisce: dopo ogni striscia il carrello si riarma e
     # aspetta la successiva per questo tempo (o fino a "Fine rullo")
     attesa_striscia_s: float = 600.0
