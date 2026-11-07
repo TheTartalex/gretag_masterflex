@@ -236,6 +236,11 @@ def elabora_pacco(pacco: bytes, nome: str) -> bytes:
                 if lavoro.get("maschera") and res.mask is not None:
                     r.write(export_mask(res.mask, os.path.join(tmp, "maschera.png")),
                             "file/maschera")
+                if lavoro.get("positivo") and res.base is not None:
+                    # il negativo invertito per l'archivio di rete della macchina
+                    r.write(export_negativo(np.clip(np.asarray(res.base, dtype=np.float32), 0.0, 1.0),
+                                            os.path.join(tmp, "positivo.dng"), "dng", meta=meta),
+                            "file/positivo")
                 neg = lavoro.get("negativo") or ""
                 if neg in ("tiff", "dng") and res.lineare is not None:
                     r.write(export_negativo(res.lineare, os.path.join(

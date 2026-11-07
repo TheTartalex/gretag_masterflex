@@ -1625,6 +1625,23 @@ details.sez>div{padding-bottom:10px}
   <label><input type="checkbox" id="pref_pref_orientamento" style="width:auto" onchange="preferenza(this)"> Orientamento automatico</label>
   <div class="nota-imp">Gira di 90 o 180 gradi i fotogrammi messi di traverso. È una stima: sotto una certa sicurezza non tocca niente.</div>
  </section>
+ <section class="pannello">
+  <h2>Archivio di rete</h2>
+  <div class="nota-imp" style="margin-top:0">Una copia di ogni rullo in una cartella di rete, per vederlo dalle altre postazioni e come copia di sicurezza: <b>cliente \ rullo \</b> con JPEG alta risoluzione, TIFF 16 bit, negativi invertiti DNG, grezzi, e il provino. Si copia quando la macchina non lavora.</div>
+  <label><input type="checkbox" id="rete_attivo" style="width:auto" onchange="rete({attivo:this.checked})"> Copia nell'archivio di rete</label>
+  <label>Cartella di rete</label>
+  <input id="rete_percorso" placeholder="\\NAS\foto\scansioni  oppure  Z:\scansioni">
+  <div class="griglia2">
+   <div><label>Utente (se serve)</label><input id="rete_utente" autocomplete="off"></div>
+   <div><label>Password <span id="rete_pwd" class="nota-imp" style="margin:0"></span></label><input type="password" id="rete_password" autocomplete="new-password"></div>
+  </div>
+  <div class="row">
+   <button class="sec" onclick="rete({percorso:val('rete_percorso'), utente:val('rete_utente'), password:val('rete_password')}); el('rete_password').value='';">Salva</button>
+   <button class="sec" onclick="reteComando('/api/rete/prova')">Prova</button>
+   <button class="ghost" onclick="if(confirm('Rimetto in coda tutti gli ordini per l\'archivio di rete? Si copia solo cio\' che manca o e\' cambiato.')) reteComando('/api/rete/ricopia')">Ricopia tutto</button>
+  </div>
+  <div class="nota-imp" id="rete_stato"></div>
+ </section>
  </div>
 
  <div class="scheda" id="s_macchina">
@@ -2314,6 +2331,30 @@ function preferenza(c){
     if(/^pref_pref_/.test(c.id) && hoAnteprima) rielaboraTutto();
   });
 }
+function rete(d){
+  post('/api/rete/imposta', d).then(function(r){
+    if(r && r.errore){ el('rete_stato').textContent=r.errore; return; }
+    mostraRete(r);
+  });
+}
+var reteMsgFino=0;   /* l'esito di Prova resta in vista qualche secondo */
+function reteComando(p){
+  el('rete_stato').textContent='...'; reteMsgFino=Date.now()+60000;
+  post(p,{}).then(function(r){ el('rete_stato').textContent = r.errore ? r.errore : r.testo;
+    reteMsgFino=Date.now()+10000; });
+}
+function mostraRete(r){
+  if(!r) return;
+  var c=el('rete_attivo'); if(c && document.activeElement!==c) c.checked=!!r.attivo;
+  var p=el('rete_percorso'); if(p && document.activeElement!==p && !p.value) p.value=r.percorso||'';
+  var u=el('rete_utente'); if(u && document.activeElement!==u && !u.value) u.value=r.utente||'';
+  el('rete_pwd').textContent = r.password ? '(salvata)' : '';
+  var t = !r.attivo ? 'Spento.' : ('Attivo: '+(r.percorso||'(manca la cartella)')+'.');
+  if(r.attivo && r.in_coda) t+=' Rulli da copiare: '+r.in_coda+'.';
+  var ul=r.ultimo||{};
+  if(ul.quando) t+=' Ultima copia '+ul.quando+(ul.errore?(': ERRORE '+ul.errore):(': '+ul.file+' file'))+'.';
+  if(Date.now()>reteMsgFino) el('rete_stato').textContent=t;
+}
 function mostraPreferenze(p){
   if(!p) return;
   Object.keys(p).forEach(function(k){
@@ -2782,6 +2823,7 @@ function mostraStato(s){
     if(af && document.activeElement!==af) af.value=s.impostazioni_macchina.autofocus;
     if(s.elaboratori) mostraElaboratori(s.elaboratori);
     if(s.preferenze) mostraPreferenze(s.preferenze);
+    if(s.archivio_rete) mostraRete(s.archivio_rete);
     var rs=el('remoto_stato'), rm=s.remoto||{};
     if(rs){
       var c=rm.controllo||{}, t;
@@ -3671,6 +3713,21 @@ class Handler(BaseHTTPRequestHandler):
                                                   float(d.get("dx") or 0)))
             if u.path == "/api/fotogramma/canali_azzera":
                 return self._json(s.azzera_canali())
+            if u.path == "/api/rete/imposta":
+                st = s.imposta_archivio_rete(d)
+                if self.impostazioni:
+                    try:
+                        s.cfg.save(self.impostazioni)
+                    except (IOError, OSError) as exc:
+                        s.log("Impostazioni non salvate: %s" % exc)
+                return self._json(st)
+            if u.path == "/api/rete/prova":
+                return self._json({"testo": s.archivio_rete.prova()})
+            if u.path == "/api/rete/ricopia":
+                oid = d.get("ordine_id")
+                n = (s.archivio_rete.accoda_ordine(int(oid)) if oid
+                     else s.archivio_rete.accoda_tutto())
+                return self._json({"testo": "%d rulli in coda per l'archivio di rete" % n})
             if u.path == "/api/archivio/positivi":
                 s.prepara_positivi(int(d.get("id") or 0), str(d.get("formato") or ""))
                 return self._json({"avviato": True})

@@ -331,6 +331,16 @@ class AppConfig:
     pref_bianco: bool = True            # bilanciamento del bianco e colore del rullo
     pref_orientamento: bool = False     # 90/180 gradi automatici (euristica)
 
+    # --- archivio di rete (archivio_rete.py) ---
+    # Copia di ogni rullo in una cartella di rete (\\NAS\foto o Z:\...):
+    # cliente\rullo\ con JPEG, TIFF 16 bit, negativi invertiti DNG, grezzi e
+    # provino. La password resta qui (impostazioni.json, fuori dal
+    # repository) e si toglie dai registri mandati.
+    rete_attivo: bool = False
+    rete_percorso: str = ""
+    rete_utente: str = ""
+    rete_password: str = ""
+
     # --- elaboratori della rete (remoti.py, elaboratore.py) ---
     # Altri PC o server della stessa rete che elaborano i fotogrammi al
     # posto del PC della macchina (~23 s a fotogramma sulla riserva). Si

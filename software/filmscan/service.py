@@ -149,7 +149,23 @@ class _ElaborazioneInFondo(object):
         for t in self._aiutanti:
             t.start()
 
-    def metti(self, compito, peso: int, attesa: Callable[[], None]) -> None:
+    PESO_SU_DISCO = 1024 * 1024
+
+    def metti(self, compito, peso: int, attesa: Callable[[], None],
+              su_disco: Optional[Callable] = None) -> None:
+        """In coda un fotogramma letto. Con la memoria piena: se c'e'
+        'su_disco', il grezzo si scrive sul disco e in coda va solo il suo
+        percorso, e la lettura non si ferma (riserva, 7/11/2026: sui rulli
+        lunghi la scansione si fermava dopo una ventina di fotogrammi ad
+        aspettare l'elaborazione); senza, si aspetta come prima."""
+        with self._cond:
+            pieno = bool(self._in_memoria and self._in_memoria + peso > self._budget)
+        if pieno and su_disco is not None:
+            try:
+                compito = su_disco(compito)
+                peso = self.PESO_SU_DISCO
+            except Exception as exc:                    # noqa: BLE001
+                _registro.warning("grezzo su disco non riuscito (%s): aspetto la memoria", exc)
         with self._cond:
             # uno alla volta passa sempre, anche se pesa piu' del tetto
             while self._in_memoria and self._in_memoria + peso > self._budget:
@@ -298,6 +314,9 @@ class ScanService:
         self._lock_locale = threading.Lock()
         self._lock_ice = threading.Lock()
         self.elaboratori = remoti.Elaboratori(cfg.chiave_elaboratori or "")
+        # copia dei rulli nell'archivio di rete, a macchina ferma
+        from .archivio_rete import ArchivioRete
+        self.archivio_rete = ArchivioRete(self)
         # la geometria del fotogramma aperto (pipeline, ProcessOptions.geometria),
         # con le scelte a mano non ancora salvate
         self._geometria_aperta: Optional[Dict[str, object]] = None
@@ -360,6 +379,7 @@ class ScanService:
                 "remoto": self.remoto,
                 "elaboratori": self.stato_elaboratori(),
                 "preferenze": self.preferenze(),
+                "archivio_rete": self.archivio_rete.stato(),
                 "ambiente": check_environment(dpi=self.cfg.optical_dpi)}
 
     # ------------------------------------------------------------------
@@ -1909,6 +1929,14 @@ class ScanService:
                 else:
                     neg_path = ""
                 res.lineare = None          # 35 MB in meno, subito
+                if self.archivio_rete.attivo() and res.base is not None:
+                    # il negativo invertito per l'archivio di rete: la base
+                    # lineare, prima di nitidezza e grana (come Positivo DNG)
+                    try:
+                        export_negativo(np.clip(np.asarray(res.base, dtype=np.float32), 0.0, 1.0),
+                                        os.path.join(dest, nome + "_positivo.dng"), "dng", meta=meta)
+                    except Exception as exc:    # noqa: BLE001
+                        _registro.warning("positivo DNG del fotogramma %d: %s", numero, exc)
 
         if res.geometria:
             geometrie.scrivi(self.cfg.path("raw"), rullo_id, numero, res.geometria)
@@ -1924,6 +1952,7 @@ class ScanService:
             rotazione=res.orientation.rotation if res.orientation else 0,
             stato="ok", avvisi=" | ".join(res.warnings),
             numero_bordo=bordo, file_negativo=neg_path)
+        self.archivio_rete.accoda(rullo_id)
         return res
 
     def _ice_kodak(self, raw, opts, numero: int):
@@ -2020,7 +2049,8 @@ class ScanService:
                          neg_path, neg_fmt, ferma=None):
         lavoro = {"tipo": "esporta", "formato": self.cfg.export_format,
                   "qualita": int(self.cfg.jpeg_quality), "maschera": bool(mask_path),
-                  "negativo": neg_fmt, "meta": meta}
+                  "negativo": neg_fmt, "meta": meta,
+                  "positivo": bool(self.archivio_rete.attivo())}
         pacco = self._pacco(raw, opts, raw_path, lavoro)
         esito, z = self._esito(self.elaboratori.elabora(pacco, ferma=ferma))
         del pacco
@@ -2030,8 +2060,9 @@ class ScanService:
         # i nomi dei file li decide la macchina, non chi risponde
         scritti = []
         try:
+            positivo = os.path.splitext(out_path)[0] + "_positivo.dng"
             for interno, dove in (("file/finale", out_path), ("file/maschera", mask_path),
-                                  ("file/negativo", neg_path)):
+                                  ("file/negativo", neg_path), ("file/positivo", positivo)):
                 if dove and interno in nomi:
                     with open(dove + ".tmp", "wb") as f:
                         f.write(z.read(interno))
@@ -2717,6 +2748,21 @@ class ScanService:
         p = getattr(self, "_positivi", None) or {}
         return p.get("pronto") or ""
 
+    def imposta_archivio_rete(self, valori: Dict[str, object]) -> Dict[str, object]:
+        c = self.cfg
+        if "attivo" in valori:
+            c.rete_attivo = bool(valori["attivo"])
+        if "percorso" in valori:
+            c.rete_percorso = str(valori["percorso"] or "").strip().rstrip("\\/")
+        if "utente" in valori:
+            c.rete_utente = str(valori["utente"] or "").strip()
+        if valori.get("password"):
+            c.rete_password = str(valori["password"])
+        if valori.get("togli_password"):
+            c.rete_password = ""
+        self.archivio_rete._connesso = False
+        return self.archivio_rete.stato()
+
     def vota(self, fotogramma_id: int, voto: int) -> Dict[str, object]:
         """Da stampare (1), scartato (-1), niente (0)."""
         self._fotogramma_e_rullo(fotogramma_id)
@@ -3026,10 +3072,16 @@ class ScanService:
                 raw, nome, numero, bordo, vuoto, g = compito
                 raw_path = ""
                 try:
+                    if isinstance(raw, str):
+                        # messo su disco dalla lettura con la memoria piena
+                        # (su_disco): e' gia' il grezzo definitivo
+                        raw_path = raw
+                        raw = RawScan.load(raw_path)
                     # Il grezzo si salva qui e non nel ciclo di lettura: la
                     # compressione di ~35 MB costa secondi sul PC della
                     # macchina, e la pellicola intanto va avanti.
-                    if self.cfg.keep_raw or vuoto or elab.solo_grezzi.is_set():
+                    if not raw_path and (self.cfg.keep_raw or vuoto
+                                         or elab.solo_grezzi.is_set()):
                         raw_path = raw.save(self.cfg.path("raw"), nome,
                                             compresso=not elab.solo_grezzi.is_set())
                     if vuoto:
@@ -3045,6 +3097,7 @@ class ScanService:
                             rullo_id, numero, file_raw=raw_path, stato="da_elaborare",
                             avvisi="non elaborato: elaborazione fermata", numero_bordo=bordo)
                         non_elaborati.append(numero)
+                        self.archivio_rete.accoda(rullo_id)
                         return
                     # L'equilibrio del rullo ha bisogno di qualche fotogramma:
                     # il primo aspetta che ce ne siano 4 (o che la striscia
@@ -3391,8 +3444,14 @@ class ScanService:
                         self.job.message = ("Fotogramma %d letto: memoria "
                                             "piena, aspetto l'elaborazione "
                                             "dei precedenti" % numero)
+                    def su_disco(compito, numero=numero):
+                        r, n, num, b, v, gg = compito
+                        percorso = r.save(self.cfg.path("raw"), n, compresso=False)
+                        _registro.info("fotogramma %d: memoria piena, grezzo sul disco, "
+                                       "la lettura continua", num)
+                        return (percorso, n, num, b, v, gg)
                     elab.metti((raw, nome, numero, bordo, "", corrente["g"]), _peso(raw),
-                               in_attesa)
+                               in_attesa, su_disco=su_disco)
                     del raw
 
                 except _FotogrammaVuoto:

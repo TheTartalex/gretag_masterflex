@@ -273,7 +273,8 @@ def raccogli(giorni: int = 7, ponte: Optional[str] = r"C:\MasterflexD\ponte",
                     dati = json.load(f)
                 for k in list(dati):
                     # il PIN fisso e la chiave degli elaboratori non escono
-                    if "pin" in k.lower() or "chiave" in k.lower():
+                    if ("pin" in k.lower() or "chiave" in k.lower()
+                            or "password" in k.lower()):
                         dati[k] = "(tolto)"
                 z.writestr("impostazioni.json", json.dumps(dati, indent=1))
             except (IOError, OSError, ValueError):

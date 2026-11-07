@@ -52,6 +52,21 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-11-07 (notte) — archivio di rete, lettura che non si ferma
+
+- **Archivio di rete** (`filmscan/archivio_rete.py`, Preferenze →
+  Archivio di rete): cartella di rete (UNC o disco di rete, utente e
+  password se servono, tasto Prova). Ogni rullo si copia in
+  `cliente\rullo\` con JPEG alta risoluzione, TIFF 16 bit, Negativi
+  invertiti DNG, Grezzi e il provino del rullo; a macchina ferma, solo i
+  file cambiati, con coda su disco e nuovo tentativo se la rete manca.
+  Il DNG invertito si scrive quando si elabora il fotogramma (anche dagli
+  elaboratori in rete). La password non va nei registri.
+- **La lettura non si ferma più per la memoria**: con la memoria
+  dell'elaborazione piena il grezzo si scrive subito sul disco (senza
+  compressione) e l'elaborazione lo rilegge dopo. Prima sui rulli lunghi la
+  scansione aspettava dopo una ventina di fotogrammi.
+
 ### 2026-11-07 (notte) — positivi invertiti dall'archivio
 
 - "Scarica i negativi" propone anche **Positivo DNG** (invertito con i
