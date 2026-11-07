@@ -178,32 +178,6 @@ class ProcessResult:
     geometria: Dict[str, object] = field(default_factory=dict)
 
 
-# Luminosita' mediana a cui tende una stampa, in luce LINEARE: la base resta
-# lineare fino a to_srgb (finiture). 0,21 lineare e' circa 0,50 sullo schermo.
-MEDIA_STAMPA = 0.21
-
-
-def _esposizione_media(img: np.ndarray, forza: float = 0.85) -> np.ndarray:
-    """Esposizione automatica sui toni medi, dopo i livelli. I livelli
-    prendono il bianco dal punto piu' chiaro: con un riflesso o una lampada
-    in scena tutto il resto restava scuro (riserva, 7/11/2026: mediana 0,20,
-    alte luci a 0,48), senza invece una foto slavata. Qui la mediana del
-    centro va verso MEDIA_STAMPA per l'85% della distanza (in logaritmo):
-    una scena chiara resta un po' piu' chiara di una scura. Sulla luminanza,
-    con nero e bianco fermi (esponente sulla scala 0..1)."""
-    lum_c = invert.centro(img).mean(axis=2)
-    med = float(np.median(lum_c))
-    if not 0.02 < med < 0.98:
-        return img
-    nuova = med * (MEDIA_STAMPA / med) ** forza
-    e = float(np.clip(np.log(nuova) / np.log(med), 0.45, 1.8))
-    if abs(e - 1.0) < 0.02:
-        return img
-    lum = img.mean(axis=2, keepdims=True)
-    y = np.clip(lum, 0.0, 1.0) ** e
-    return np.clip(img * (y / np.maximum(lum, 1e-6)), 0.0, 1.0).astype(np.float32)
-
-
 def _abbassa_luci(img: np.ndarray, quanto: float = 0.3) -> np.ndarray:
     """Luci e alte luci un po' piu' basse (~10% a 3/4 della scala), il nero
     e il bianco pieno restano dove sono: come "Luci" in negativo in un
@@ -285,7 +259,6 @@ def _bilancia(img: np.ndarray, opts: ProcessOptions, rapida: bool = False) -> np
             # la gamma estesa non taglia: quel che la curva salva deve esserci
             nero, bianco = 0.02, 99.97
         img = invert.auto_levels(img, black_pct=nero, white_pct=bianco)
-        img = _esposizione_media(img)
         img = _abbassa_luci(img)
     if opts.curve:
         img = invert.apply_curve(img, opts.curve)
