@@ -60,6 +60,9 @@ def pulisci(raw) -> Tuple[object, Dict[str, object]]:
         raise RuntimeError("DMLDICELib.dll non c'e' (solo sulla macchina)")
     if not all(c in raw.planes for c in ("R", "G", "B", "IR")):
         raise RuntimeError("servono R, G, B e IR")
+    from .irclean import ir_senza_immagine
+    if ir_senza_immagine(raw.planes["IR"][0]):
+        raise RuntimeError("canale IR saturo, senza immagine")
     piani = [np.asarray(raw.planes[c][0], dtype=np.float32) for c in ("R", "G", "B", "IR")]
     h, w = piani[0].shape
     dentro = np.stack([np.clip(p, 0.0, 1.0) * SCALA for p in piani], axis=-1)
@@ -70,7 +73,12 @@ def pulisci(raw) -> Tuple[object, Dict[str, object]]:
         fin, fout = os.path.join(tmp, "in.raw"), os.path.join(tmp, "out.raw")
         dentro.tofile(fin)
         try:
+            # stdin=DEVNULL: il programma gira senza finestra, e senza un
+            # ingresso valido il Python figlio moriva prima di cominciare
+            # ("init_sys_streams: Cannot open console output buffer",
+            # riserva 7/11/2026, ogni fotogramma del rullo delle 19:01)
             p = subprocess.run([sys.executable, script, cartella, fin, fout, str(w), str(h)],
+                               stdin=subprocess.DEVNULL,
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=90,
                                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         except subprocess.TimeoutExpired:

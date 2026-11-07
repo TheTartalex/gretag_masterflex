@@ -419,7 +419,15 @@ def process(raw: RawScan, opts: ProcessOptions,
     # --- 4. maschera difetti ---
     _t("Rilevamento difetti (IR)", 0.30)
     mask = None
-    if ir is not None and opts.ir_strength > 0:
+    if ir is not None and opts.ir_strength > 0 and irclean.ir_senza_immagine(ir):
+        # IR saturo o costante (riserva, 7/11/2026): la maschera segnerebbe
+        # colonne a caso. Niente correzione, e lo si dice.
+        warnings.append(
+            "Digital ICE non applicato: il canale infrarosso e' saturo (senza "
+            "immagine), la pulizia da polvere e graffi non si puo' fare su "
+            "questo fotogramma.")
+        cov = 0.0
+    elif ir is not None and opts.ir_strength > 0:
         mask = irclean.defect_mask(ir, threshold=opts.ir_threshold)
         cov = irclean.mask_coverage(mask)
         if cov > 8.0:

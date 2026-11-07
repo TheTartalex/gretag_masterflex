@@ -1680,7 +1680,10 @@ details.sez>div{padding-bottom:10px}
    <h2>Desktop di Windows</h2>
    <div class="nota-imp">Il programma originale nasconde desktop, barra e cartelle. Controlla
     dice perché (shell sostituita, blocchi di Explorer, explorer chiuso) e lo mette nei
-    registri. Mostra il desktop lo fa ricomparire adesso, senza cambiare la configurazione.</div>
+    registri. Mostra il desktop lo fa ricomparire adesso, senza cambiare la configurazione.
+    Con l'avvio automatico del nostro programma il desktop torna da solo a ogni accensione
+    (blocchi tolti e programma originale fuori dall'Esecuzione automatica, con una copia):
+    Rimetti i blocchi rimette tutto com'era.</div>
    <div class="row">
     <button class="sec" onclick="desktop('controlla')">Controlla</button>
     <button class="sec" onclick="desktop('mostra')">Mostra il desktop</button>

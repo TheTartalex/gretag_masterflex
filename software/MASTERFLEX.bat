@@ -167,6 +167,9 @@ echo  Chiusura dei programmi del software originale ^(C:\MasterflexD^)...
 set "ATTESA_CHIUSURA=--quiete 3 --massimo 30"
 if defined AUTO set "ATTESA_CHIUSURA=--quiete 15 --massimo 120"
 "%PY%" manutenzione.py termina !ATTESA_CHIUSURA!
+REM  All'accensione il programma e' il nostro: desktop e barra tornano
+REM  (il programma originale li nasconde, vedi filmscan/desktop.py).
+if defined AUTO "%PY%" manutenzione.py desktop
 :avvia_agente
 echo  Avvio dell'agente scanner ^(%MODO%^)...
 start "Agente scanner" cmd /k call "%PY%" ponte\agente.py --condivisa "%CARTELLA%" --scanner "%SCANNER%" --apertura %APERTURA% %OPZ%
@@ -255,16 +258,19 @@ echo    1  AUTOMATICO senza pellicola: tutte le prove, nessuna domanda.
 echo       Percorso pellicola vuoto. Alla fine lo zip dei registri.
 echo    2  AUTOMATICO con pellicola: chiede solo di inserire una striscia
 echo       ^(non di un cliente^), poi fa tutto da solo e la espelle.
-echo    3  Strumenti originali del carrello ^(COM5^): selftest, SensorTest, Compad
+echo    3  Canale INFRAROSSO ^(Digital ICE^): finestra vuota, poi chiede una
+echo       striscia. Misura l'IR a piu' tempi e prova il Digital ICE Kodak.
+echo    4  Strumenti originali del carrello ^(COM5^): selftest, SensorTest, Compad
 echo    0  Indietro
 echo.
 set "C="
 set /p "C=  Scelta: "
 if "%C%"=="0" exit /b 0
-if "%C%"=="3" goto :strumenti_carrello
+if "%C%"=="4" goto :strumenti_carrello
 set "CS="
 if "%C%"=="1" set "CS=auto"
 if "%C%"=="2" set "CS=auto-pellicola"
+if "%C%"=="3" set "CS=auto-ir"
 if not defined CS exit /b 0
 set "DOVE=%PONTE%"
 set "AG="
@@ -279,6 +285,10 @@ if "%CS%"=="auto" (
 )
 if "%CS%"=="auto-pellicola" (
     "%PY%" collaudo_auto.py pellicola --ponte "%DOVE%" --scanner "%SCANNER%" %SIM%
+    exit /b !errorlevel!
+)
+if "%CS%"=="auto-ir" (
+    "%PY%" collaudo_auto.py ir --ponte "%DOVE%" --scanner "%SCANNER%" %SIM%
     exit /b !errorlevel!
 )
 exit /b 0

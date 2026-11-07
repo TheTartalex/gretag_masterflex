@@ -469,15 +469,29 @@ def scan_frame(backend: ScannerBackend, cfg: AppConfig, preset: ScanPreset,
     # ICE) il Digital ICE lo fa l'SDK e l'infrarosso non arriva. I dati sono
     # gia' corretti dall'SDK (calibrate_all): niente nero e bianco nostri,
     # solo la scala a 12 bit. Se la capture non riesce, un canale per volta.
+    #
+    # Due rifiuti di fila e per il resto del rullo non la si chiede piu'
+    # (backend.capture_fallite, azzerato a ogni rullo da service): sulla
+    # riserva, 7/11/2026, la capture con ICE e' stata rifiutata su tutti i
+    # 16 fotogrammi (codice 5, ERR_COMMAND_PARAMETER), e ogni tentativo
+    # legge anche il codice DX, che puo' cambiare lo stato dell'SDK.
     originale = getattr(backend, "cattura_originale", None)
+    fallite = int(getattr(backend, "capture_fallite", 0) or 0)
     if (originale is not None and getattr(cfg, "acquisizione", "") == "originale"
+            and fallite < 2
             and [c for c in channels if c != "IR"] == ["R", "G", "B"]):
         _controlla(annulla)
         asf = "IR" in channels
         try:
             piani = originale(asf)
+            backend.capture_fallite = 0
         except ScannerError as exc:
-            _registro.warning("capture non riuscita (%s): un canale per volta", exc)
+            backend.capture_fallite = fallite + 1
+            if fallite + 1 >= 2:
+                _registro.warning("capture non riuscita (%s): rifiutata due volte di "
+                                  "fila, per il resto del rullo un canale per volta", exc)
+            else:
+                _registro.warning("capture non riuscita (%s): un canale per volta", exc)
             piani = None
         if piani is not None:
             scan.meta.channels = ["R", "G", "B"]

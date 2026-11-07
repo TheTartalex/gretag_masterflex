@@ -664,6 +664,12 @@ def cmd_avvio(argv):
         # diritti: se restasse, all'accensione partirebbero due copie
         if os.path.exists(vecchio):
             os.remove(vecchio)
+        # col nostro programma all'accensione il desktop torna: lo si fa
+        # subito, poi a ogni avvio automatico (MASTERFLEX.bat automatico)
+        try:
+            cmd_desktop([])
+        except Exception as exc:                        # noqa: BLE001
+            print("  Desktop non ripristinato: %s" % exc)
         print("  Avvio automatico ATTIVATO per %s, con i diritti di" % utente)
         print("  amministratore e senza richieste. All'accensione parte il modo:")
         print("      %s" % DESCRIZIONE_MODI[modo_attuale()])
@@ -1280,9 +1286,35 @@ def _sha256(percorso):
     return h.hexdigest()
 
 
+def cmd_desktop(argv):
+    """desktop            ripristina desktop e barra (lo fa l'avvio automatico)
+    desktop controlla  dice cosa li nasconde, senza cambiare niente
+
+    Con il nostro programma all'accensione il desktop deve tornare da solo
+    (Alessandro, 7/11/2026): il programma originale mette NoDesktop
+    nell'utente e si avvia dall'Esecuzione automatica. Si tolgono i blocchi
+    e quel collegamento, con una copia in software/backup/windows
+    (Macchina -> Desktop di Windows -> Rimetti i blocchi li rimette).
+    L'esito va nel registro di diagnosi: all'accensione nessuno lo legge."""
+    from filmscan import desktop, registri
+    if argv and argv[0] == "controlla":
+        print(desktop.controlla().get("testo"))
+        return 0
+    esito = desktop.ripristina_all_avvio()
+    print("  Desktop: %s" % esito)
+    try:
+        nome = os.path.join(registri.sottocartella("diagnosi"), "desktop-avvio.txt")
+        with io.open(nome, "a", encoding="utf-8") as f:
+            f.write("%s  %s\n" % (datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), esito))
+    except (IOError, OSError):
+        pass
+    return 0
+
+
 # --------------------------------------------------------------------------
 
 COMANDI = {
+    "desktop": cmd_desktop,
     "librerie": cmd_librerie,
     "verifica": cmd_verifica,
     "macchina": cmd_macchina,

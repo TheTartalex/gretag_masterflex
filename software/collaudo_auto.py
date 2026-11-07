@@ -29,6 +29,15 @@ Alessandro: "l'operatore deve essere meno presente possibile"):
 - un passo fallito non ferma il collaudo: lo si annota e si va avanti.
   Si ferma solo lo STOP EMERGENZA.
 
+    python collaudo_auto.py ir         [--ponte ...] [--scanner ...]
+        Il canale INFRAROSSO, prima di cambiare come lo legge il rullo
+        (7/11/2026: nel rullo delle 19:01 l'IR era saturo su tutti i
+        fotogrammi e il Digital ICE non ha pulito niente). Finestra vuota,
+        poi una striscia: IR a x1, x0,5, x0,25, x0,125 (saturazione, se
+        porta immagine), la maschera nostra, il Digital ICE della Kodak, e
+        l'ipotesi da verificare: il codice DX (get_media_info) cambia i
+        tempi dell'SDK. Niente cambia nelle impostazioni.
+
 I rapporti vanno in software/log/collaudi/, con quelli manuali.
 """
 
@@ -629,16 +638,269 @@ def con_pellicola(a) -> int:
     return 0 if not k.falliti else 2
 
 
+# ---------------------------------------------------------------------------
+# canale infrarosso (Digital ICE)
+# ---------------------------------------------------------------------------
+
+FONDO = 4095.0              # 12 bit sulla macchina (il simulatore ne da' 16)
+
+
+def fondo_di(img) -> float:
+    return FONDO if float(np.max(img)) <= FONDO + 0.5 else 65535.0
+
+
+def numeri_ir(img) -> dict:
+    """I numeri che dicono se un piano IR e' usabile: saturazione, livelli,
+    e se porta immagine (deviazione lungo le colonne, in conteggi: un piano
+    saturo ha un solo valore per colonna, 0)."""
+    a = np.asarray(img, dtype=np.float64)
+    c = a[::4, ::8]
+    fondo = fondo_di(a)
+    return {"fondo": fondo, "media": round(float(a.mean()), 1),
+            "p1": round(float(np.percentile(a, 1)), 1),
+            "p50": round(float(np.percentile(a, 50)), 1),
+            "p99": round(float(np.percentile(a, 99)), 1),
+            "saturi_pct": round(float((a >= fondo - 5).mean()) * 100, 2),
+            "dev_colonne": round(float(np.median(c.std(axis=0))), 2)}
+
+
+def usabile(n: dict) -> bool:
+    return n["saturi_pct"] < 0.5 and n["p99"] < 0.95 * n["fondo"] and n["dev_colonne"] > 1.0
+
+
+def prova_ir(a) -> int:
+    k = Banco(a, "auto-ir")
+    r = k.r
+    r("COLLAUDO DEL CANALE INFRAROSSO - %s" % datetime.datetime.now())
+    r("Non cambia impostazioni: legge, misura e salva le immagini.")
+    if not k.collega():
+        r.avviso("l'agente non e' pronto: collaudo non fatto")
+        k.chiudi()
+        return 1
+    ir_dati = {}
+    r.dati["ir"] = ir_dati
+
+    def stretto(nome, img):
+        """PNG con i livelli tirati fra p0,5 e p99,5: la polvere si vede."""
+        try:
+            x = np.asarray(img, dtype=np.float64)
+            lo, hi = np.percentile(x, [0.5, 99.5])
+            cs.salva_png(cs.a8bit(x - lo, max(hi - lo, 1.0)),
+                         os.path.join(r.cartella, nome + ".png"))
+        except Exception:                               # noqa: BLE001
+            pass
+
+    k.passo("pressore su (partenza)", k.pressore_su, tentativi=1)
+    k.passo("formato 135", lambda: k.cmd("formato_0", 60))
+    # come il rullo: tempi calibrati dell'SDK
+    k.passo("tempi calibrati dell'SDK (come il rullo)", lambda: k.cmd("esposizione_auto", 15))
+
+    vuota = {}
+    if not k.b.pellicola_sdk():
+        k.titolo("Finestra vuota (il riferimento)")
+        for e in (1.0, 0.5):
+            def l(e=e):
+                img = k.leggi("IR", e)
+                vuota[e] = np.asarray(img, dtype=np.float64)
+                stretto("vuota_IR_%gx" % e, img)
+                return numeri_ir(img)
+            ir_dati["vuota_IR_%gx" % e] = k.passo("IR a %gx, finestra vuota" % e, l,
+                                                 recupero=k.aspetta_pronto)
+        ir_dati["vuota_G_1x"] = k.passo("G a 1x, finestra vuota",
+                                        lambda: numeri_ir(k.leggi("G", 1.0)),
+                                        recupero=k.aspetta_pronto)
+
+        def fabbrica():
+            k.cmd("esposizione_fabbrica", 15)
+            try:
+                return numeri_ir(k.leggi("IR", 1.0))
+            finally:
+                k.cmd("esposizione_auto", 15)
+        ir_dati["vuota_IR_1x_fabbrica"] = k.passo("IR a 1x con i tempi di fabbrica", fabbrica,
+                                                  tentativi=1, informativo=True)
+
+        k.passo("carrello in attesa della pellicola", lambda: k.cmd("carica_1", 60))
+        print("")
+        print("  >>> Inserire una striscia di negativo a colori (non di un cliente). <<<")
+        print("  Meglio se ha un po' di polvere o un graffio: e' quello che si cerca.")
+        print("  Il collaudo parte da solo appena il carrello la prende.")
+        fine = time.time() + 600
+        while time.time() < fine and not k.b.pellicola_sdk():
+            time.sleep(0.5)
+    if not k.b.pellicola_sdk():
+        r.avviso("nessuna pellicola in 10 minuti: collaudo non fatto")
+        k.chiudi()
+        return 1
+    r("Pellicola nel carrello: da qui fa tutto da solo.")
+
+    def mezzo_indietro():
+        k.pressore_su()
+        k.cmd("regola_-50", 60)
+
+    # due fotogrammi avanti: la prima posizione e' quasi sempre la coda
+    for n in (1, 2):
+        k.passo("fotogramma successivo (%d)" % n, lambda: k.cmd("prossimo", 90),
+                recupero=mezzo_indietro)
+
+    k.titolo("IR sulla pellicola, PRIMA del codice DX")
+    letti = {}
+    for e in (1.0, 0.5, 0.25, 0.125):
+        def l(e=e):
+            img = k.leggi("IR", e)
+            letti[e] = np.asarray(img, dtype=np.float64)
+            stretto("pellicola_IR_%gx" % e, img)
+            return numeri_ir(img)
+        ir_dati["pellicola_IR_%gx" % e] = k.passo("IR a %gx" % e, l, recupero=k.aspetta_pronto)
+    for ch in ("R", "G", "B"):
+        ir_dati["pellicola_%s_1x" % ch] = k.passo(
+            "%s a 1x (per confronto)" % ch, lambda ch=ch: numeri_ir(k.leggi(ch, 1.0)),
+            recupero=k.aspetta_pronto)
+    migliore = None
+    for e in (1.0, 0.5, 0.25, 0.125):
+        n = ir_dati.get("pellicola_IR_%gx" % e)
+        if n and usabile(n):
+            migliore = e
+            break
+    ir_dati["esposizione_ir_migliore"] = migliore
+    r("  -> esposizione IR piu' alta senza saturare: %s"
+      % ("x%g" % migliore if migliore else "NESSUNA (tutte sature o senza immagine)"))
+
+    k.titolo("Maschera difetti nostra (irclean) sull'IR buono")
+
+    def maschera():
+        from filmscan import irclean
+        if migliore is None:
+            raise RuntimeError("nessuna lettura IR usabile")
+        ir = letti[migliore]
+        if 1.0 in vuota:
+            norm = ir / np.clip(vuota[1.0] * migliore, 1.0, None)
+            rif = "diviso la finestra vuota"
+        else:
+            norm = ir / max(float(np.percentile(ir, 90)), 1.0)
+            rif = "senza finestra vuota (pellicola gia' dentro)"
+        m = irclean.defect_mask(norm.astype(np.float32))
+        cs.salva_png((m * 255).astype(np.uint8), os.path.join(r.cartella, "maschera_ir.png"))
+        stretto("ir_normalizzato", norm)
+        return {"copertura_pct": round(irclean.mask_coverage(m), 3), "riferimento": rif,
+                "senza_immagine_x1": bool(irclean.ir_senza_immagine(letti[1.0] / fondo_di(letti[1.0])))
+                if 1.0 in letti else None}
+    ir_dati["maschera"] = k.passo("maschera dei difetti", maschera, tentativi=1)
+
+    k.titolo("Digital ICE della Kodak (libreria dell'SDK)")
+    guadagni = {}
+
+    def misura_esp():
+        for ch in ("R", "G", "B"):
+            img = k.leggi(ch, 1.0)
+            p99 = float(np.percentile(img, 99))
+            guadagni[ch] = float(np.clip(0.8 * fondo_di(img) / max(p99, 1.0), 0.25, 4.0))
+        return dict((c, round(v, 2)) for c, v in guadagni.items())
+    k.passo("esposizione R G B (80% della scala)", misura_esp, recupero=k.aspetta_pronto)
+
+    def dice(e_ir, etichetta):
+        from filmscan import ice_kodak
+        from filmscan.acquire import RawScan, ScanMetadata
+        if not ice_kodak.disponibile():
+            raise RuntimeError("DMLDICELib.dll non trovata")
+        piani = dict((c, k.leggi(c, guadagni.get(c, 1.0))) for c in ("R", "G", "B"))
+        piani["IR"] = letti[e_ir] if e_ir in letti else k.leggi("IR", e_ir)
+        raw = RawScan(ScanMetadata(time.time(), "135-full", "collaudo", 1569, 16,
+                                   ["R", "G", "B", "IR"], [1.0], 1, 0, 0.0, 0.0))
+        fondo = max(fondo_di(p) for p in piani.values())
+        for c, p in piani.items():
+            raw.add(c, np.asarray(p, dtype=np.float32) / fondo)
+        t0 = time.monotonic()
+        nuovo, esito = ice_kodak.pulisci(raw)
+        esito["secondi_totali"] = round(time.monotonic() - t0, 1)
+        h, w = piani["G"].shape
+        y0, x0 = h // 2 - 300, w // 2 - 300
+        for c in ("R", "G", "B"):
+            prima = np.asarray(piani[c], dtype=np.float64)
+            dopo = nuovo.planes[c][0] * fondo
+            k.salva("dice_%s_prima_%s" % (etichetta, c), prima[y0:y0 + 600, x0:x0 + 600], fondo)
+            k.salva("dice_%s_dopo_%s" % (etichetta, c), dopo[y0:y0 + 600, x0:x0 + 600], fondo)
+            k.salva("dice_%s_differenza_%s" % (etichetta, c), np.abs(dopo - prima), 200)
+        return esito
+
+    if migliore is not None:
+        ir_dati["dice_ir_buono"] = k.passo(
+            "Digital ICE Kodak con IR a x%g" % migliore,
+            lambda: dice(migliore, "buono"), tentativi=1, recupero=k.aspetta_pronto)
+    if migliore != 1.0:
+        # quello che succedeva nel rullo: deve essere scartato, non pulire
+        ir_dati["dice_ir_1x"] = k.passo(
+            "Digital ICE Kodak con IR a x1 (come nel rullo)",
+            lambda: dice(1.0, "x1"), tentativi=1, informativo=True)
+
+    k.titolo("Ipotesi: il codice DX cambia i tempi dell'SDK")
+    # Nel rullo delle 19:01 ogni fotogramma cominciava con una capture, che
+    # legge il DX (get_media_info, stato 0 -> 1). Si confronta G e IR a x1
+    # prima e dopo; poi una capture, che riporta lo stato a 0.
+    ir_dati["dx"] = k.passo("codice DX", lambda: k.cmd("dx", 60), tentativi=1, informativo=True)
+    ir_dati["stato_dopo_dx"] = k.passo("stato SDK dopo il DX", lambda: k.stato_sdk(), tentativi=1)
+    ir_dati["dopo_dx_G_1x"] = k.passo("G a 1x dopo il DX", lambda: numeri_ir(k.leggi("G", 1.0)),
+                                      tentativi=1, informativo=True)
+    ir_dati["dopo_dx_IR_1x"] = k.passo("IR a 1x dopo il DX", lambda: numeri_ir(k.leggi("IR", 1.0)),
+                                       tentativi=1, informativo=True)
+
+    def cattura_senza():
+        piani = k.b.cattura_originale(False)
+        return dict((c, numeri_ir(p)) for c, p in piani.items())
+    ir_dati["capture"] = k.passo("capture senza ICE (riporta lo stato a 0)", cattura_senza,
+                                 tentativi=1, informativo=True)
+    ir_dati["stato_dopo_capture"] = k.passo("stato SDK dopo la capture", lambda: k.stato_sdk(),
+                                            tentativi=1)
+    ir_dati["dopo_capture_G_1x"] = k.passo("G a 1x dopo la capture",
+                                           lambda: numeri_ir(k.leggi("G", 1.0)),
+                                           tentativi=1, informativo=True)
+    ir_dati["dopo_capture_IR_1x"] = k.passo("IR a 1x dopo la capture",
+                                            lambda: numeri_ir(k.leggi("IR", 1.0)),
+                                            tentativi=1, informativo=True)
+
+    k.titolo("Capture con il Digital ICE dell'SDK (nel rullo: codice 5, parametro)")
+    for ris in (0, 1):
+        ir_dati["capture_ice_ris%d" % ris] = k.passo(
+            "capture con ICE, risoluzione %d" % ris,
+            lambda ris=ris: k.cmd("cattura_%d_1" % ris, 120), tentativi=1, informativo=True)
+
+    k.titolo("Riassunto")
+    prima = ir_dati.get("pellicola_IR_1x") or {}
+    dopo = ir_dati.get("dopo_dx_IR_1x") or {}
+    vu = ir_dati.get("vuota_IR_1x") or {}
+    if vu:
+        r("  IR a x1, finestra vuota: media %s, saturi %s%%" % (vu.get("media"), vu.get("saturi_pct")))
+    if prima:
+        r("  IR a x1, pellicola, prima del DX: media %s, saturi %s%%, immagine %s"
+          % (prima.get("media"), prima.get("saturi_pct"),
+             "si'" if prima.get("dev_colonne", 0) > 1 else "NO"))
+    if dopo:
+        r("  IR a x1, pellicola, dopo il DX:   media %s, saturi %s%%, immagine %s"
+          % (dopo.get("media"), dopo.get("saturi_pct"),
+             "si'" if dopo.get("dev_colonne", 0) > 1 else "NO"))
+    gp, gd = ir_dati.get("pellicola_G_1x") or {}, ir_dati.get("dopo_dx_G_1x") or {}
+    if gp and gd and gp.get("media"):
+        r("  G a x1 dopo il DX / prima: %.2f (1,00 = il DX non cambia i tempi)"
+          % (float(gd["media"]) / float(gp["media"])))
+    r("  IR migliore: %s" % ("x%g" % migliore if migliore else "nessuno"))
+
+    k.titolo("Fine")
+    k.passo("pressore su", k.pressore_su, tentativi=1)
+    k.passo("espulsione dal davanti", lambda: k.cmd("espelli", 120), recupero=k.pressore_su)
+    k.chiudi()
+    return 0 if not k.falliti else 2
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Collaudi automatici dello scanner")
-    ap.add_argument("prova", choices=("senza", "pellicola"))
+    ap.add_argument("prova", choices=("senza", "pellicola", "ir"))
     ap.add_argument("--ponte", default=cs.PONTE)
     ap.add_argument("--scanner", default=r"C:\MasterflexD\Scanner")
     ap.add_argument("--simula", action="store_true",
                     help="l'agente, se va avviato, parte simulato")
     a = ap.parse_args(argv)
     try:
-        return {"senza": senza_pellicola, "pellicola": con_pellicola}[a.prova](a)
+        return {"senza": senza_pellicola, "pellicola": con_pellicola,
+                "ir": prova_ir}[a.prova](a)
     except KeyboardInterrupt:
         print("\nfermato dall'operatore")
         if cs.Rapporto.aperto is not None:

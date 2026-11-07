@@ -52,6 +52,28 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-11-07 (notte) — Digital ICE: cause e collaudo IR, desktop all'avvio
+
+- Dai registri delle 19:13: nel rullo delle 19:01 nessun fotogramma è stato
+  pulito davvero. Il Digital ICE Kodak non partiva (il processo figlio,
+  lanciato senza finestra e senza stdin, moriva con `init_sys_streams`):
+  ora `stdin=DEVNULL`. Il canale IR era saturo su tutti i fotogrammi (un
+  valore per colonna): `irclean.ir_senza_immagine`, e con un IR così la
+  pipeline non corregge e lo scrive, invece di mascherare colonne a caso;
+  `ice_kodak.pulisci` lo rifiuta. La capture con ICE dell'SDK era rifiutata
+  (codice 5) su ogni fotogramma: dopo due rifiuti in un rullo non la si
+  chiede più (`backend.capture_fallite`).
+- Collaudo dedicato `collaudo_auto.py ir` (MASTERFLEX.bat, collaudi, voce
+  3): IR a più tempi a finestra vuota e sulla pellicola, maschera nostra,
+  Digital ICE Kodak con l'IR buono e con quello a x1, e l'ipotesi del DX
+  che cambia i tempi dell'SDK. Come esporre l'IR nel rullo si decide dopo
+  questo collaudo.
+- Desktop: con l'avvio automatico (`MASTERFLEX.bat automatico`, e
+  all'attivazione) `manutenzione.py desktop` toglie i blocchi di Explorer,
+  sposta `Start MasterflexD.lnk` fuori dall'Esecuzione automatica e avvia
+  explorer con i diritti normali. Copie in `software/backup/windows`;
+  Rimetti i blocchi rimette anche il collegamento.
+
 ### 2026-11-07 (notte) — archivio di rete, lettura che non si ferma
 
 - **Archivio di rete** (`filmscan/archivio_rete.py`, Preferenze →

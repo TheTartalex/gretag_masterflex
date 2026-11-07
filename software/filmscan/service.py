@@ -2926,6 +2926,7 @@ class ScanService:
             backend = self._require()
             backend.seleziona_formato(rullo.formato)
             backend.esposizione_auto(self.cfg.esposizione_auto)
+            backend.capture_fallite = 0     # acquire.scan_frame: si riprova a ogni rullo
             ice_sdk = False
             if rullo.ice and self.cfg.acquisizione == "originale":
                 # il Digital ICE dell'SDK lo accende e lo spegne la capture,

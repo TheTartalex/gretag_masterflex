@@ -172,6 +172,22 @@ def clean(img: np.ndarray, ir: Optional[np.ndarray],
     return inpaint(img, mask, strength=strength), mask
 
 
+def ir_senza_immagine(ir: np.ndarray) -> bool:
+    """True se il canale IR non porta immagine: saturo (fondo scala su
+    tutto il fotogramma) o costante. Allora ogni colonna ha un solo valore,
+    cioe' il fondo scala diviso il flat di quella colonna, e una maschera
+    fatta da li' segna colonne a caso invece di polvere e graffi.
+
+    Riserva, 7/11/2026, rullo delle 19:01: IR a x1 saturo su tutti i 16
+    fotogrammi, deviazione lungo le colonne 6e-6 (un fotogramma vero, anche
+    solo per il rumore del sensore, sta sopra 1e-3)."""
+    a = np.asarray(ir, dtype=np.float32)
+    if a.ndim != 2 or a.shape[0] < 8:
+        return False
+    campione = a[::4, ::8]
+    return float(np.median(campione.std(axis=0))) < 1e-4
+
+
 def mask_coverage(mask: Optional[np.ndarray]) -> float:
     """Percentuale di immagine coperta dalla maschera.
 
