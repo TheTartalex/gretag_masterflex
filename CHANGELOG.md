@@ -52,6 +52,18 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-11-07 (notte) — grana colorata, nitidezza, flat a immagine intera
+
+- **Macchioline bianche**: sono polvere sull'ottica comune (le stesse
+  macchie a finestra vuota in R, G, B e IR, fino al 28% di luce in meno).
+  Il flat della calibrazione ora è a immagine intera (2100×1400, pixel per
+  pixel) invece che una riga per colonna: corregge la polvere fissa e la
+  vignettatura fra le righe. Serve una calibrazione nuova (Calibra).
+- **Grana**: di serie la sola grana colorata si attenua (0,35, prima della
+  nitidezza): sul campione dimezzata, luminosità identica. La nitidezza
+  misura la grana del fotogramma e rinforza solo quel che la supera
+  (soglia morbida a 2,5 volte la grana).
+
 ### 2026-11-07 (sera) — ripristinata la resa delle 19:13, desktop
 
 - Tolte l'esposizione sui toni medi e la nuova misura della base (provate

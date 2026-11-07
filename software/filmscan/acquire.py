@@ -134,20 +134,25 @@ def run_calibration(backend: ScannerBackend, channels=CHANNELS,
             acc = m if acc.size == 0 else acc + m
         dark[ch] = acc / repeats
 
+    # Il flat si tiene a immagine intera, pixel per pixel. Il sensore della
+    # macchina legge un'immagine intera (2100x1400), non una riga: col flat a
+    # una riga (media per colonna) restavano la vignettatura fra le righe
+    # (~4%) e soprattutto la polvere sull'ottica, uguale in R, G, B e IR,
+    # fino al 28% di luce in meno, che dopo l'inversione erano le macchioline
+    # bianche delle foto (riserva, 7/11/2026). Il dark resta per colonna.
     fatti = len(dark)
     for i, ch in enumerate(channels):
         _tick(progress, "Flat field %s" % ch, (fatti + i) / total)
         backend.lamp(ch, True)
-        acc = np.zeros(0)
+        acc = None
         for r in range(repeats):
             _controlla(annulla)
             block = backend.capture_line_block(ch, lines).astype(np.float64)
-            m = block.mean(axis=0)
-            acc = m if acc.size == 0 else acc + m
+            acc = block if acc is None else acc + block
         media = acc / repeats
         if ch not in dark:
-            dark[ch] = np.zeros_like(media)
-        flat[ch] = media - dark[ch]
+            dark[ch] = np.zeros(media.shape[-1])
+        flat[ch] = (media - dark[ch][None, :]).astype(np.float32)
 
     _tick(progress, "Calibrazione completata", 1.0)
     nota = "" if buio else "senza dark frame: il backend non controlla la lampada"
@@ -192,8 +197,15 @@ def apply_calibration(raw: np.ndarray, channel: str,
             "calibrazione (Calibra, con il percorso pellicola vuoto)."
             % (larghezza, x.shape[-1]))
 
-    dark = calib.dark[channel][None, :].astype(np.float32)
-    flat = calib.flat[channel][None, :].astype(np.float32)
+    dark = calib.dark[channel].astype(np.float32)
+    dark = dark[None, :] if dark.ndim == 1 else dark.mean(axis=0)[None, :]
+    flat = calib.flat[channel].astype(np.float32)
+    if flat.ndim == 2 and flat.shape != x.shape:
+        # flat a immagine intera ma lettura di un'altra altezza (blocco
+        # corto, simulatore): vale la media per colonna, come prima
+        flat = flat.mean(axis=0)
+    if flat.ndim == 1:
+        flat = flat[None, :]
     flat = np.where(np.abs(flat) < 1e-6, 1.0, flat)
     out = (x - dark) / flat
     return np.clip(out, 1e-5, None)

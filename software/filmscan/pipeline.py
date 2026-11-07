@@ -299,6 +299,10 @@ def _monocroma(img: np.ndarray) -> bool:
     return bool(np.array_equal(c[..., 0], c[..., 1]) and np.array_equal(c[..., 1], c[..., 2]))
 
 
+# riduzione della sola grana colorata, di serie (enhance.reduce_grain)
+RIDUZIONE_CROMA_SERIE = 0.35
+
+
 def finiture(base: np.ndarray, opts: ProcessOptions):
     """Dalla base al fotogramma finito: i controlli dell'operatore e l'sRGB.
 
@@ -321,6 +325,13 @@ def finiture(base: np.ndarray, opts: ProcessOptions):
     if abs(opts.saturation - 1.0) > 1e-3:
         img = invert.saturation(img, opts.saturation)
 
+    if opts.grain_reduction <= 0 and not mono:
+        # Di serie la grana colorata si attenua: e' quella che una scansione
+        # aggiunge rispetto alla pellicola (puntini rossi, verdi e blu sulla
+        # pelle, riserva 7/11/2026), e va tolta PRIMA della nitidezza. La
+        # grana di luminanza resta: e' il carattere della pellicola.
+        forza = max(float(opts.grana_pellicola or 0.0), RIDUZIONE_CROMA_SERIE)
+        img = enh.reduce_grain(img, forza, chroma_only=True)
     extra_mask = None
     if (opts.grain_reduction or opts.scratch_repair or opts.dust_repair
             or opts.sharpen or opts.grain_add):
@@ -332,11 +343,12 @@ def finiture(base: np.ndarray, opts: ProcessOptions):
             dust_repair=opts.dust_repair,
             sharpen=opts.sharpen,
             grain_add=opts.grain_add)
-    if opts.grain_reduction <= 0 and opts.grana_pellicola > 0:
-        # la grana che ci si aspetta da questa pellicola: poca, e solo se
-        # l'operatore non ha scelto lui
-        img = enh.reduce_grain(img, opts.grana_pellicola,
-                               chroma_only=opts.grana_pellicola_solo_croma and not mono)
+    if (opts.grain_reduction <= 0 and opts.grana_pellicola > 0
+            and not (opts.grana_pellicola_solo_croma and not mono)):
+        # la grana che ci si aspetta da questa pellicola, anche di
+        # luminanza (B/N), solo se l'operatore non ha scelto lui; quella
+        # solo sul colore e' gia' fatta sopra
+        img = enh.reduce_grain(img, opts.grana_pellicola, chroma_only=False)
 
     if mono and opts.viraggio:
         img = bianconero.viraggio(img, opts.viraggio)

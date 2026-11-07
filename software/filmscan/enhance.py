@@ -277,7 +277,14 @@ def unsharp(img: np.ndarray, amount: float = 0.4, radius: float = 1.2,
     lum = img.mean(axis=2, keepdims=True)
     blur = ndimage.gaussian_filter(lum[:, :, 0], radius)[:, :, None]
     detail = lum - blur
-    detail = np.where(np.abs(detail) < threshold, 0.0, detail)
+    # La soglia si misura sulla grana di questo fotogramma (deviazione
+    # robusta del dettaglio fine): 2,5 volte la grana non si rinforza, i
+    # contorni si'. Con la soglia fissa la grana delle ombre passava e si
+    # vedeva piu' grana del grezzo (riserva, 7/11/2026). Soglia "morbida":
+    # si toglie la soglia dal dettaglio invece di tagliarlo, niente scalini.
+    grana = 1.4826 * float(np.median(np.abs(detail[::2, ::2])))
+    t = max(float(threshold), 2.5 * grana)
+    detail = np.sign(detail) * np.maximum(np.abs(detail) - t, 0.0)
     return np.clip(img + detail * amount, 0, 1).astype(np.float32)
 
 
