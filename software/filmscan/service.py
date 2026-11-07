@@ -2635,6 +2635,88 @@ class ScanService:
             self.job.message = "Rullo rielaborato: %d fotogrammi" % fatti
         self._avvia("rielaborazione", job, total=0)
 
+    # --- positivi per altri programmi (Archivio, Scarica i negativi) ------
+
+    def prepara_positivi(self, ordine_id: int, formato: str) -> None:
+        """I positivi invertiti di un ordine, in uno zip, come lavoro in
+        sottofondo: ogni fotogramma si rielabora dal grezzo con le opzioni
+        e la geometria del suo rullo (come Salva fotogramma), in rete se c'e'
+        un elaboratore, e si salva la base lineare (prima di nitidezza,
+        riduzione della grana e curva per lo schermo): in DNG cosi' com'e',
+        in TIFF codificata sRGB. La foto finale e i grezzi non si toccano."""
+        import zipfile
+        from .consegne import FORMATI_POSITIVO
+        if formato not in FORMATI_POSITIVO:
+            raise ValueError("formato sconosciuto: %s" % formato)
+        ordine = self.archivio.ordine(int(ordine_id))
+        if ordine is None:
+            raise ValueError("ordine inesistente")
+        _, ext, tipo = FORMATI_POSITIVO[formato]
+        cartella = os.path.join(self.cfg.path("archivio"), "_consegne")
+        os.makedirs(cartella, exist_ok=True)
+        dest = os.path.join(cartella, "%s-%s.zip" % (ordine.codice, formato))
+        self._positivi = {"pronto": "", "errore": "", "ordine": int(ordine_id)}
+
+        def job():
+            from .invert import to_srgb
+            elenco = []
+            for rullo in self.archivio.rulli(ordine.id):
+                for f in self.archivio.fotogrammi(rullo.id):
+                    npz = f.get("file_raw") or ""
+                    if npz and os.path.isfile(npz) and f.get("stato") != "vuoto":
+                        elenco.append((rullo, f))
+            if not elenco:
+                self._positivi["errore"] = "questo ordine non ha grezzi sul disco"
+                return
+            fatti = 0
+            with zipfile.ZipFile(dest + ".tmp", "w", zipfile.ZIP_STORED, allowZip64=True) as z:
+                for k, (rullo, f) in enumerate(elenco):
+                    if self._stop.is_set():
+                        break
+                    self.progress("Positivo %d di %d (fotogramma %d)" % (
+                        k + 1, len(elenco), f["numero"]), k / float(len(elenco)))
+                    try:
+                        raw = RawScan.load(f["file_raw"])
+                        opts = self._con_geometria(self._opzioni_fotogramma(
+                            self._opzioni_rullo(rullo),
+                            self._correzioni_salvate(rullo.id).get(str(f["numero"]))),
+                            rullo.id, int(f["numero"]))
+                        opts.negativo_lineare = False
+                        res = self._processa(raw, opts)
+                        if res.base is None:
+                            raise RuntimeError("base non disponibile")
+                        base = np.clip(np.asarray(res.base, dtype=np.float32), 0.0, 1.0)
+                        nome = self._nome_file(f, ordine, rullo) + "_positivo" + ext
+                        tmp = os.path.join(cartella, nome)
+                        meta = self._meta_file(ordine, rullo, int(f["numero"]),
+                                               f.get("numero_bordo") or "", raw, opts)
+                        if tipo == "dng":
+                            export_negativo(base, tmp, "dng", meta=meta)
+                        else:
+                            export(to_srgb(base), tmp, "tiff16", meta=meta)
+                        z.write(tmp, os.path.join(ordine.codice, nome))
+                        os.remove(tmp)
+                        fatti += 1
+                    except Exception as exc:            # noqa: BLE001
+                        self.log("Positivo del fotogramma %d non fatto: %s" % (f["numero"], exc))
+            os.replace(dest + ".tmp", dest)
+            self._positivi["pronto"] = dest
+            self.log("Positivi pronti: %d fotogrammi (%s)." % (fatti, os.path.basename(dest)))
+            self.job.message = "Positivi pronti: lo scarico parte dall'archivio"
+        self._avvia("consegna", job)
+
+    def stato_positivi(self) -> Dict[str, object]:
+        p = getattr(self, "_positivi", None) or {}
+        lavoro = self.job.running and self.job.kind == "consegna"
+        return {"in_corso": bool(lavoro), "progresso": round(float(self.job.progress or 0), 3),
+                "messaggio": self.job.message if lavoro else "",
+                "pronto": os.path.basename(p.get("pronto") or "") if not lavoro else "",
+                "errore": p.get("errore") or ""}
+
+    def file_positivi(self) -> str:
+        p = getattr(self, "_positivi", None) or {}
+        return p.get("pronto") or ""
+
     def vota(self, fotogramma_id: int, voto: int) -> Dict[str, object]:
         """Da stampare (1), scartato (-1), niente (0)."""
         self._fotogramma_e_rullo(fotogramma_id)

@@ -727,11 +727,34 @@ function scegliFormato(oid, cosa, tasto){
     b.style.cssText='display:block;width:100%;margin:4px 0';
     b.onclick=function(){
       box.remove();
+      if(f[0].indexOf('positivo_')===0){ preparaPositivi(oid, f[0], tasto); return; }
       location.href=url('/api/archivio/zip?cosa='+cosa+'&id='+oid+'&formato='+f[0]);
     };
     box.appendChild(b);
   });
   tasto.parentNode.parentNode.insertBefore(box, tasto.parentNode.nextSibling);
+}
+
+/* I positivi invertiti si rielaborano dal grezzo: lavoro in sottofondo,
+   avanzamento qui sotto, lo scarico parte da solo quando lo zip e' pronto. */
+function preparaPositivi(oid, formato, tasto){
+  var nota=document.createElement('div'); nota.className='nota'; nota.id='nota_positivi';
+  var vecchia=el('nota_positivi'); if(vecchia) vecchia.remove();
+  tasto.parentNode.parentNode.insertBefore(nota, tasto.parentNode.nextSibling);
+  nota.textContent='Preparo i positivi...';
+  post('/api/archivio/positivi',{id:oid, formato:formato}).then(function(r){
+    if(r && r.errore){ nota.textContent=r.errore; return; }
+    (function giro(){
+      get('/api/archivio/positivi_stato').then(function(s){
+        if(s.errore){ nota.textContent=s.errore; return; }
+        if(s.in_corso){ nota.textContent=(s.messaggio||'In corso')+' · '+Math.round((s.progresso||0)*100)+'%';
+          setTimeout(giro, 2000); return; }
+        if(s.pronto){ nota.textContent='Positivi pronti: scarico '+s.pronto+'.';
+          location.href=url('/api/archivio/positivi.zip'); return; }
+        setTimeout(giro, 2000);
+      });
+    })();
+  });
 }
 
 var MODELLO = "Buongiorno {cliente}, le sue scansioni sono pronte: ordine {codice}, {fotogrammi} fotogrammi. Puo' passare a ritirarle quando vuole. Grazie!";
@@ -2979,7 +3002,8 @@ PAGINA_ARCHIVIO = _vesti(PAGINA_ARCHIVIO)
 PAGINA_ARCHIVIO = PAGINA_ARCHIVIO.replace("<!--FORMATI-->", json.dumps(
     [[k, v[0]] for k, v in consegne.FORMATI_SCARICO.items()]))
 PAGINA_ARCHIVIO = PAGINA_ARCHIVIO.replace("<!--FORMATI_NEG-->", json.dumps(
-    [[k, v[0]] for k, v in consegne.FORMATI_NEGATIVO.items()]))
+    [[k, v[0]] for k, v in consegne.FORMATI_NEGATIVO.items()]
+    + [[k, v[0]] for k, v in consegne.FORMATI_POSITIVO.items()]))
 PAGINA_PIN = _vesti(PAGINA_PIN)
 
 
@@ -3423,6 +3447,15 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/fotogramma/geometria":
             return self._json(s.geometria_aperta())
 
+        if u.path == "/api/archivio/positivi_stato":
+            return self._json(s.stato_positivi())
+
+        if u.path == "/api/archivio/positivi.zip":
+            percorso = s.file_positivi()
+            if not percorso or not os.path.exists(percorso):
+                return self._json({"errore": "nessun file di positivi pronto"}, 404)
+            return self._scarica(percorso, tipo="application/zip")
+
         if u.path == "/api/elaboratori/stato":
             return self._json(s.stato_elaboratori())
 
@@ -3638,6 +3671,9 @@ class Handler(BaseHTTPRequestHandler):
                                                   float(d.get("dx") or 0)))
             if u.path == "/api/fotogramma/canali_azzera":
                 return self._json(s.azzera_canali())
+            if u.path == "/api/archivio/positivi":
+                s.prepara_positivi(int(d.get("id") or 0), str(d.get("formato") or ""))
+                return self._json({"avviato": True})
             if u.path == "/api/preferenze":
                 valori = s.imposta_preferenze(d)
                 if self.impostazioni:

@@ -374,6 +374,17 @@ FORMATI_NEGATIVO = {
     "negativo_tiff": ("Negativo TIFF 16 bit (Photoshop)", ".tif", "tiff"),
 }
 
+# Gli stessi, ma gia' invertiti (con i nostri colori e la geometria del
+# fotogramma), senza nitidezza ne' riduzione della grana: il DNG resta
+# lineare, e Lightroom o Camera Raw lo lavorano come un raw; il TIFF e' in
+# sRGB a 16 bit. Li prepara il servizio (prepara_positivi): vanno rielaborati
+# dal grezzo, e sul PC della macchina sono secondi a fotogramma. La foto
+# finale non cambia: e' un'esportazione in piu'.
+FORMATI_POSITIVO = {
+    "positivo_dng": ("Positivo DNG, invertito (Lightroom, Camera Raw)", ".dng", "dng"),
+    "positivo_tiff": ("Positivo TIFF 16 bit, invertito, senza ritocchi (Photoshop)", ".tif", "tiff16"),
+}
+
 
 def negativo_da_grezzo(npz: str, formato: str, cartella: str,
                        geometria: Optional[dict] = None) -> str:

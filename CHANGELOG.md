@@ -52,6 +52,14 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-11-07 (notte) — positivi invertiti dall'archivio
+
+- "Scarica i negativi" propone anche **Positivo DNG** (invertito con i
+  nostri colori, lineare a 16 bit, senza nitidezza né riduzione grana: per
+  Lightroom/Camera Raw) e **Positivo TIFF 16 bit** (lo stesso in sRGB).
+  Si rielaborano dal grezzo come lavoro in sottofondo (in rete se c'è un
+  elaboratore); lo scarico parte da solo. La foto finale non cambia.
+
 ### 2026-11-07 (notte) — grana colorata, nitidezza, flat a immagine intera
 
 - **Macchioline bianche**: sono polvere sull'ottica comune (le stesse
