@@ -44,7 +44,7 @@ from .orders import Archivio
 from .orient import RollMirror
 from .pipeline import (ProcessOptions, anteprima_rapida, export, export_mask,
                        export_negativo, finiture, process)
-from . import pellicole_dx, registri
+from . import geometria as geometrie, pellicole_dx, registri, remoti
 from .rullo import MemoriaPellicole, StatisticheRullo, chiave_dx
 
 
@@ -119,7 +119,8 @@ class _ElaborazioneInFondo(object):
     a meta'.
     """
 
-    def __init__(self, lavora: Callable, budget: int = 600 * 1024 * 1024) -> None:
+    def __init__(self, lavora: Callable, budget: int = 600 * 1024 * 1024,
+                 aiutanti: int = 0, aiuto: Optional[Callable[[], bool]] = None) -> None:
         self._coda: "queue.Queue" = queue.Queue()
         self._lavora = lavora
         self._budget = max(int(budget), 1)
@@ -136,6 +137,17 @@ class _ElaborazioneInFondo(object):
         self._thread = threading.Thread(target=self._giro, name="elaborazione",
                                         daemon=True)
         self._thread.start()
+        # Gli aiutanti prendono fotogrammi dalla stessa coda solo quando un
+        # elaboratore della rete e' in ascolto ('aiuto'), e li mandano a lui
+        # (ScanService._esporta): con due PC in rete si elaborano due
+        # fotogrammi alla volta mentre la macchina legge. Senza elaboratori
+        # restano fermi e lavora solo il thread principale, come prima.
+        self._aiuto = aiuto or (lambda: False)
+        self._aiutanti = [threading.Thread(target=self._giro_aiutante,
+                                           name="elaborazione-%d" % (k + 1), daemon=True)
+                          for k in range(max(0, int(aiutanti)))]
+        for t in self._aiutanti:
+            t.start()
 
     def metti(self, compito, peso: int, attesa: Callable[[], None]) -> None:
         with self._cond:
@@ -150,19 +162,41 @@ class _ElaborazioneInFondo(object):
         while True:
             voce = self._coda.get()
             if voce is None:
+                self._coda.put(None)        # anche per gli aiutanti
                 return
-            compito, peso = voce
-            # gli errori li gestisce 'lavora' fotogramma per fotogramma: qui
-            # una rete, perche' un thread morto lascerebbe il rullo appeso
+            self._fai(voce)
+
+    def _giro_aiutante(self) -> None:
+        while True:
+            if not self._aiuto():
+                if self._chiusa and not self._thread.is_alive():
+                    return
+                time.sleep(0.5)
+                continue
             try:
-                self._lavora(compito)
-            except Exception:                           # noqa: BLE001
-                traceback.print_exc()
-            finally:
-                del compito, voce
-                with self._cond:
-                    self._in_memoria -= peso
-                    self._cond.notify_all()
+                voce = self._coda.get(timeout=1.0)
+            except queue.Empty:
+                if self._chiusa and not self._thread.is_alive():
+                    return
+                continue
+            if voce is None:
+                self._coda.put(None)
+                return
+            self._fai(voce)
+
+    def _fai(self, voce) -> None:
+        compito, peso = voce
+        # gli errori li gestisce 'lavora' fotogramma per fotogramma: qui
+        # una rete, perche' un thread morto lascerebbe il rullo appeso
+        try:
+            self._lavora(compito)
+        except Exception:                           # noqa: BLE001
+            traceback.print_exc()
+        finally:
+            del compito, voce
+            with self._cond:
+                self._in_memoria -= peso
+                self._cond.notify_all()
 
     def chiudi(self) -> None:
         """Aspetta che i fotogrammi in coda siano elaborati."""
@@ -172,6 +206,8 @@ class _ElaborazioneInFondo(object):
         self.lettura_finita.set()
         self._coda.put(None)
         self._thread.join()
+        for t in self._aiutanti:
+            t.join()
 
 
 # Nella nota della calibrazione: con quale base d'esposizione e' stata fatta
@@ -239,6 +275,19 @@ class ScanService:
         # rapide dei fotogrammi che aspettano la loro: (rullo, numero) -> jpeg
         self._elab: Optional[_ElaborazioneInFondo] = None
         self._provini_rapidi: Dict[Tuple[int, int], bytes] = {}
+        # la stessa anteprima della scansione, piu' grande: se il fotogramma
+        # non arriva all'elaborazione (fermata o errore) si salva accanto al
+        # grezzo e fa da miniatura e da anteprima (_salva_anteprima_viva)
+        self._anteprime_vive: Dict[Tuple[int, int], bytes] = {}
+        # un'elaborazione completa alla volta sul PC della macchina (memoria
+        # a 32 bit); quelle mandate agli elaboratori della rete non contano
+        self._lock_locale = threading.Lock()
+        self.elaboratori = remoti.Elaboratori(cfg.chiave_elaboratori or "")
+        # la geometria del fotogramma aperto (pipeline, ProcessOptions.geometria),
+        # con le scelte a mano non ancora salvate
+        self._geometria_aperta: Optional[Dict[str, object]] = None
+        # gli spostamenti a mano gia' dentro base_lineare (coordinate della vista)
+        self._canali_in_base: Dict[str, Tuple[float, float]] = {}
         self._ultima_rapida: Optional[Tuple[int, int]] = None
         # il fotogramma riaperto dalla striscia (id), per Salva e Applica
         self._aperto: Optional[int] = None
@@ -292,6 +341,7 @@ class ScanService:
                 "impostazioni_macchina": self.impostazioni_macchina(),
                 "driver": self.cfg.driver, "job": self.job.as_dict(),
                 "remoto": self.remoto,
+                "elaboratori": self.stato_elaboratori(),
                 "ambiente": check_environment(dpi=self.cfg.optical_dpi)}
 
     # ------------------------------------------------------------------
@@ -1125,17 +1175,53 @@ class ScanService:
         self.ultimo_raw = raw
         self._ultima_rapida = chiave
         pil = Image.fromarray((np.clip(img, 0, 1) * 255).astype(np.uint8))
+        grande = pil.copy()
+        grande.thumbnail((1600, 1600))
+        buf = io.BytesIO()
+        grande.save(buf, format="JPEG", quality=85)
+        self._anteprime_vive[chiave] = buf.getvalue()
         pil.thumbnail((150, 150))
         buf = io.BytesIO()
         pil.save(buf, format="JPEG", quality=78)
         self._provini_rapidi[chiave] = buf.getvalue()
         self.job.anteprime += 1
 
+    @staticmethod
+    def file_anteprima_viva(raw_path: str) -> str:
+        """Dove sta l'anteprima della scansione di un fotogramma non
+        elaborato: accanto al grezzo, stesso nome."""
+        return raw_path[:-4] + "_anteprima.jpg" if raw_path.endswith(".npz") else ""
+
+    def _salva_anteprima_viva(self, chiave: Tuple[int, int], raw_path: str) -> None:
+        """Il fotogramma non e' stato elaborato (elaborazione fermata,
+        errore): la sua anteprima della scansione resta su disco e la si
+        mostra al posto del file finito, finche' non lo si elabora
+        (Alessandro, 7/11/2026). Senza, la striscia restava vuota."""
+        dati = self._anteprime_vive.get(chiave)
+        dove = self.file_anteprima_viva(raw_path)
+        if not dati or not dove:
+            return
+        try:
+            with open(dove, "wb") as f:
+                f.write(dati)
+        except (IOError, OSError) as exc:
+            _registro.warning("anteprima di %s non salvata: %s", raw_path, exc)
+
     def provino_rapido(self, fotogramma: Dict[str, object]) -> bytes:
-        """La miniatura rapida di un fotogramma ancora in elaborazione."""
-        return self._provini_rapidi.get(
+        """La miniatura rapida di un fotogramma ancora in elaborazione, o
+        quella salvata di uno non elaborato."""
+        dati = self._provini_rapidi.get(
             (int(fotogramma.get("rullo_id") or 0),
              int(fotogramma.get("numero") or 0)), b"")
+        if dati:
+            return dati
+        dove = self.file_anteprima_viva(str(fotogramma.get("file_raw") or ""))
+        if dove and os.path.exists(dove):
+            try:
+                return self.provino_jpeg(dove)
+            except (ValueError, OSError):
+                pass
+        return b""
 
     def _a_riposo(self) -> None:
         """Dopo uno STOP: lampade spente, niente altri movimenti.
@@ -1305,6 +1391,7 @@ class ScanService:
                 "avanzamento_automatico": self.cfg.avanzamento_automatico,
                 "autofocus": self.cfg.autofocus,
                 "negativo_lineare": self.cfg.negativo_lineare,
+                "acquisizione": self.cfg.acquisizione,
                 "leggi_dx": bool(self.cfg.leggi_dx),
                 "pin_fisso": bool(self.cfg.pin_fisso)}
 
@@ -1320,6 +1407,10 @@ class ScanService:
             if valori["autofocus"] not in self.AUTOFOCUS:
                 raise ValueError("autofocus sconosciuto: %s" % valori["autofocus"])
             self.cfg.autofocus = str(valori["autofocus"])
+        if "acquisizione" in valori:
+            if valori["acquisizione"] not in ("canali", "originale"):
+                raise ValueError("acquisizione: 'canali' o 'originale'")
+            self.cfg.acquisizione = str(valori["acquisizione"])
         if "negativo_lineare" in valori:
             if valori["negativo_lineare"] not in ("", "tiff", "dng"):
                 raise ValueError("negativo lineare: '', 'tiff' o 'dng'")
@@ -1610,38 +1701,70 @@ class ScanService:
                 "parole": parole}
 
     def _esporta(self, raw, opts, dest: str, nome: str, rullo_id: int,
-                 numero: int, bordo: str, raw_path: str, ordine_rullo):
+                 numero: int, bordo: str, raw_path: str, ordine_rullo,
+                 in_rete: bool = True):
         """Elaborazione completa di un grezzo, file finale (con i
         metadati), maschera e negativo lineare se chiesti, e registro. Lo
-        usano il rullo, Salva fotogramma e Applica a tutto il rullo."""
+        usano il rullo, Salva fotogramma e Applica a tutto il rullo.
+
+        Con un elaboratore della rete in ascolto il lavoro lo fa lui
+        (_esporta_in_rete); se non risponde, sparisce o sbaglia, lo si rifa'
+        qui, senza perdere il fotogramma. La geometria trovata si salva per
+        la prossima volta (geometria.py)."""
         ordine, rullo = ordine_rullo
         t0 = time.time()
-        res = process(raw, opts)
-        t_process = time.time() - t0
         meta = self._meta_file(ordine, rullo, numero, bordo, raw, opts)
         ext = {"tiff16": ".tif", "tiff8": ".tif",
                "png": ".png", "jpeg": ".jpg"}.get(self.cfg.export_format, ".tif")
         out_path = os.path.join(dest, nome + ext)
-        export(res.image, out_path, self.cfg.export_format,
-               self.cfg.jpeg_quality, meta=meta)
-        # nel registro (non nel diario): dove va il tempo di ogni fotogramma
-        lenti = sorted(res.tempi.items(), key=lambda kv: -kv[1])[:5]
-        _registro.info("fotogramma %d: elaborazione %.1f s, salvataggio %.1f s (%s)",
-                       numero, t_process, time.time() - t0 - t_process,
-                       ", ".join("%s %.1f" % kv for kv in lenti))
+        mask_path = os.path.join(dest, nome + "_maschera.png") if self.cfg.export_ir_mask else ""
+        neg_fmt = self.cfg.negativo_lineare if self.cfg.negativo_lineare in ("tiff", "dng") else ""
+        neg_path = os.path.join(dest, nome + "_negativo." + (
+            "dng" if neg_fmt == "dng" else "tif")) if neg_fmt else ""
 
-        mask_path = ""
-        if self.cfg.export_ir_mask and res.mask is not None:
-            mask_path = export_mask(res.mask,
-                                    os.path.join(dest, nome + "_maschera.png"))
-        neg_path = ""
-        if res.lineare is not None and self.cfg.negativo_lineare in ("tiff", "dng"):
-            neg_path = export_negativo(
-                res.lineare, os.path.join(dest, nome + "_negativo." + (
-                    "dng" if self.cfg.negativo_lineare == "dng" else "tif")),
-                self.cfg.negativo_lineare, meta=meta)
-            res.lineare = None          # 35 MB in meno, subito
+        res = None
+        if in_rete and self.in_rete():
+            try:
+                res, mask_path, neg_path = self._esporta_in_rete(
+                    raw, opts, raw_path, meta, out_path, mask_path, neg_path, neg_fmt)
+                _registro.info("fotogramma %d: elaborato da %s in %.1f s",
+                               numero, res.tempi.get("elaboratore", "?"), time.time() - t0)
+            except Exception as exc:                    # noqa: BLE001
+                res = None
+                _registro.warning("fotogramma %d: elaboratore della rete non usato (%s), "
+                                  "lo elabora la macchina", numero, exc)
+                self.log("Fotogramma %d: elaboratore della rete non disponibile (%s), "
+                         "lo elaboro qui." % (numero, exc))
+        if res is None:
+            with self._lock_locale:
+                t0 = time.time()
+                res = process(raw, opts)
+                t_process = time.time() - t0
+                export(res.image, out_path, self.cfg.export_format,
+                       self.cfg.jpeg_quality, meta=meta)
+                # nel registro (non nel diario): dove va il tempo di ogni fotogramma
+                lenti = sorted(res.tempi.items(), key=lambda kv: -kv[1])[:5]
+                _registro.info("fotogramma %d: elaborazione %.1f s, salvataggio %.1f s (%s)",
+                               numero, t_process, time.time() - t0 - t_process,
+                               ", ".join("%s %.1f" % kv for kv in lenti))
+                if mask_path and res.mask is not None:
+                    mask_path = export_mask(res.mask, mask_path)
+                else:
+                    mask_path = ""
+                if neg_path and res.lineare is not None:
+                    neg_path = export_negativo(res.lineare, neg_path, neg_fmt, meta=meta)
+                else:
+                    neg_path = ""
+                res.lineare = None          # 35 MB in meno, subito
 
+        if res.geometria:
+            geometrie.scrivi(self.cfg.path("raw"), rullo_id, numero, res.geometria)
+        viva = self.file_anteprima_viva(raw_path)
+        if viva and os.path.exists(viva):
+            try:
+                os.remove(viva)             # adesso c'e' il file vero
+            except OSError:
+                pass
         self.archivio.fotogramma_registra(
             rullo_id, numero, file_out=out_path, file_raw=raw_path,
             file_maschera=mask_path,
@@ -1649,6 +1772,274 @@ class ScanService:
             stato="ok", avvisi=" | ".join(res.warnings),
             numero_bordo=bordo, file_negativo=neg_path)
         return res
+
+    # --- elaboratori della rete (remoti.py, elaboratore.py) ---------------
+
+    def in_rete(self) -> bool:
+        """Elaboratori accesi nelle impostazioni e almeno uno collegato."""
+        return bool(self.cfg.elaboratori_rete and self.elaboratori.chiave
+                    and self.elaboratori.presenti())
+
+    def _aiuto_rete(self) -> bool:
+        """Per gli aiutanti della coda: un elaboratore e' in ascolto adesso."""
+        return bool(self.cfg.elaboratori_rete and self.elaboratori.chiave
+                    and self.elaboratori.liberi() > 0)
+
+    def _pacco(self, raw, opts, raw_path: str, lavoro: Dict[str, object]) -> bytes:
+        """Il lavoro per un elaboratore: il grezzo (il file gia' salvato se
+        c'e', senza ricomprimerlo: sul PC della macchina costerebbe secondi),
+        le opzioni, e cosa farne. Zip senza compressione."""
+        import pickle
+        import zipfile
+        from dataclasses import asdict
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED, allowZip64=True) as z:
+            if raw_path and os.path.exists(raw_path) and os.path.exists(raw_path[:-4] + ".json"):
+                z.write(raw_path, "grezzo.npz")
+                z.write(raw_path[:-4] + ".json", "grezzo.json")
+            else:
+                piani = io.BytesIO()
+                np.savez(piani, **dict(("%s_%d" % (c, k), p)
+                                       for c, pile in raw.planes.items()
+                                       for k, p in enumerate(pile)))
+                z.writestr("grezzo.npz", piani.getvalue())
+                z.writestr("grezzo.json", json.dumps(asdict(raw.meta)))
+            z.writestr("opzioni.pkl", pickle.dumps(opts, protocol=2))
+            z.writestr("lavoro.json", json.dumps(lavoro))
+        return buf.getvalue()
+
+    @staticmethod
+    def _esito(dati: bytes):
+        """Apre la risposta di un elaboratore. Mai pickle da li': solo JSON,
+        immagini e array numpy senza oggetti (allow_pickle=False). Ritorna
+        (esito, zip aperto)."""
+        import zipfile
+        z = zipfile.ZipFile(io.BytesIO(dati))
+        esito = json.loads(z.read("esito.json").decode("utf-8"))
+        if not isinstance(esito, dict):
+            raise RuntimeError("risposta dell'elaboratore non valida")
+        return esito, z
+
+    @staticmethod
+    def _risultato_da_esito(esito: Dict[str, object], z) -> "object":
+        from .orient import Orientation
+        from .pipeline import ProcessResult
+        img = None
+        if "anteprima.jpg" in z.namelist():
+            from PIL import Image
+            im = Image.open(io.BytesIO(z.read("anteprima.jpg"))).convert("RGB")
+            img = np.asarray(im, dtype=np.float32) / 255.0
+        base = neg = None
+        if "base.npy" in z.namelist():
+            base = np.load(io.BytesIO(z.read("base.npy")), allow_pickle=False).astype(np.float32)
+        if "negativo.npy" in z.namelist():
+            neg = np.load(io.BytesIO(z.read("negativo.npy")), allow_pickle=False)
+        rot = int(esito.get("rotazione") or 0)
+        geo = esito.get("geometria") if isinstance(esito.get("geometria"), dict) else {}
+        tempi = dict((str(k), float(v)) for k, v in (esito.get("tempi") or {}).items())
+        tempi["elaboratore"] = str(esito.get("elaboratore") or "?")  # type: ignore
+        res = ProcessResult(img, None, None, {}, float(esito.get("maschera_pct") or 0.0),
+                            [str(w) for w in (esito.get("avvisi") or [])],
+                            Orientation(rot % 360, bool(geo.get("specchio"))),
+                            neg, base, None, tempi, geometria=geo)
+        return res
+
+    def _esporta_in_rete(self, raw, opts, raw_path, meta, out_path, mask_path,
+                         neg_path, neg_fmt):
+        lavoro = {"tipo": "esporta", "formato": self.cfg.export_format,
+                  "qualita": int(self.cfg.jpeg_quality), "maschera": bool(mask_path),
+                  "negativo": neg_fmt, "meta": meta}
+        pacco = self._pacco(raw, opts, raw_path, lavoro)
+        esito, z = self._esito(self.elaboratori.elabora(pacco))
+        del pacco
+        nomi = z.namelist()
+        if "file/finale" not in nomi:
+            raise RuntimeError("l'elaboratore non ha mandato il file finito")
+        # i nomi dei file li decide la macchina, non chi risponde
+        scritti = []
+        try:
+            for interno, dove in (("file/finale", out_path), ("file/maschera", mask_path),
+                                  ("file/negativo", neg_path)):
+                if dove and interno in nomi:
+                    with open(dove + ".tmp", "wb") as f:
+                        f.write(z.read(interno))
+                    os.replace(dove + ".tmp", dove)
+                    scritti.append(dove)
+        except Exception:
+            for p in scritti:
+                if p != out_path:
+                    try:
+                        os.remove(p)
+                    except OSError:
+                        pass
+            raise
+        res = self._risultato_da_esito(esito, z)
+        return (res, mask_path if mask_path in scritti else "",
+                neg_path if neg_path in scritti else "")
+
+    def _processa(self, raw, opts):
+        """L'elaborazione per il visore (Riapri): in rete se c'e' un
+        elaboratore, con la base lineare e il negativo per i cursori e il
+        confronto; altrimenti qui. Nessun file."""
+        if self.in_rete():
+            try:
+                t0 = time.time()
+                pacco = self._pacco(raw, opts, "", {"tipo": "processa"})
+                esito, z = self._esito(self.elaboratori.elabora(pacco, timeout=180.0))
+                res = self._risultato_da_esito(esito, z)
+                if res.base is None:
+                    raise RuntimeError("l'elaboratore non ha mandato la base")
+                img, _ = finiture(res.base, opts)
+                res.image = img
+                _registro.info("riapertura elaborata da %s in %.1f s",
+                               res.tempi.get("elaboratore"), time.time() - t0)
+                return res
+            except Exception as exc:                    # noqa: BLE001
+                _registro.warning("riapertura: elaboratore non usato (%s)", exc)
+        with self._lock_locale:
+            return process(raw, opts, progress=self.progress)
+
+    def stato_elaboratori(self) -> Dict[str, object]:
+        st = self.elaboratori.stato()
+        st["attivi"] = bool(self.cfg.elaboratori_rete)
+        st["chiave"] = self.cfg.chiave_elaboratori
+        return st
+
+    def imposta_elaboratori(self, attivi: Optional[bool] = None,
+                            nuova_chiave: bool = False) -> Dict[str, object]:
+        if nuova_chiave or (attivi and not self.cfg.chiave_elaboratori):
+            self.cfg.chiave_elaboratori = remoti.nuova_chiave()
+            self.elaboratori.chiave = self.cfg.chiave_elaboratori
+        if attivi is not None:
+            self.cfg.elaboratori_rete = bool(attivi)
+        return self.stato_elaboratori()
+
+    # --- geometria salvata ---------------------------------------------
+
+    def _con_geometria(self, opts: ProcessOptions, rullo_id: int,
+                       numero: int) -> ProcessOptions:
+        """Le opzioni con la geometria salvata del fotogramma: riaprirlo non
+        rifa' allineamento, raddrizzamento, ritaglio e orientamento."""
+        geo = geometrie.leggi(self.cfg.path("raw"), rullo_id, numero)
+        return dataclasses.replace(opts, geometria=geo) if geo else opts
+
+    def _per_la_mano(self) -> Dict[str, object]:
+        """Rotazione e canali a mano si fanno sul fotogramma aperto dalla
+        striscia, a lavoro finito, e cambiano la sua geometria in memoria:
+        diventano il file con Salva fotogramma."""
+        if self.job.running:
+            raise ScannerError("c'e' un lavoro in corso: a lavoro finito")
+        if not self._aperto or self.ultimo_raw is None or self.base_lineare is None:
+            raise ValueError("toccare prima il fotogramma nella striscia per aprirlo")
+        if self._geometria_aperta is None:
+            self._geometria_aperta = {}
+        return self._geometria_aperta
+
+    def _esito_mano(self, geo: Dict[str, object]) -> Dict[str, object]:
+        self.rielabora(None, veloce=True)
+        self.job.anteprime += 1
+        return {"rotazione": self._rotazione_di(geo),
+                "canali": geo.get("canali") or {},
+                "messaggio": "Premere Salva fotogramma per scriverlo nel file."}
+
+    @staticmethod
+    def _rotazione_di(geo: Dict[str, object]) -> int:
+        if geo.get("rotazione") is not None:
+            return int(geo["rotazione"]) % 360
+        return int(geo.get("orientamento") or 0) % 360
+
+    def geometria_aperta(self) -> Dict[str, object]:
+        geo = self._geometria_aperta or {}
+        return {"aperto": bool(self._aperto), "rotazione": self._rotazione_di(geo),
+                "canali": geo.get("canali") or {},
+                "spostamenti": geo.get("spostamenti") or {},
+                "angolo": geo.get("angolo"), "a_mano": geo.get("rotazione") is not None}
+
+    def ruota(self, passi: int) -> Dict[str, object]:
+        """Gira il fotogramma aperto di 90 gradi per passo (1 = antiorario,
+        -1 = orario). Nell'anteprima si gira la base gia' pronta (senza
+        rifare niente); nel file entra con Salva fotogramma. Prevale sulla
+        rotazione automatica, e resta salvata per le prossime riaperture."""
+        geo = self._per_la_mano()
+        passi = int(passi) % 4
+        if not passi:
+            return self._esito_mano(geo)
+        geo["rotazione"] = (self._rotazione_di(geo) + 90 * passi) % 360
+        # con lo specchio del rullo la rotazione vista sullo schermo e' al
+        # contrario (lo specchio viene dopo la rotazione: orient.apply_orientation)
+        k = -passi if geo.get("specchio") else passi
+        self.base_lineare = np.ascontiguousarray(np.rot90(self.base_lineare, k))
+        if self.preview_neg is not None:
+            self.preview_neg = np.ascontiguousarray(np.rot90(self.preview_neg, k))
+        self.log("Fotogramma ruotato a mano: %d gradi." % geo["rotazione"])
+        return self._esito_mano(geo)
+
+    def sposta_canale(self, canale: str, dy: float, dx: float) -> Dict[str, object]:
+        """Sposta a mano il rosso o il blu rispetto al verde, di (dy, dx)
+        pixel come li si vede sullo schermo. Serve quando l'allineamento
+        automatico non basta (bordi colorati). Si somma allo spostamento
+        automatico salvato, che non si ricalcola."""
+        from .registration import shift_image
+        canale = str(canale).upper()
+        if canale not in ("R", "B"):
+            raise ValueError("si spostano il rosso (R) e il blu (B): il verde e' il riferimento")
+        geo = self._per_la_mano()
+        if self.base_lineare.ndim != 3 or self.base_lineare.shape[2] < 3 \
+                or len([c for c in self.ultimo_raw.planes if c != "IR"]) < 3:
+            raise ValueError("fotogramma a un canale solo: non ci sono canali da allineare")
+        dy, dx = float(dy), float(dx)
+        if abs(dy) > 20 or abs(dx) > 20:
+            raise ValueError("spostamento troppo grande")
+        rot, specchio = self._rotazione_di(geo), bool(geo.get("specchio"))
+        gy, gx = geometrie.dalla_vista(dy, dx, rot, specchio)
+        canali = dict(geo.get("canali") or {})
+        vy, vx = canali.get(canale, [0.0, 0.0])
+        nuovo = [round(vy + gy, 3), round(vx + gx, 3)]
+        if abs(nuovo[0]) < 1e-6 and abs(nuovo[1]) < 1e-6:
+            canali.pop(canale, None)
+        else:
+            canali[canale] = nuovo
+        if canali:
+            geo["canali"] = canali
+        else:
+            geo.pop("canali", None)
+        i = {"R": 0, "B": 2}[canale]
+        base = self.base_lineare.copy()
+        base[..., i] = shift_image(base[..., i], dy, dx)
+        self.base_lineare = base
+        return self._esito_mano(geo)
+
+    def azzera_canali(self) -> Dict[str, object]:
+        """Toglie gli spostamenti a mano dei canali."""
+        geo = self._per_la_mano()
+        canali = dict(geo.get("canali") or {})
+        rot, specchio = self._rotazione_di(geo), bool(geo.get("specchio"))
+        esito = None
+        for c, (gy, gx) in canali.items():
+            vy, vx = geometrie.nella_vista(-gy, -gx, rot, specchio)
+            esito = self.sposta_canale(c, vy, vx)
+        geo.pop("canali", None)
+        return esito or self._esito_mano(geo)
+
+    def rifai_geometria(self, cosa: str = "tutto") -> None:
+        """Rifa' le stime da capo sul fotogramma aperto: "canali" solo
+        l'allineamento automatico, "tutto" anche raddrizzamento, ritaglio e
+        orientamento (le scelte a mano si tolgono). E' l'unico caso, con la
+        mano dell'operatore, in cui la geometria salvata si ricalcola."""
+        geo = self._per_la_mano()
+        if cosa == "canali":
+            for k in ("spostamenti", "canali"):
+                geo.pop(k, None)
+        else:
+            geo.clear()
+        self._geometria_aperta = geo or None
+
+        def job():
+            self.progress("Nuovo calcolo della geometria", 0.1)
+            self.rielabora(None, veloce=False)
+            self.log("Geometria del fotogramma ricalcolata: Salva fotogramma la "
+                     "scrive nel file.")
+        self._avvia("geometria", job)
 
     def _fotogramma_e_rullo(self, fotogramma_id: int):
         righe = self.archivio.fotogrammi_per_id(int(fotogramma_id))
@@ -1688,16 +2079,19 @@ class ScanService:
         def job():
             self.progress("Apertura del fotogramma %d" % f["numero"], 0.1)
             raw = RawScan.load(raw_path)
-            opts = self._opzioni_fotogramma(
+            opts = self._con_geometria(self._opzioni_fotogramma(
                 self._opzioni_rullo(rullo),
-                self._correzioni_salvate(rullo.id).get(str(f["numero"])))
+                self._correzioni_salvate(rullo.id).get(str(f["numero"]))),
+                rullo.id, int(f["numero"]))
             opts.negativo_lineare = False
-            res = process(raw, opts, progress=self.progress)
+            res = self._processa(raw, opts)
             self.ultimo_raw = raw
             self.preview = res.image
             self.base_lineare = res.base
             self.preview_ridotta = False
             self.preview_neg = res.negativo
+            self._geometria_aperta = dict(res.geometria or {}) or None
+            self._canali_in_base = {}
             self._aperto = int(f["id"])
             self.log("Fotogramma %d del rullo %s aperto: correggere e premere "
                      "Salva fotogramma, o Applica a tutto il rullo."
@@ -1712,9 +2106,37 @@ class ScanService:
         correggerlo si riapre dal grezzo a lavoro finito (apri_fotogramma)."""
         f, rullo, ordine = self._fotogramma_e_rullo(fotogramma_id)
         percorso = f.get("file_out") or ""
+        messaggio = ""
         if not percorso or not os.path.exists(percorso):
-            return {"mostrato": False,
-                    "messaggio": "fotogramma %d ancora in elaborazione" % f["numero"]}
+            # non ancora elaborato: l'anteprima della scansione, se c'e'
+            # (in memoria durante il rullo, su disco se l'elaborazione e'
+            # stata fermata)
+            chiave = (int(f["rullo_id"]), int(f["numero"]))
+            viva = self._anteprime_vive.get(chiave)
+            dove = self.file_anteprima_viva(str(f.get("file_raw") or ""))
+            if viva is None and dove and os.path.exists(dove):
+                with open(dove, "rb") as fh:
+                    viva = fh.read()
+            if not viva:
+                return {"mostrato": False,
+                        "messaggio": "fotogramma %d ancora in elaborazione" % f["numero"]}
+            from PIL import Image
+            im = Image.open(io.BytesIO(viva)).convert("RGB")
+            self.preview = np.asarray(im, dtype=np.float32) / 255.0
+            self.preview_neg = None
+            self.base_lineare = None
+            self.ultimo_raw = None
+            self.preview_ridotta = True
+            self._ultima_rapida = None
+            self._aperto = None
+            self._geometria_aperta = None
+            self.job.anteprime += 1
+            stato = f.get("stato") or ""
+            messaggio = ("anteprima della scansione: fotogramma non elaborato"
+                         if stato in ("da_elaborare", "errore")
+                         else "anteprima della scansione: elaborazione in corso")
+            return {"mostrato": True, "numero": f["numero"], "messaggio": messaggio,
+                    "anteprima_viva": True}
         from .consegne import apri_immagine
         im = apri_immagine(percorso).convert("RGB")
         im.thumbnail((1600, 1600))
@@ -1725,6 +2147,7 @@ class ScanService:
         self.preview_ridotta = True
         self._ultima_rapida = None      # l'elaborazione in corso non lo copre
         self._aperto = None
+        self._geometria_aperta = None
         self.job.anteprime += 1
         return {"mostrato": True, "numero": f["numero"]}
 
@@ -1793,25 +2216,40 @@ class ScanService:
             self.progress("Salvataggio del fotogramma %d" % f["numero"], 0.2)
             raw = RawScan.load(f["file_raw"])
             dest = self.archivio.cartella_ordine(self.cfg.out_dir, ordine.id)
-            res = self._esporta(raw, self._opzioni_fotogramma(
-                                    self._opzioni_rullo(rullo),
-                                    self._correzioni_salvate(rullo.id).get(str(f["numero"]))),
-                                dest,
+            opts = self._opzioni_fotogramma(
+                self._opzioni_rullo(rullo),
+                self._correzioni_salvate(rullo.id).get(str(f["numero"])))
+            # la geometria del fotogramma aperto, con rotazione e canali
+            # spostati a mano: e' qui che diventano il file
+            if self._geometria_aperta:
+                opts = dataclasses.replace(opts, geometria=dict(self._geometria_aperta))
+            else:
+                opts = self._con_geometria(opts, rullo.id, int(f["numero"]))
+            res = self._esporta(raw, opts, dest,
                                 self._nome_file(f, ordine, rullo), rullo.id,
                                 int(f["numero"]), f.get("numero_bordo") or "",
                                 f["file_raw"], (ordine, rullo))
-            self.preview = res.image
-            self.base_lineare = res.base
-            self.preview_neg = res.negativo
+            if res.image is not None:
+                self.preview = res.image
+            if res.base is not None:
+                self.base_lineare = res.base
+                self._canali_in_base = {}
+            if res.negativo is not None:
+                self.preview_neg = res.negativo
+            if res.geometria:
+                self._geometria_aperta = dict(res.geometria)
             self._cache_prov.clear()
             self.log("Fotogramma %d salvato con le nuove regolazioni."
                      % f["numero"])
         self._avvia("salvataggio", job)
 
-    def applica_rullo(self, rullo_id: Optional[int] = None) -> None:
+    def applica_rullo(self, rullo_id: Optional[int] = None,
+                      solo_mancanti: bool = False) -> None:
         """Le regolazioni correnti su tutti i fotogrammi di un rullo: si
         rielaborano dai grezzi e si riesportano, uno dopo l'altro. I vuoti
-        restano vuoti; quelli senza grezzo si saltano e lo si dice."""
+        restano vuoti; quelli senza grezzo si saltano e lo si dice.
+        solo_mancanti: solo quelli non elaborati (elaborazione fermata con
+        Chiusura, o andati in errore): "Completa l'elaborazione"."""
         if rullo_id is None:
             if not self._aperto:
                 raise ValueError("nessun rullo scelto")
@@ -1826,7 +2264,9 @@ class ScanService:
             opts = self._opzioni_rullo(rullo)
             correzioni = self._correzioni_salvate(rullo.id)
             fotogrammi = [f for f in self.archivio.fotogrammi(rullo.id)
-                          if f.get("stato") != "vuoto"]
+                          if f.get("stato") != "vuoto"
+                          and (not solo_mancanti
+                               or f.get("stato") in ("da_elaborare", "errore"))]
             fatti, senza = 0, 0
             for k, f in enumerate(fotogrammi):
                 if self._stop.is_set():
@@ -1842,8 +2282,9 @@ class ScanService:
                     continue
                 try:
                     raw = RawScan.load(raw_path)
-                    self._esporta(raw, self._opzioni_fotogramma(
+                    self._esporta(raw, self._con_geometria(self._opzioni_fotogramma(
                                       opts, correzioni.get(str(f["numero"]))),
+                                      rullo.id, int(f["numero"])),
                                   dest, self._nome_file(f, ordine, rullo),
                                   rullo.id, int(f["numero"]),
                                   f.get("numero_bordo") or "", raw_path,
@@ -1868,8 +2309,9 @@ class ScanService:
     def _esposizione_fissa(self, preset) -> Optional[Dict[str, float]]:
         """Con l'esposizione automatica spenta: x1 su tutti i canali, senza
         misura. Accesa: None, e decide la misura per canale."""
-        if self.cfg.esposizione_auto:
+        if self.cfg.esposizione_auto and self.cfg.acquisizione != "originale":
             return None
+        # con la capture dell'originale i tempi li decide l'SDK
         return dict((c, 1.0) for c in preset.channels)
 
     @contextlib.contextmanager
@@ -2022,23 +2464,17 @@ class ScanService:
             backend.seleziona_formato(rullo.formato)
             backend.esposizione_auto(self.cfg.esposizione_auto)
             ice_sdk = False
-            if rullo.ice:
-                # Due parti: l'ASF dell'SDK (gi_set_asf_mode, sperimentale:
-                # su scan_raw l'effetto va visto sulla macchina) e la nostra
-                # pulizia dal canale IR, che pero' c'e' solo quando l'IR
-                # dell'SDK e' verificato.
-                if "IR" not in getattr(backend, "canali_disponibili", ["IR"]):
-                    self.log("Digital ICE: il canale IR non e' ancora "
-                             "verificato su questa macchina, la nostra "
-                             "pulizia IR resta spenta.")
-                try:
-                    ice_sdk = backend.digital_ice(True)
-                    if ice_sdk:
-                        self.log("Digital ICE (ASF) acceso nella macchina.")
-                except Emergenza:
-                    raise
-                except Exception as exc:                # noqa: BLE001
-                    self.log("Digital ICE (ASF) non acceso: %s" % exc)
+            if rullo.ice and self.cfg.acquisizione == "originale":
+                # il Digital ICE dell'SDK lo accende e lo spegne la capture,
+                # fotogramma per fotogramma (sdk.cattura)
+                self.log("Digital ICE dell'SDK nella capture di ogni fotogramma.")
+            elif rullo.ice and "IR" not in getattr(backend, "canali_disponibili", ["IR"]):
+                # Digital ICE nostro: la pulizia dal canale IR (irclean).
+                # L'ASF dell'SDK su scan_raw (prima acceso qui, per prova)
+                # non si usa piu': il Digital ICE dell'SDK lavora nella
+                # capture (acquisizione "originale").
+                self.log("Digital ICE: questa macchina non da' il canale IR, "
+                         "la pulizia IR resta spenta.")
             mancanti = [c for c in preset.channels
                         if c not in getattr(backend, "canali_disponibili", preset.channels)]
             if mancanti:
@@ -2186,6 +2622,7 @@ class ScanService:
                     if elab.solo_grezzi.is_set():
                         if not raw_path:
                             raw_path = raw.save(self.cfg.path("raw"), nome)
+                        self._salva_anteprima_viva((rullo_id, numero), raw_path)
                         self.archivio.fotogramma_registra(
                             rullo_id, numero, file_raw=raw_path, stato="da_elaborare",
                             avvisi="non elaborato: elaborazione fermata", numero_bordo=bordo)
@@ -2220,17 +2657,22 @@ class ScanService:
                     self.log("Fotogramma %d non elaborato: %s" % (numero, exc))
                     if vuoto:
                         return
+                    self._salva_anteprima_viva((rullo_id, numero), raw_path)
                     self.archivio.fotogramma_registra(
                         rullo_id, numero, file_raw=raw_path, stato="errore",
                         avvisi=str(exc), numero_bordo=bordo)
                 finally:
                     self._provini_rapidi.pop((rullo_id, numero), None)
+                    self._anteprime_vive.pop((rullo_id, numero), None)
                     self.job.in_elaborazione = max(0, self.job.in_elaborazione - 1)
                     self.job.anteprime += 1
 
             non_elaborati: List[int] = []
             elab = self._elab = _ElaborazioneInFondo(
-                elabora, int(self.cfg.memoria_elaborazione_mb) * 1024 * 1024)
+                elabora, int(self.cfg.memoria_elaborazione_mb) * 1024 * 1024,
+                aiutanti=(int(self.cfg.elaboratori_paralleli)
+                          if self.cfg.elaboratori_rete else 0),
+                aiuto=self._aiuto_rete)
             letti = {"n": 0}
             t_rullo = {"inizio": 0.0}
             # L'esposizione per canale si misura UNA volta per rullo, non a
@@ -2862,12 +3304,17 @@ class ScanService:
                     self._opzioni_rullo(rullo),
                     self._correzioni_salvate(rullo.id).get(str(f["numero"])))
                 opts.negativo_lineare = False
+                if self._geometria_aperta:
+                    opts = dataclasses.replace(opts, geometria=dict(self._geometria_aperta))
             except (ValueError, ScannerError):
                 opts = self.options
-        res = process(self.ultimo_raw, opts)
+        res = self._processa(self.ultimo_raw, opts)
         self.preview = res.image
         self.preview_neg = res.negativo
         self.base_lineare = res.base
+        self._canali_in_base = {}
+        if self._aperto and res.geometria:
+            self._geometria_aperta = dict(res.geometria)
         self.preview_ridotta = False
         return {"avvisi": res.warnings, "maschera_pct": round(res.mask_coverage, 2)}
 

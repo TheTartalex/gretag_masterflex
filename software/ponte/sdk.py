@@ -1204,6 +1204,111 @@ class Scanner(object):
                 _json.dump(esito, f, indent=1)
         return esito
 
+    def cattura(self, risoluzione, asf=False, attesa=30.0, cartella=None):
+        """Il percorso di acquisizione del programma originale: R, G, B di un
+        fotogramma in una volta (~4,5 s), con il Digital ICE dell'SDK se asf.
+
+        Riserva, 7/11/2026 (collaudi 14:54 e 16:08): la capture funziona
+        SOLO subito dopo un get_media_info riuscito (stato SDK 1); dallo
+        stato 0 non parte mai, e import_image risponde (3, 0, 0)
+        ERR_ILLEGAL_IN_THIS_STATE per tutto il tempo d'attesa. Quindi: DX se
+        lo stato non e' 1, e alla prima risposta 3 ci si ferma invece di
+        aspettare 60 s. Dopo la capture lo stato torna 0 (1 -> 2 -> 3 -> 0).
+
+        Buffer (sonda del 7/11): get_image_buffer_size(0) = 17.640.000 byte
+        = tre piani R, G, B uno dopo l'altro, 2100 x 1400 uint16 a 12 bit;
+        il fotogramma finisce nel secondo buffer registrato (si registrano
+        due buffer come PhxScanner 0x446c89 e si prende quello a cui punta
+        il FrameInfo, o quello pieno).
+
+        Ritorna (bytes dei tre piani, larghezza, altezza, info)."""
+        if self.stato_sdk != 1:
+            try:
+                self.codice_dx()
+            except ErroreScanner as exc:
+                raise ErroreScanner("capture: il codice DX, che la deve precedere, "
+                                    "non si legge (%s)" % exc)
+        dim = int(self._m["dimensione_buffer"](int(risoluzione), bool(asf)))
+        if dim <= 0 or dim > 200 * 1024 * 1024 or dim % 6:
+            raise ErroreScanner("capture: dimensione del buffer non valida (%d)" % dim)
+        buffers = [ctypes.create_string_buffer(dim + 65536) for _ in range(2)]
+        indirizzi = [ctypes.cast(b, ctypes.c_void_p).value for b in buffers]
+        for b in buffers:
+            self._m["aggiungi_buffer"](self._obj, int(risoluzione),
+                                       ctypes.cast(b, ctypes.POINTER(ctypes.c_uint16)))
+        info = {"risoluzione": int(risoluzione), "asf": bool(asf), "eventi": []}
+        buf_asf = None
+        scelto = None
+        try:
+            if asf:
+                buf_asf = ctypes.create_string_buffer(dim * 2 + 65536)
+                self._m["buffer_asf"](self._obj, ctypes.cast(buf_asf, ctypes.c_void_p).value)
+                self._verifica(self._m["modo_asf"](self._obj, True), "modo ASF (Digital ICE)")
+            t0 = time.time()
+            self._verifica(self._m["acquisisci"](self._obj, False, int(risoluzione), bool(asf)),
+                           "capture")
+            finito = False
+            while time.time() - t0 < attesa and not finito:
+                fi = ctypes.c_void_p()
+                err = self._m["importa_immagine"](self._obj, ctypes.byref(fi))
+                codici = [c for c in (self._leggi_errori(err) if err else []) if c]
+                if codici:
+                    info["eventi"].append([round(time.time() - t0, 2), codici])
+                if fi.value and scelto is None:
+                    dump = self._esadecimale(fi.value, 256)
+                    if dump:
+                        dati = bytes.fromhex(dump)
+                        for k in range(0, len(dati) - 3, 4):
+                            v = int.from_bytes(dati[k:k + 4], "little")
+                            for j, a in enumerate(indirizzi):
+                                if a <= v < a + dim:
+                                    scelto = j
+                for c in codici:
+                    if c[0] in (204, 32, 33):
+                        finito = True
+                    elif c[0] == 3:
+                        raise ErroreScanner(
+                            "capture rifiutata dall'SDK: codice 3 ERR_ILLEGAL_IN_THIS_STATE "
+                            "(serve il codice DX letto subito prima)")
+                    elif c[0] == 205 or (c[0] is not None and 1 <= c[0] < 200 and c[0] != 3):
+                        raise ErroreScanner("capture: l'SDK segnala codice %s (%s, %s)" % c)
+                if not finito:
+                    time.sleep(0.1)
+            if not finito:
+                raise ErroreScanner("capture: nessuna immagine in %.0f s" % attesa)
+            info["secondi"] = round(time.time() - t0, 2)
+            if scelto is None:
+                # quello pieno: il vuoto e' tutto zeri
+                pieni = [j for j, b in enumerate(buffers)
+                         if any(b.raw[k:k + 4096].strip(b"\0")
+                                for k in range(0, dim, dim // 16))]
+                scelto = pieni[-1] if pieni else len(buffers) - 1
+            info["buffer"] = scelto
+            dati = buffers[scelto].raw[:dim]
+            if buf_asf is not None and cartella:
+                # il buffer ASF (Digital ICE): il formato non e' ancora noto,
+                # se ne tiene il primo pezzo per studiarlo (registri, sonde/)
+                try:
+                    with open(os.path.join(cartella, "sonda_cattura_asf_inizio.raw"), "wb") as f:
+                        f.write(buf_asf.raw[:4 * 1024 * 1024])
+                except OSError:
+                    pass
+        finally:
+            if buf_asf is not None:
+                try:
+                    self._m["modo_asf"](self._obj, False)
+                except Exception:
+                    pass
+            try:
+                n = ctypes.c_uint(0)
+                self._m["togli_buffer"](self._obj, ctypes.byref(n))
+            except Exception:
+                pass
+        pixel = dim // 6
+        larghezza = 2100 if pixel % 2100 == 0 else int(round((pixel * 1.5) ** 0.5))
+        altezza = pixel // larghezza
+        return dati, larghezza, altezza, info
+
     def sonda_ice(self, piani, larghezza, altezza, cartella):
         """Digital ICE chiamato direttamente (DMLDICELib.dll), sui piani R,
         G, B, IR (bytes uint16, uno per canale) di una lettura nostra.

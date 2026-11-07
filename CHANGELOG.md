@@ -52,6 +52,43 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-11-07 — elaboratori in rete, geometria salvata, capture dell'originale
+
+- **Elaboratori in rete** (`filmscan/remoti.py`, `elaboratore.py`,
+  `ELABORATORE.bat`): un PC Windows o un server della rete elabora i
+  fotogrammi al posto del PC della macchina. Si accende dal pannello
+  Macchina, "Elaboratori in rete"; da lì si scarica il pacchetto (script,
+  .bat, indirizzo e chiave). L'elaboratore trova la macchina da solo se
+  l'indirizzo cambia, scarica il codice dalla macchina (stessa versione),
+  elabora più fotogrammi in parallelo. Se sparisce o sbaglia, il
+  fotogramma lo rifà la macchina. Spento di serie.
+- **Geometria salvata** (`filmscan/geometria.py`): allineamento dei canali,
+  inclinazione, riquadro e orientamento si trovano una volta e si riusano
+  a ogni riapertura, Applica al rullo e Salva. Nuova barra "Ruota e
+  canali" sul fotogramma aperto: rotazione di 90°/180° a mano, rosso e blu
+  spostati a mano di ¼–2 px, Azzera, Ricalcola.
+- Raddrizzamento più veloce: la stima dell'angolo su una copia ridotta
+  (era 10 s su 14 nella prova).
+- **Anteprima dal vivo** per i fotogrammi non elaborati (elaborazione
+  fermata o errore): si salva accanto al grezzo e fa da miniatura e da
+  anteprima; tasto "Completa" per elaborare solo quelli.
+- **Negativi per Photoshop dall'archivio**: "Scarica i negativi" propone
+  DNG (Camera Raw, Lightroom) o TIFF 16 bit, fatti dai grezzi con la
+  geometria salvata; vale anche per i rulli vecchi. `GREZZO IN TIFF.bat`
+  fa lo stesso trascinandoci sopra i `.npz`.
+- **Acquisizione "come il programma originale"** (Macchina → Acquisizione):
+  codice DX e capture, R G B in una volta; sui rulli con ICE il Digital ICE
+  dell'SDK. Comando `cattura` dell'agente: legge il DX se serve e alla
+  prima risposta "stato non valido" si ferma invece di aspettare 60 s
+  (era il blocco del collaudo con pellicola delle 16:08). Di serie resta
+  "un canale per volta".
+- Collaudo con pellicola: capture solo dopo un fotogramma avanti, con e
+  senza Digital ICE; tempi misurati con un orologio che non salta.
+- Motori: avvio "completo" di serie, niente più conferma "SI" e avviso
+  delle guide (risolte dal 28/10); il modo bloccato resta per le prove.
+  Canale IR attivo di serie (`ir_sdk`, verificato nei collaudi); l'ASF su
+  scan_raw, sperimentale, tolto.
+
 ### 2026-11-07 — tempi dell'elaborazione nel registro
 
 - `ProcessResult.tempi`: secondi per passo; `_esporta` scrive nel registro

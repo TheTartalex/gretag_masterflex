@@ -54,6 +54,7 @@ software/versione.json
 software/impostazioni.json
 software/lut/
 software/modo-avvio.txt
+software/modo-avvio.txt.scelto
 software/attivita-avvio.xml
 # Wheel e installer di Python per l'installazione senza rete: si rifanno con
 # MASTERFLEX.bat, voce "prepara pacchetto offline".

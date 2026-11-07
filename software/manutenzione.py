@@ -35,6 +35,7 @@ import re
 import shutil
 import struct
 import subprocess
+import time
 import sys
 import zipfile
 
@@ -67,9 +68,9 @@ AGGIORNAMENTO_URL = ("https://github.com/TheTartalex/gretag_masterflex/"
 # allo zip, dal pacchetto collaudato del driver.
 CODICE = ["filmscan", "ponte", "run.py", "selftest.py", "manutenzione.py",
           "processi.py", "collaudo_scanner.py", "collaudo_auto.py", "remoto.py",
-          "riavvia.py", "certificati",
+          "riavvia.py", "certificati", "grezzo_in_tiff.py", "elaboratore.py",
           "requirements.txt", "CLAUDE.md", "README.md", "MASTERFLEX.bat",
-          "AVVIA AGENTE.bat", "ektest.exe"]
+          "AVVIA AGENTE.bat", "GREZZO IN TIFF.bat", "ELABORATORE.bat", "ektest.exe"]
 
 AVVIO_NOME = "Masterflex D1008.bat"
 # I modi di lavoro. "osservatore" e' il man in the middle: lavora il
@@ -77,11 +78,13 @@ AVVIO_NOME = "Masterflex D1008.bat"
 MODI_AVVIO = ("avvia", "avvia-senza-motori", "simulazione", "osservatore")
 DESCRIZIONE_MODI = {
     "avvia": "completo, motori attivi (chiude il programma originale)",
-    "avvia-senza-motori": "completo, motori BLOCCATI (chiude il programma originale)",
+    "avvia-senza-motori": "completo, motori fermi: solo letture, per prove",
     "simulazione": "simulazione, nessuna macchina",
     "osservatore": "man in the middle: programma originale + osservatore",
 }
-MODO_DI_SERIE = "avvia-senza-motori"
+# Motori attivi di serie: il problema delle guide e' chiuso dal 28/10/2026
+# (firmware del carrello 1.15). Prima era "avvia-senza-motori".
+MODO_DI_SERIE = "avvia"
 # L'ultimo modo usato: e' quello con cui parte l'avvio automatico e quello
 # proposto dal menu. Sta accanto al programma e un aggiornamento non lo tocca.
 FILE_MODO = os.path.join(QUI, "modo-avvio.txt")
@@ -471,6 +474,10 @@ def modo_attuale():
     try:
         with open(FILE_MODO) as f:
             modo = f.read().strip()
+        # il modo bloccato era quello di serie finche' le guide non andavano:
+        # chi l'aveva lo aveva per quello, non per scelta (7/11/2026)
+        if modo == "avvia-senza-motori" and not os.path.exists(FILE_MODO + ".scelto"):
+            return "avvia"
         if modo in MODI_AVVIO:
             return modo
     except (IOError, OSError):
@@ -489,6 +496,12 @@ def cmd_modo(argv):
         return 1
     with open(FILE_MODO, "w") as f:
         f.write(argv[0] + "\n")
+    # da qui in poi il modo e' una scelta fatta adesso, anche quello bloccato
+    try:
+        with open(FILE_MODO + ".scelto", "w") as f:
+            f.write("scelto il %s\n" % time.strftime("%Y-%m-%d %H:%M"))
+    except (IOError, OSError):
+        pass
     return 0
 
 

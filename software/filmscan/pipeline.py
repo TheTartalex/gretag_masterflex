@@ -129,6 +129,19 @@ class ProcessOptions:
     pellicola: str = ""                 # nome, per i metadati del file
     iso_pellicola: int = 0
 
+    # --- la geometria gia' trovata (service: rullo_N_geometria.json) ---
+    # Spostamenti dei canali, inclinazione, riquadro e orientamento del
+    # fotogramma, salvati alla prima elaborazione (ProcessResult.geometria).
+    # Con questi la riapertura non rifa' le stime, che sono la parte cara
+    # (correlazione di fase, 41 rotazioni di prova, ricerca dei bordi); None
+    # = si stima tutto. Dentro ci sono anche le scelte dell'operatore:
+    #   "canali":   {"R": [dy, dx], "B": [dy, dx]} spostamento a mano in px,
+    #               nelle coordinate del grezzo, sommato a quello automatico
+    #   "rotazione": 0/90/180/270 a mano, prevale su quella automatica
+    # Le stime si rifanno solo se si chiede (Riallinea) o se il grezzo e'
+    # un altro (forma diversa: riscansione).
+    geometria: Optional[Dict[str, object]] = None
+
 
 @dataclass
 class ProcessResult:
@@ -159,6 +172,10 @@ class ProcessResult:
 
     # secondi per passo dell'elaborazione (nome del passo -> s)
     tempi: Dict[str, float] = field(default_factory=dict)
+
+    # la geometria usata, da salvare per la prossima volta (vedi
+    # ProcessOptions.geometria): JSON puro
+    geometria: Dict[str, object] = field(default_factory=dict)
 
 
 def _negativo_rgb(planes: Dict[str, np.ndarray]) -> Optional[np.ndarray]:
@@ -331,9 +348,30 @@ def process(raw: RawScan, opts: ProcessOptions,
         planes[ch] = registration.merge_exposures(stack, exposures[:len(stack)]) \
             if len(stack) > 1 else stack[0]
 
+    # --- la geometria salvata, se e' di questo grezzo ---
+    forma = [int(v) for v in next(iter(planes.values())).shape[:2]]
+    geo_in = dict(opts.geometria or {})
+    if geo_in.get("forma") and list(geo_in["forma"]) != forma:
+        geo_in = {}                 # un altro grezzo: non vale niente
+    geo: Dict[str, object] = {"forma": forma}
+    a_mano = dict((c, (float(v[0]), float(v[1])))
+                  for c, v in (geo_in.get("canali") or {}).items()
+                  if c in planes and (v[0] or v[1]))
+
     # --- 3. allineamento canali ---
     _t("Allineamento canali", 0.15)
-    planes, shifts = registration.register_channels(planes, reference="G")
+    salvati = geo_in.get("spostamenti") or {}
+    if salvati and all(c in salvati for c in planes):
+        shifts = dict((c, (float(salvati[c][0]), float(salvati[c][1]))) for c in planes)
+        planes, _ = registration.apply_shifts(planes, shifts, a_mano)
+    else:
+        planes, shifts = registration.register_channels(planes, reference="G")
+        if a_mano:
+            planes, _ = registration.apply_shifts(planes, {}, a_mano)
+    geo["spostamenti"] = dict((c, [round(float(v[0]), 3), round(float(v[1]), 3)])
+                              for c, v in shifts.items())
+    if a_mano:
+        geo["canali"] = dict((c, [v[0], v[1]]) for c, v in a_mano.items())
     big = [c for c, (dy, dx) in shifts.items() if abs(dy) > 2 or abs(dx) > 2]
     if big:
         warnings.append(
@@ -390,22 +428,44 @@ def process(raw: RawScan, opts: ProcessOptions,
         (c for c in planes if c != "IR"), None)
     density = -np.log10(np.clip(planes[riferimento], 1e-5, None))
 
+    r_salvato = geo_in.get("riquadro")
+    riquadro_salvato = bool(
+        opts.auto_crop and r_salvato
+        and int(geo_in.get("margine", -1)) == int(opts.crop_margin_px)
+        and bool(geo_in.get("raddrizzato")) == bool(opts.auto_straighten))
     if opts.auto_straighten:
         _t("Raddrizzamento", 0.82)
-        angle = framing.estimate_skew(density)
+        if "angolo" in geo_in:
+            angle = float(geo_in["angolo"])
+        else:
+            angle = framing.estimate_skew(density)
+        geo["angolo"] = round(float(angle), 3)
         if abs(angle) > 0.02:
             img = framing.straighten(img, angle)
-            density = framing.straighten(density, angle)
+            # la densita' serve solo a cercare i bordi: con il riquadro
+            # salvato non si gira; negativo (per lo schermo) e maschera
+            # bastano bilineari
+            if not riquadro_salvato:
+                density = framing.straighten(density, angle, order=1)
             if negativo is not None:
-                negativo = framing.straighten(negativo, angle)
+                negativo = framing.straighten(negativo, angle, order=1)
             if mask is not None:
-                mask = framing.straighten(mask.astype(np.float32), angle) > 0.5
+                mask = framing.straighten(mask.astype(np.float32), angle, order=1) > 0.5
 
     if opts.auto_crop:
         _t("Ritaglio fotogramma", 0.88)
         ew = mm_to_px(36.0, raw.meta.dpi)
         eh = mm_to_px(24.0, raw.meta.dpi)
-        box = framing.detect_frame(density, ir, ew, eh, opts.crop_margin_px)
+        r = r_salvato
+        if riquadro_salvato:
+            box = framing.FrameBox(int(r[0]), int(r[1]), int(r[2]), int(r[3]),
+                                   confidence=float(r[4]))
+        else:
+            box = framing.detect_frame(density, ir, ew, eh, opts.crop_margin_px)
+        geo["riquadro"] = [int(box.y0), int(box.x0), int(box.y1), int(box.x1),
+                           round(float(box.confidence), 3)]
+        geo["margine"] = int(opts.crop_margin_px)
+        geo["raddrizzato"] = bool(opts.auto_straighten)
         if box.confidence < 0.5:
             warnings.append(
                 "Bordi del fotogramma non individuati con certezza: usato il "
@@ -427,7 +487,23 @@ def process(raw: RawScan, opts: ProcessOptions,
 
     # --- 9. orientamento ---
     orientation = None
-    if opts.auto_rotate or opts.roll_mirror is not None:
+    specchio = bool(opts.roll_mirror is not None and opts.roll_mirror.confirmed
+                    and opts.roll_mirror.flip_h)
+    a_mano_rot = geo_in.get("rotazione")
+    salvata_rot = geo_in.get("orientamento") if opts.auto_rotate else None
+    if a_mano_rot is not None or salvata_rot is not None:
+        # scelta a mano, o rotazione automatica gia' trovata: niente stima
+        _t("Orientamento", 0.93)
+        rot = int(a_mano_rot if a_mano_rot is not None else salvata_rot) % 360
+        orientation = orient.Orientation(rot, specchio, False, 1.0,
+                                         "a mano" if a_mano_rot is not None else "salvato")
+        if not orientation.is_identity:
+            img = orient.apply_orientation(img, orientation)
+            if negativo is not None:
+                negativo = orient.apply_orientation(negativo, orientation)
+            if mask is not None:
+                mask = orient.apply_orientation(mask.astype(np.float32), orientation) > 0.5
+    elif opts.auto_rotate or opts.roll_mirror is not None:
         _t("Orientamento", 0.93)
         img, orientation = orient.auto_orient(
             img, roll_mirror=opts.roll_mirror, rotate=opts.auto_rotate,
@@ -459,10 +535,17 @@ def process(raw: RawScan, opts: ProcessOptions,
     if extra_mask is not None:
         mask = extra_mask if mask is None else (mask | extra_mask)
 
+    if a_mano_rot is not None:
+        geo["rotazione"] = int(a_mano_rot) % 360
+    if opts.auto_rotate and orientation is not None:
+        geo["orientamento"] = int(orientation.rotation)
+    geo["specchio"] = bool(orientation.flip_h) if orientation is not None else False
+
     _t("Fatto", 1.0)
     tempi.pop("inizio", None)
     return ProcessResult(img, mask, box, shifts, cov, warnings, orientation,
-                         _riduci_per_schermo(negativo), base, lineare, tempi)
+                         _riduci_per_schermo(negativo), base, lineare, tempi,
+                         geometria=geo)
 
 
 def riferimento_lin(planes: Dict[str, np.ndarray]) -> str:

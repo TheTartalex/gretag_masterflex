@@ -162,6 +162,17 @@ def estimate_skew(density: np.ndarray, max_angle: float = 2.0,
     if not HAS_SCIPY:
         return 0.0
 
+    # Su una copia ridotta (lato al massimo ~700 px): la traccia dello stacco
+    # resta netta, e 41 rotazioni di prova costano un decimo. A piena
+    # risoluzione era il passo piu' caro di tutta l'elaborazione (10 s su
+    # 14 nella prova del 7/11/2026). Un pixel ridotto su 700 di lato, a 2
+    # gradi, e' meno di un passo da 0,1 gradi.
+    passo = max(1, int(max(density.shape[:2]) // 700))
+    if passo > 1:
+        h, w = density.shape[:2]
+        h2, w2 = (h // passo) * passo, (w // passo) * passo
+        density = density[:h2, :w2].reshape(h2 // passo, passo, w2 // passo, passo).mean(axis=(1, 3))
+
     best_angle, best_score = 0.0, -1.0
     for a in np.linspace(-max_angle, max_angle, steps):
         rot = ndimage.rotate(density, a, reshape=False, order=1, mode="nearest")
@@ -171,10 +182,16 @@ def estimate_skew(density: np.ndarray, max_angle: float = 2.0,
     return best_angle
 
 
-def straighten(img: np.ndarray, angle: float) -> np.ndarray:
+def straighten(img: np.ndarray, angle: float, order: int = 3) -> np.ndarray:
     if not HAS_SCIPY or abs(angle) < 0.01:
         return img
-    return ndimage.rotate(img, angle, reshape=False, order=3, mode="nearest")
+    if img.ndim == 3:
+        # canale per canale: ndimage.rotate su (h, w, 3) ruota nel piano dei
+        # primi due assi, ma lavora su un array intero in piu' in memoria
+        return np.stack([ndimage.rotate(img[..., k], angle, reshape=False, order=order,
+                                        mode="nearest") for k in range(img.shape[2])],
+                        axis=-1).astype(img.dtype, copy=False)
+    return ndimage.rotate(img, angle, reshape=False, order=order, mode="nearest")
 
 
 # --------------------------------------------------------------------------

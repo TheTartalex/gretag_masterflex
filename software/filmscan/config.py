@@ -172,8 +172,11 @@ class AppConfig:
     # Quale ingresso digitale (diag_input) e' quale sensore. Vuoto finche' non
     # si scopre sulla macchina: allora i sensori risultano non disponibili.
     sdk_ingressi: Dict[str, int] = field(default_factory=dict)
-    # True solo dopo aver visto che ColorChannel 3 restituisce davvero l'IR.
-    sdk_ir_verificato: bool = False
+    # ColorChannel 3 restituisce l'infrarosso: visto nei collaudi della
+    # riserva (7/11/2026, finestra vuota a 1x: media 3052 su 4095). Prima era
+    # "sdk_ir_verificato", falso di serie e salvato cosi' nelle impostazioni:
+    # col nome nuovo il vecchio valore non conta piu'.
+    ir_sdk: bool = True
     # Regolazione fine massima per comando, in mm. Oltre si usa "avanza".
     max_regola_mm: float = 3.0
 
@@ -301,6 +304,28 @@ class AppConfig:
     # letture ne soffrono, qui si spegne senza toccare altro. Spenta di serie
     # finche' la riserva non la prova: acceso dava errore (31/10/2026).
     leggi_dx: bool = False
+
+    # Come si legge un fotogramma:
+    #   "canali"    un canale per volta (scan_raw), con i tempi misurati da
+    #               noi e l'infrarosso per il Digital ICE nostro (irclean)
+    #   "originale" come il programma originale: codice DX e capture, R G B
+    #               in una volta con i tempi dell'SDK; sui rulli con ICE il
+    #               Digital ICE dell'SDK (ASF). Funziona solo con il DX letto
+    #               subito prima (riserva, 7/11/2026), e il ponte lo fa da se'.
+    # Se la capture non riesce, quel fotogramma si legge un canale per volta.
+    acquisizione: str = "canali"
+
+    # --- elaboratori della rete (remoti.py, elaboratore.py) ---
+    # Altri PC o server della stessa rete che elaborano i fotogrammi al
+    # posto del PC della macchina (~23 s a fotogramma sulla riserva). Si
+    # accende dal pannello Macchina. La chiave la genera la macchina e va
+    # data agli elaboratori (dentro il pacchetto che si scarica dal pannello):
+    # sta solo nelle impostazioni, e dai registri mandati si toglie.
+    elaboratori_rete: bool = False
+    chiave_elaboratori: str = ""
+    # fotogrammi mandati in rete contemporaneamente, al massimo (uno per
+    # elaboratore in ascolto)
+    elaboratori_paralleli: int = 4
 
     # Calibra azzera i motori (Gretag Reset) "se_serve": non se lo scanner si
     # e' caricato oggi e dopo l'ultima emergenza, perche' al caricamento il

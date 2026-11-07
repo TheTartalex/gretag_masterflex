@@ -367,6 +367,51 @@ FORMATI_SCARICO = {
 }
 # Niente PNG: a 16 bit Pillow non lo scrive, e imageio sulla macchina non c'e'.
 
+# I negativi per altri programmi (Photoshop, Lightroom, Negative Lab Pro):
+# dai grezzi, anche dei rulli fatti prima di accendere "Negativo lineare"
+FORMATI_NEGATIVO = {
+    "negativo_dng": ("Negativo DNG (Photoshop con Camera Raw, Lightroom)", ".dng", "dng"),
+    "negativo_tiff": ("Negativo TIFF 16 bit (Photoshop)", ".tif", "tiff"),
+}
+
+
+def negativo_da_grezzo(npz: str, formato: str, cartella: str,
+                       geometria: Optional[dict] = None) -> str:
+    """Il negativo lineare (canali allineati, nessuna inversione) di un
+    grezzo, in DNG o TIFF a 16 bit: lo stesso file di "Negativo lineare per
+    altri programmi" (pipeline.export_negativo). Con la geometria salvata
+    del fotogramma l'allineamento non si ricalcola, e vale anche quello
+    fatto a mano; lo specchio del rullo pure."""
+    import numpy as np
+    from . import pipeline, registration
+    from .acquire import RawScan
+    raw = RawScan.load(npz)
+    piani = dict((c, pile[0].astype(np.float32)) for c, pile in raw.planes.items())
+    visibili = [c for c in ("R", "G", "B") if c in piani]
+    geo = geometria or {}
+    if len(visibili) == 3:
+        salvati = geo.get("spostamenti") or {}
+        a_mano = dict((c, tuple(v)) for c, v in (geo.get("canali") or {}).items())
+        solo = dict((c, piani[c]) for c in visibili)
+        if salvati and all(c in salvati for c in visibili):
+            piani, _ = registration.apply_shifts(
+                solo, dict((c, tuple(salvati[c])) for c in visibili), a_mano)
+        else:
+            piani, _ = registration.register_channels(solo, reference="G")
+        lineare = np.stack([np.clip(piani[c], 0.0, 1.0) for c in visibili], axis=-1)
+    else:
+        unico = next(c for c in piani if c != "IR")
+        lineare = np.repeat(np.clip(piani[unico], 0.0, 1.0)[:, :, None], 3, axis=2)
+    if geo.get("specchio"):
+        lineare = lineare[:, ::-1]
+    _, ext, fmt = FORMATI_NEGATIVO[formato]
+    dest = os.path.join(cartella, os.path.splitext(os.path.basename(npz))[0]
+                        + "_negativo" + ext)
+    meta = {"descrizione": "negativo da %s" % os.path.basename(npz),
+            "dpi": getattr(raw.meta, "dpi", 0) or 0}
+    return pipeline.export_negativo(np.ascontiguousarray(lineare, dtype=np.float32),
+                                    dest, fmt, meta=meta)
+
 
 def _leggi_per_convertire(percorso: str):
     """(immagine float 0..1 RGB, descrizione) da un file esportato, a 16 bit
@@ -429,6 +474,8 @@ def zip_ordine(arch, ordine_id: int, destinazione: str,
     o = arch.ordine(ordine_id)
     if o is None:
         raise ValueError("ordine inesistente")
+    if formato in FORMATI_NEGATIVO:
+        return _zip_negativi(arch, o, destinazione, formato)
     file = file_ordine(arch, ordine_id)
     # "selezionati": solo i fotogrammi segnati da stampare; "negativi": i
     # negativi lineari (TIFF o DNG) per chi converte con altri programmi
@@ -461,6 +508,36 @@ def zip_ordine(arch, ordine_id: int, destinazione: str,
     finally:
         if converti:
             shutil.rmtree(lavoro, ignore_errors=True)
+    return destinazione
+
+
+def _zip_negativi(arch, o, destinazione: str, formato: str) -> str:
+    """I negativi DNG o TIFF di un ordine, fatti adesso dai grezzi, con la
+    geometria salvata di ogni fotogramma (geometria.py)."""
+    from . import geometria
+    lavoro = destinazione + ".conversione"
+    os.makedirs(lavoro, exist_ok=True)
+    fatti = 0
+    try:
+        with zipfile.ZipFile(destinazione, "w", zipfile.ZIP_STORED, allowZip64=True) as z:
+            for rullo in arch.rulli(o.id):
+                for f in arch.fotogrammi(rullo.id):
+                    npz = f.get("file_raw") or ""
+                    if not npz or not os.path.isfile(npz) or f.get("stato") == "vuoto":
+                        continue
+                    geo = geometria.leggi(os.path.dirname(npz), rullo.id, int(f["numero"]))
+                    nuovo = negativo_da_grezzo(npz, formato, lavoro, geo)
+                    z.write(nuovo, os.path.join(o.codice, os.path.basename(nuovo)))
+                    os.remove(nuovo)
+                    fatti += 1
+    finally:
+        shutil.rmtree(lavoro, ignore_errors=True)
+    if not fatti:
+        try:
+            os.remove(destinazione)
+        except OSError:
+            pass
+        raise ValueError("questo ordine non ha grezzi sul disco: i negativi si fanno dai grezzi")
     return destinazione
 
 

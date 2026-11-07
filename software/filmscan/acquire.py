@@ -11,6 +11,7 @@ nella macchina.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 from dataclasses import dataclass, asdict
@@ -18,8 +19,10 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
-from .hal import ScannerBackend, CHANNELS
+from .hal import ScannerBackend, ScannerError, CHANNELS
 from .config import AppConfig, ScanPreset, FilmFormat, mm_to_px
+
+_registro = logging.getLogger("filmscan.acquisizione")
 
 
 Progress = Optional[Callable[[str, float], None]]
@@ -444,6 +447,31 @@ def scan_frame(backend: ScannerBackend, cfg: AppConfig, preset: ScanPreset,
         delta = start_mm - backend.status().position_mm
         if abs(delta) > 1e-9:
             backend.advance(delta)
+
+    # Il percorso del programma originale (cfg.acquisizione "originale"):
+    # codice DX e capture, R G B in una volta; con l'IR chiesto (rullo con
+    # ICE) il Digital ICE lo fa l'SDK e l'infrarosso non arriva. I dati sono
+    # gia' corretti dall'SDK (calibrate_all): niente nero e bianco nostri,
+    # solo la scala a 12 bit. Se la capture non riesce, un canale per volta.
+    originale = getattr(backend, "cattura_originale", None)
+    if (originale is not None and getattr(cfg, "acquisizione", "") == "originale"
+            and [c for c in channels if c != "IR"] == ["R", "G", "B"]):
+        _controlla(annulla)
+        asf = "IR" in channels
+        try:
+            piani = originale(asf)
+        except ScannerError as exc:
+            _registro.warning("capture non riuscita (%s): un canale per volta", exc)
+            piani = None
+        if piani is not None:
+            scan.meta.channels = ["R", "G", "B"]
+            scan.meta.channel_exposure = {}
+            scan.meta.operator_note = ("capture con Digital ICE dell'SDK" if asf
+                                       else "capture")
+            for ch in ("R", "G", "B"):
+                scan.add(ch, np.clip(piani[ch].astype(np.float32) / 4095.0, 0.0, 1.5))
+            _tick(progress, "Capture RGB%s" % (" con Digital ICE" if asf else ""), 1.0)
+            return scan
 
     # Strada veloce: R, G e B (e IR) in una lettura sola, ognuno col suo
     # tempo, se la macchina lo sa fare e il preset non chiede ripetizioni o

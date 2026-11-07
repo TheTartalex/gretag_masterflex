@@ -46,7 +46,7 @@ from typing import Dict, List, Optional
 from urllib.parse import parse_qs, urlparse
 
 from . import compat
-from . import bianconero, consegne, pellicole_dx, registri
+from . import bianconero, consegne, pellicole_dx, registri, remoti
 from .config import AppConfig, FORMATS, PRESETS
 from .invert import PROFILES
 from .orders import Archivio
@@ -633,7 +633,7 @@ function apri(id){
        '</div>'+
        '<div class="g2" style="margin-top:8px">'+
        '<button class="sec"'+(ri.n_selezionati?'':' disabled')+' onclick="scegliFormato('+o.id+',\'selezionati\',this)">Scarica le foto da stampare ('+(ri.n_selezionati||0)+')</button>'+
-       '<button class="sec"'+(ri.n_negativi?'':' disabled')+' onclick="location.href=url(\'/api/archivio/zip?cosa=negativi&id='+o.id+'\')">Scarica i negativi lineari ('+(ri.n_negativi||0)+')</button>'+
+       '<button class="sec"'+((ri.n_negativi||ri.n_grezzi)?'':' disabled')+' onclick="scegliFormato('+o.id+',\'negativi\',this)">Scarica i negativi (Photoshop, Lightroom)</button>'+
        '</div>'+
        '<div class="g2" style="margin-top:8px">'+
        '<button class="sec"'+cf+' onclick="window.open(url(\'/api/archivio/provino.jpg?id='+o.id+'\'),\'_blank\')">Vedi il provino</button>'+
@@ -709,13 +709,20 @@ function apri(id){
    conversione si fa sul momento, un file per volta (TIFF a 16 bit su un PC
    del 2009: qualche secondo a foto). */
 var FORMATI = <!--FORMATI-->;
+/* i negativi per Photoshop e Lightroom, fatti dai grezzi; poi quelli gia'
+   salvati a ogni fotogramma ("originale" = come sono) */
+var FORMATI_NEG = <!--FORMATI_NEG-->;
 function scegliFormato(oid, cosa, tasto){
   var vecchio=el('lista_formati'); if(vecchio){ vecchio.remove(); if(vecchio.dataset.per===cosa) return; }
   var box=document.createElement('div');
   box.id='lista_formati'; box.dataset.per=cosa; box.className='pannello';
   box.style.cssText='margin-top:8px;padding:10px';
   box.innerHTML='<div class="nota" style="margin:0 0 6px">In che formato?</div>';
-  FORMATI.forEach(function(f){
+  var lista = cosa==='negativi'
+    ? FORMATI_NEG.concat((RIEP.n_negativi||0) ? [['originale','Negativi gia\' salvati ('+RIEP.n_negativi+')']] : [])
+    : FORMATI;
+  if(cosa==='negativi') box.firstChild.textContent='In che formato? (fatti adesso dai grezzi: qualche secondo a fotogramma)';
+  lista.forEach(function(f){
     var b=document.createElement('button'); b.className='sec'; b.textContent=f[1];
     b.style.cssText='display:block;width:100%;margin:4px 0';
     b.onclick=function(){
@@ -1165,6 +1172,10 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .barra-fot button{width:auto;padding:9px 13px}
 .barra-fot button.on{border-color:var(--acc);color:var(--acc)}
 .barra-fot span{font-size:12px;color:var(--dim)}
+/* rotazione e canali a mano, sopra la barra del fotogramma */
+#barra_geo{bottom:62px}
+#barra_geo button{padding:7px 10px;min-width:38px}
+#barra_geo select{width:auto;padding:6px}
 
 /* --- la barra dei comandi principali: sempre visibile, tasti grandi --- */
 .comandi{flex:0 0 auto;display:flex;gap:8px;align-items:center;
@@ -1559,6 +1570,20 @@ details.sez>div{padding-bottom:10px}
     <b>log</b> del software; lo zip resta anche in log\da-mandare.</div>
   </section>
   <section class="pannello">
+   <h2>Elaboratori in rete</h2>
+   <label><input type="checkbox" id="el_attivi" style="width:auto" onchange="elaboratori({attivi:this.checked})"> Elabora sugli altri PC della rete</label>
+   <div class="nota-imp">Un PC Windows o un server della stessa rete fa l'elaborazione al posto
+    di questo PC (qui ~23 s a fotogramma). Se si spegne o non risponde, il fotogramma lo rifà la
+    macchina: non se ne perde nessuno. Per collegarne uno: scaricare il pacchetto qui sotto
+    <b>da quel PC</b> (aprendo questa pagina dal suo browser), estrarlo e fare doppio clic su
+    ELABORATORE.bat. Sul server: <code>python3 elaboratore.py</code> nella stessa cartella.</div>
+   <div class="nota-imp" id="el_stato">Spento.</div>
+   <div class="row">
+    <button class="sec" id="el_kit" onclick="location.href=url('/api/elaboratori/kit.zip')" disabled>Scarica il pacchetto per l'elaboratore</button>
+    <button class="ghost" style="width:auto" onclick="if(confirm('Nuova chiave? Gli elaboratori collegati vanno ricollegati con il pacchetto nuovo.')) elaboratori({nuova_chiave:true})">Nuova chiave</button>
+   </div>
+  </section>
+  <section class="pannello">
    <h2>Impostazioni macchina</h2>
    <label><input type="checkbox" id="imp_esposizione_auto" style="width:auto" onchange="impostaMacchina()"> Esposizione automatica</label>
    <div class="nota-imp">Tempi di esposizione calibrati dalla macchina (li aggiorna Calibra) e misura per canale a inizio rullo. Spenta: tempi di fabbrica, uguali per tutti i canali. Cambiandola va rifatta la calibrazione.</div>
@@ -1576,6 +1601,12 @@ details.sez>div{padding-bottom:10px}
     <option value="spento">spento</option>
    </select>
    <div class="nota-imp">Sul primo fotogramma di ogni striscia, e col tasto Fuoco. Se il fuoco non si trova, la lente torna alla posizione nominale.</div>
+   <label>Acquisizione</label>
+   <select id="imp_acquisizione" onchange="impostaMacchina()">
+    <option value="canali">Un canale per volta, Digital ICE nostro dall'infrarosso</option>
+    <option value="originale">Come il programma originale (capture), Digital ICE dell'SDK</option>
+   </select>
+   <div class="nota-imp">Come il programma originale: codice DX e capture, R G B in una volta con i tempi dell'SDK; sui rulli con ICE la pulizia la fa l'SDK. Se la capture non riesce, quel fotogramma si legge un canale per volta.</div>
    <label>Negativo lineare per altri programmi</label>
    <select id="imp_negativo_lineare" onchange="impostaMacchina()">
     <option value="">no</option>
@@ -1680,8 +1711,25 @@ details.sez>div{padding-bottom:10px}
    <button class="sec" id="bf_scarta" onclick="vota(-1)">Scarta</button>
    <button class="sec" onclick="salvaFotogramma()" title="Riesporta questo fotogramma con le regolazioni di adesso">Salva</button>
    <button class="sec" onclick="applicaRullo()" title="Le regolazioni di adesso su tutti i fotogrammi del rullo">Applica al rullo</button>
+   <button class="sec" id="bf_completa" style="display:none" onclick="completaRullo()" title="Elabora solo i fotogrammi del rullo rimasti da elaborare">Completa</button>
+   <button class="sec" id="bf_geo" onclick="barraGeo()" title="Girare il fotogramma o allineare a mano i canali">Ruota e canali</button>
    <button class="sec" onclick="inviaCampione()" title="Solo pellicole di prova: grezzo e foto vanno a chi segue la macchina, per capire colore ed esposizione">Invia per l'analisi</button>
    <button class="ghost" onclick="chiudiFotogramma()">Chiudi</button>
+  </div>
+  <div class="barra-fot" id="barra_geo" style="display:none">
+   <button class="sec" onclick="ruota(1)" title="Gira di 90 gradi in senso antiorario">&#10226;</button>
+   <button class="sec" onclick="ruota(-1)" title="Gira di 90 gradi in senso orario">&#10227;</button>
+   <button class="sec" onclick="ruota(2)" title="Capovolge (180 gradi)">180&deg;</button>
+   <span>Canale</span>
+   <select id="geo_canale"><option value="R">Rosso</option><option value="B">Blu</option></select>
+   <select id="geo_passo" title="Di quanto si sposta a ogni tocco"><option value="0.25">&frac14; px</option><option value="0.5" selected>&frac12; px</option><option value="1">1 px</option><option value="2">2 px</option></select>
+   <button class="sec" onclick="sposta(0,-1)" title="Sinistra">&larr;</button>
+   <button class="sec" onclick="sposta(-1,0)" title="Su">&uarr;</button>
+   <button class="sec" onclick="sposta(1,0)" title="Giu'">&darr;</button>
+   <button class="sec" onclick="sposta(0,1)" title="Destra">&rarr;</button>
+   <button class="ghost" onclick="geoComando('/api/fotogramma/canali_azzera',{})" title="Toglie gli spostamenti fatti a mano">Azzera</button>
+   <button class="ghost" onclick="rifaiGeometria()" title="Rifa' da capo allineamento, raddrizzamento, ritaglio e orientamento">Ricalcola</button>
+   <span id="geo_info"></span>
   </div>
  </div>
 
@@ -1956,14 +2004,21 @@ function apriFotogramma(x){
   fotoAperto=x; mostraBarraFot();
   /* a lavoro in corso (rullo che finisce di elaborare): solo guardarlo, dal
      file gia' esportato; per correggerlo si ritocca a lavoro finito */
-  if(ultimoJob && ultimoJob.running){
+  function mostra(poi){
     post('/api/fotogramma/mostra',{id:x.id}).then(function(r){
       if(r && r.mostrato){ hoAnteprima=true; aggiornaImmagini(true); }
-      else if(r && r.messaggio) el('msg').textContent=r.messaggio;
+      if(r && r.messaggio) el('msg').textContent=r.messaggio;
+      if(poi) poi();
     });
+  }
+  if(ultimoJob && ultimoJob.running){ mostra(null); return; }
+  if(x.stato==='vuoto' || !x.file_raw) return;
+  /* non elaborato (elaborazione fermata): subito l'anteprima della
+     scansione, intanto si riapre dal grezzo */
+  if(x.stato==='da_elaborare' || x.stato==='errore'){
+    mostra(function(){ post('/api/fotogramma/apri',{id:x.id}).then(esito); });
     return;
   }
-  if(x.stato==='vuoto' || !x.file_raw) return;
   post('/api/fotogramma/apri',{id:x.id}).then(esito);
 }
 function inviaCampione(){
@@ -1981,6 +2036,50 @@ function mostraBarraFot(){
   el('bf_info').textContent='Fotogramma '+fotoAperto.numero;
   el('bf_stampa').classList.toggle('on',(fotoAperto.voto||0)>0);
   el('bf_scarta').classList.toggle('on',(fotoAperto.voto||0)<0);
+  el('bf_completa').style.display =
+    (fotoAperto.stato==='da_elaborare' || fotoAperto.stato==='errore') ? '' : 'none';
+}
+function completaRullo(){
+  if(!fotoAperto) return;
+  post('/api/rullo/applica',{rullo_id:fotoAperto.rullo_id, solo_mancanti:true}).then(esito);
+}
+/* ---------- rotazione e canali a mano ----------
+   Si fanno sul fotogramma aperto e si vedono subito; nel file entrano con
+   Salva. La geometria trovata la prima volta (allineamento, raddrizzamento,
+   ritaglio, orientamento) si riusa a ogni riapertura: Ricalcola la rifa'. */
+function barraGeo(forza){
+  var b=el('barra_geo');
+  var on = forza!==undefined ? forza : b.style.display==='none';
+  b.style.display = (on && fotoAperto) ? 'flex' : 'none';
+  el('bf_geo').classList.toggle('on', b.style.display!=='none');
+  if(b.style.display!=='none') get('/api/fotogramma/geometria').then(infoGeo);
+}
+function infoGeo(r){
+  if(!r || r.errore){ if(r && r.errore) el('geo_info').textContent=r.errore; return; }
+  var t=(r.rotazione?('ruotato '+r.rotazione+'\u00b0'):'');
+  var c=r.canali||{};
+  ['R','B'].forEach(function(k){ if(c[k]) t+=(t?' \u00b7 ':'')+k+' '+c[k][0]+','+c[k][1]+' px'; });
+  el('geo_info').textContent=t;
+}
+var geoInCorso=false;
+function geoComando(percorso, dati){
+  if(geoInCorso) return;
+  geoInCorso=true;
+  post(percorso, dati).then(function(r){
+    geoInCorso=false;
+    if(r && r.errore){ el('geo_info').textContent=r.errore; return; }
+    infoGeo(r); hoAnteprima=true; aggiornaImmagini(true);
+    if(r && r.messaggio) el('msg').textContent=r.messaggio;
+  }).catch(function(){ geoInCorso=false; });
+}
+function ruota(passi){ geoComando('/api/fotogramma/ruota',{passi:passi}); }
+function sposta(dy,dx){
+  var p=parseFloat(val('geo_passo'))||0.5;
+  geoComando('/api/fotogramma/canale',{canale:val('geo_canale'), dy:dy*p, dx:dx*p});
+}
+function rifaiGeometria(){
+  if(!confirm('Ricalcolo da capo allineamento dei canali, raddrizzamento, ritaglio e orientamento? Le scelte fatte a mano si perdono.')) return;
+  post('/api/fotogramma/rifai_geometria',{cosa:'tutto'}).then(esito);
 }
 function vota(v){
   if(!fotoAperto) return;
@@ -1995,7 +2094,7 @@ function applicaRullo(){
   if(!confirm('Le regolazioni di adesso su TUTTI i fotogrammi di questo rullo? I file esportati vengono riscritti (i grezzi restano).')) return;
   post('/api/rullo/applica',{rullo_id:fotoAperto.rullo_id}).then(esito);
 }
-function chiudiFotogramma(){ fotoAperto=null; provSel=null; mostraBarraFot(); caricaStriscia(); }
+function chiudiFotogramma(){ fotoAperto=null; provSel=null; mostraBarraFot(); barraGeo(false); caricaStriscia(); }
 
 /* ---------- comandi ---------- */
 var wbGuadagni=null;          /* guadagni dal campionamento neutro */
@@ -2156,6 +2255,29 @@ function muovi(mm){ post('/api/muovi',{mm:mm}).then(mostraStato); }
 /* Le impostazioni della macchina: le spunte seguono lo stato del server
    finche' nessuno le tocca, poi si salvano al cambio. */
 var IMP=['esposizione_auto','pressore_auto','avanzamento_automatico','leggi_dx'];
+function elaboratori(d){
+  post('/api/elaboratori/imposta', d).then(function(r){
+    if(r && r.errore){ el('el_stato').textContent=r.errore; return; }
+    mostraElaboratori(r);
+  });
+}
+function mostraElaboratori(e){
+  if(!e) return;
+  var c=el('el_attivi'); if(c && document.activeElement!==c) c.checked=!!e.attivi;
+  el('el_kit').disabled=!e.chiave;
+  var t;
+  if(!e.attivi) t='Spento: elabora solo questo PC.';
+  else {
+    var vivi=(e.elaboratori||[]).filter(function(x){ return x.collegato; });
+    t='Chiave '+e.chiave+'. ';
+    t+= vivi.length ? ('Collegati: '+vivi.map(function(x){
+          return x.nome+' ('+x.ip+(x.fatti?', '+x.fatti+' fatti, '+x.media_s+' s l\'uno':'')+
+                 (x.errori?', '+x.errori+' errori':'')+')'; }).join(', ')+'.')
+        : 'Nessun elaboratore collegato: elabora questo PC.';
+    if(e.in_lavorazione) t+=' In lavorazione in rete: '+e.in_lavorazione+'.';
+  }
+  el('el_stato').textContent=t;
+}
 function remotoInvia(){
   el('remoto_stato').textContent='Invio dei registri in corso...';
   post('/api/remoto/invia',{}).then(function(r){
@@ -2192,7 +2314,8 @@ function riavviaTutto(){
   });
 }
 function impostaMacchina(){
-  var d={autofocus:val('imp_autofocus'), negativo_lineare:val('imp_negativo_lineare')};
+  var d={autofocus:val('imp_autofocus'), negativo_lineare:val('imp_negativo_lineare'),
+         acquisizione:val('imp_acquisizione')};
   IMP.forEach(function(k){ d[k]=el('imp_'+k).checked; });
   post('/api/macchina/impostazioni',d).then(function(r){
     if(r && r.errore){ alert(r.errore); }
@@ -2392,7 +2515,8 @@ function mostraStato(s){
   if(ultimoJob && ultimoJob.running && s.job && !s.job.running && s.job.non_elaborati){
     setTimeout(function(){ alert('Rullo chiuso con '+s.job.non_elaborati+
       ' fotogrammi NON elaborati.\nI grezzi sono salvati: aprire un fotogramma del '+
-      'rullo e premere "Applica al rullo" per elaborarli.'); }, 50);
+      'rullo (si vede l\'anteprima della scansione) e premere "Completa" per '+
+      'elaborare solo quelli.'); }, 50);
   }
   ultimoJob = s.job || null;
   if(dirOn && s.job && s.job.running) diretta(false);
@@ -2402,8 +2526,11 @@ function mostraStato(s){
       var c=el('imp_'+k);
       if(c && document.activeElement!==c) c.checked=!!s.impostazioni_macchina[k];
     });
+    var aq=el('imp_acquisizione');
+    if(aq && document.activeElement!==aq) aq.value=s.impostazioni_macchina.acquisizione||'canali';
     var af=el('imp_autofocus');
     if(af && document.activeElement!==af) af.value=s.impostazioni_macchina.autofocus;
+    if(s.elaboratori) mostraElaboratori(s.elaboratori);
     var rs=el('remoto_stato'), rm=s.remoto||{};
     if(rs){
       var c=rm.controllo||{}, t;
@@ -2623,6 +2750,8 @@ PAGINA = PAGINA.replace("<!--VIRAGGI-->", "".join(
 PAGINA_ARCHIVIO = _vesti(PAGINA_ARCHIVIO)
 PAGINA_ARCHIVIO = PAGINA_ARCHIVIO.replace("<!--FORMATI-->", json.dumps(
     [[k, v[0]] for k, v in consegne.FORMATI_SCARICO.items()]))
+PAGINA_ARCHIVIO = PAGINA_ARCHIVIO.replace("<!--FORMATI_NEG-->", json.dumps(
+    [[k, v[0]] for k, v in consegne.FORMATI_NEGATIVO.items()]))
 PAGINA_PIN = _vesti(PAGINA_PIN)
 
 
@@ -2727,10 +2856,93 @@ class Handler(BaseHTTPRequestHandler):
 
     # ---- GET ----
 
+    def _binario(self, data: bytes, tipo: str = "application/octet-stream",
+                 intestazioni: Optional[Dict[str, str]] = None, code: int = 200) -> None:
+        try:
+            self.send_response(code)
+            self.send_header("Content-Type", tipo)
+            self.send_header("Content-Length", str(len(data)))
+            for k, v in (intestazioni or {}).items():
+                self.send_header(k, v)
+            self.end_headers()
+            self.wfile.write(data)
+        except (ConnectionError, OSError):
+            pass
+
+    def _elaboratore(self, u, q) -> None:
+        """Le chiamate degli elaboratori della rete (elaboratore.py): non
+        passano dal PIN delle postazioni ma dalla chiave degli elaboratori,
+        nell'intestazione X-Chiave. "ciao" risponde senza chiave, ma con la
+        prova di conoscerla (remoti.prova_chiave): e' cosi' che un
+        elaboratore trova la macchina nella rete e sa che e' quella giusta
+        prima di scaricarne il codice."""
+        s = self.servizio
+        el = s.elaboratori
+        ip = self.client_address[0]
+        attivi = bool(s.cfg.elaboratori_rete and el.chiave)
+        if u.path == "/api/elaboratore/ciao":
+            if not attivi:
+                return self._json({"servizio": "filmscan-elaborazione", "attivo": False}, 503)
+            sfida = q.get("sfida", [""])[0][:64]
+            return self._json({"servizio": "filmscan-elaborazione", "attivo": True,
+                               "macchina": socket.gethostname(),
+                               "prova": remoti.prova_chiave(el.chiave, sfida)})
+        if not attivi or not el.chiave_ok(self.headers.get("X-Chiave", "")):
+            return self._json({"errore": "elaboratori spenti o chiave errata"}, 403)
+        nome = "".join(c for c in (self.headers.get("X-Nome") or ip)
+                       if c.isalnum() or c in "-_.")[:40] or ip
+        if u.path == "/api/elaboratore/codice.zip":
+            dati, versione = remoti.codice_zip(registri.SOFTWARE)
+            return self._binario(dati, "application/zip", {"X-Versione": versione})
+        if u.path == "/api/elaboratore/prossimo":
+            _, versione = remoti.codice_zip(registri.SOFTWARE)
+            if self.headers.get("X-Versione", "") != versione:
+                el.vivo(nome, ip)
+                return self._json({"aggiorna": versione}, 409)
+            preso = el.prendi(nome, ip, attesa=20.0)
+            if preso is None:
+                return self._binario(b"", code=204)
+            ident, pacco = preso
+            return self._binario(pacco, intestazioni={"X-Lavoro": ident})
+        if u.path == "/api/elaboratore/vivo":
+            el.vivo(nome, ip)
+            return self._json({"ok": True})
+        if u.path == "/api/elaboratore/risultato":
+            n = int(self.headers.get("Content-Length") or 0)
+            if n > 512 * 1024 * 1024:
+                return self._json({"errore": "risultato troppo grande"}, 413)
+            dati = self.rfile.read(n) if n else b""
+            errore = (self.headers.get("X-Errore") or "")[:300]
+            preso = el.consegna(q.get("id", [""])[0], nome,
+                                None if errore else dati, errore or "")
+            return self._json({"preso": preso})
+        return self._json({"errore": "sconosciuto"}, 404)
+
+    def _kit_elaboratore(self) -> bytes:
+        """Il pacchetto da portare sul PC o sul server che elabora: lo
+        script, il .bat per Windows, l'indirizzo della macchina come lo vede
+        chi l'ha scaricato e la chiave. Si scarica dal pannello Macchina."""
+        import io
+        import zipfile
+        s = self.servizio
+        sw = registri.SOFTWARE
+        host = self.headers.get("Host") or ""
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+            for n in ("elaboratore.py", "ELABORATORE.bat"):
+                z.write(os.path.join(sw, n), "elaboratore/" + n)
+            z.writestr("elaboratore/elaboratore.json", json.dumps({
+                "macchina": ("http://" + host) if host else "",
+                "chiave": s.cfg.chiave_elaboratori}, indent=1))
+            z.writestr("elaboratore/LEGGIMI.txt", remoti.LEGGIMI_KIT)
+        return buf.getvalue()
+
     def do_GET(self) -> None:
         u = urlparse(self.path)
         q = parse_qs(u.query)
         s = self.servizio
+        if u.path.startswith("/api/elaboratore/"):
+            return self._elaboratore(u, q)
 
         if u.path == "/":
             # Senza PIN valido non si serve l'interfaccia ma la richiesta del
@@ -2980,6 +3192,18 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"errore": str(exc)}, 400)
             return self._scarica(dest, tipo="application/zip")
 
+        if u.path == "/api/fotogramma/geometria":
+            return self._json(s.geometria_aperta())
+
+        if u.path == "/api/elaboratori/stato":
+            return self._json(s.stato_elaboratori())
+
+        if u.path == "/api/elaboratori/kit.zip":
+            if not s.cfg.chiave_elaboratori:
+                return self._json({"errore": "accendere prima gli elaboratori"}, 409)
+            return self._binario(self._kit_elaboratore(), "application/zip",
+                                 {"Content-Disposition": 'attachment; filename="elaboratore.zip"'})
+
         if u.path == "/api/registri.zip":
             # tutto quello che serve per capire un problema, in uno zip
             percorso = registri.raccogli(
@@ -3069,6 +3293,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         u = urlparse(self.path)
         q = parse_qs(u.query)
+        if u.path.startswith("/api/elaboratore/"):
+            return self._elaboratore(u, q)
         if not self._autorizzato(q):
             return self._json({"errore": "token mancante o errato"}, 403)
 
@@ -3171,8 +3397,34 @@ class Handler(BaseHTTPRequestHandler):
 
             if u.path == "/api/rullo/applica":
                 rid = d.get("rullo_id")
-                s.applica_rullo(int(rid) if rid else None)
+                s.applica_rullo(int(rid) if rid else None,
+                                solo_mancanti=bool(d.get("solo_mancanti")))
                 return self._json({"avviato": True})
+
+            # --- rotazione e canali a mano sul fotogramma aperto ---
+            if u.path == "/api/fotogramma/ruota":
+                return self._json(s.ruota(int(d.get("passi") or 0)))
+            if u.path == "/api/fotogramma/canale":
+                return self._json(s.sposta_canale(str(d.get("canale") or ""),
+                                                  float(d.get("dy") or 0),
+                                                  float(d.get("dx") or 0)))
+            if u.path == "/api/fotogramma/canali_azzera":
+                return self._json(s.azzera_canali())
+            if u.path == "/api/fotogramma/rifai_geometria":
+                s.rifai_geometria(str(d.get("cosa") or "tutto"))
+                return self._json({"avviato": True})
+
+            # --- elaboratori della rete ---
+            if u.path == "/api/elaboratori/imposta":
+                stato = s.imposta_elaboratori(
+                    attivi=(bool(d["attivi"]) if "attivi" in d else None),
+                    nuova_chiave=bool(d.get("nuova_chiave")))
+                if self.impostazioni:
+                    try:
+                        s.cfg.save(self.impostazioni)
+                    except (IOError, OSError) as exc:
+                        s.log("Impostazioni non salvate: %s" % exc)
+                return self._json(stato)
 
             if u.path == "/api/fuoco":
                 return self._json(s.fuoco(float(d.get("mm", 0))))

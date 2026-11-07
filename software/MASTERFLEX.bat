@@ -7,7 +7,7 @@ REM  avvio automatico, collaudi, diagnosi...).
 REM  Da riga di comando o dall'avvio automatico, senza menu:
 REM
 REM     MASTERFLEX.bat avvia [si]           completo, macchina vera ("si" salta la conferma)
-REM     MASTERFLEX.bat avvia-senza-motori   completo, motori bloccati
+REM     MASTERFLEX.bat avvia-senza-motori   completo, motori fermi (solo per prove)
 REM     MASTERFLEX.bat simulazione          nessuna macchina
 REM     MASTERFLEX.bat osservatore          man in the middle (programma originale)
 REM     MASTERFLEX.bat automatico           l'ultimo modo usato, senza domande
@@ -39,7 +39,7 @@ call :trova_python
 
 REM  L'ultimo modo di lavoro usato: Invio nel menu riparte con quello, ed e'
 REM  quello dell'avvio automatico.
-set "MODO_ULTIMO=avvia-senza-motori"
+set "MODO_ULTIMO=avvia"
 if defined PY for /f "usebackq delims=" %%m in (`call "%PY%" manutenzione.py modo`) do set "MODO_ULTIMO=%%m"
 
 if not "%~1"=="" (
@@ -57,7 +57,7 @@ if defined PY (echo    Python: !PY!) else (echo    Python 3.8 a 32 bit: NON TROV
 echo.
 echo    AVVIO   ^(Invio = l'ultimo usato: !MODO_ULTIMO!^)
 echo     1  Completo - macchina vera ^(chiude il programma originale^)
-echo     2  Completo - motori BLOCCATI, solo acquisizione ^(idem^)
+echo     2  Completo - motori fermi, solo letture ^(per prove^)
 echo     3  Simulazione ^(nessuna macchina^)
 echo    14  Man in the middle - programma originale + osservatore:
 echo        non chiude niente e non avvia l'agente
@@ -133,6 +133,8 @@ if /i "%~1"=="disinstalla"       goto :disinstalla
 if /i "%~1"=="firmware"          goto :firmware
 if /i "%~1"=="osservatore"       goto :osservatore
 if /i "%~1"=="automatico"        goto :automatico
+if /i "%~1"=="tiff"              goto :grezzo_tiff
+if /i "%~1"=="elaboratore"       goto :elaboratore
 echo  Azione sconosciuta: %~1
 exit /b 1
 
@@ -151,19 +153,6 @@ if /i "%MODO%"=="avvia-senza-motori" set "OPZ=--senza-motori"
 if /i "%MODO%"=="simulazione" (
     set "OPZ=--simula"
     set "CARTELLA=C:\MasterflexD\ponte-prova"
-)
-if /i "%MODO%"=="avvia" (
-    echo.
-    echo  ATTENZIONE - problema aperto al 26/10/2026: all'avvio i motori delle
-    echo  guide sono andati a fine corsa continuando a spingere. Prima della
-    echo  prova con i motori attivi: percorso pellicola VUOTO e mano
-    echo  sull'interruttore. Vedi documentazione\stato.md.
-    echo.
-    if not "%~2"=="si" (
-        set "OK="
-        set /p "OK=  Scrivere SI per avviare con i motori attivi: "
-        if /i not "!OK!"=="SI" exit /b 1
-    )
 )
 if not exist "%CARTELLA%" mkdir "%CARTELLA%" 2>nul
 "%PY%" manutenzione.py modo %MODO% >nul 2>&1
@@ -210,6 +199,28 @@ if exist "%~dp0MASTERFLEX.bat.nuovo" (
     pause
     exit
 )
+exit /b 0
+
+
+REM ===========================================================================
+:grezzo_tiff
+REM  I grezzi .npz trascinati su "GREZZO IN TIFF.bat" diventano TIFF a 16 bit
+REM  accanto all'originale (grezzo_in_tiff.py).
+REM ===========================================================================
+shift
+if "%~1"=="" (
+    echo  Trascinare uno o piu' file .npz sopra "GREZZO IN TIFF.bat".
+    pause
+    exit /b 1
+)
+:grezzo_tiff_giro
+if "%~1"=="" goto :grezzo_tiff_fine
+"%PY%" grezzo_in_tiff.py "%~1"
+shift
+goto :grezzo_tiff_giro
+:grezzo_tiff_fine
+echo.
+pause
 exit /b 0
 
 
@@ -555,9 +566,8 @@ REM  l'amministratore una volta, adesso. Parte sempre con l'ultimo modo usato:
 REM  qui si sceglie quello di partenza.
 "%PY%" manutenzione.py avvio stato
 echo.
-echo    1  attiva - completo, motori BLOCCATI ^(consigliato finche' il
-echo       problema delle guide non e' chiuso^)
-echo    2  attiva - completo, motori attivi
+echo    1  attiva - completo, motori attivi
+echo    2  attiva - completo, motori fermi ^(solo per prove^)
 echo    3  attiva - man in the middle ^(programma originale + osservatore^)
 echo    4  attiva - simulazione
 echo    5  prova adesso, come all'accensione ^(senza riavviare^)
@@ -566,8 +576,8 @@ echo    0  indietro
 set "A="
 set /p "A=  Scelta: "
 set "M="
-if "%A%"=="1" set "M=avvia-senza-motori"
-if "%A%"=="2" set "M=avvia"
+if "%A%"=="1" set "M=avvia"
+if "%A%"=="2" set "M=avvia-senza-motori"
 if "%A%"=="3" set "M=osservatore"
 if "%A%"=="4" set "M=simulazione"
 if defined M (

@@ -1013,6 +1013,20 @@ class PonteSdkBackend(ScannerBackend):
             return None
         return d
 
+    def cattura_originale(self, asf: bool = False) -> Dict[str, np.ndarray]:
+        """R, G, B con la capture del programma originale (comando "cattura"
+        dell'agente, che legge prima il codice DX: senza, la capture non
+        parte). asf = Digital ICE dell'SDK. Piani a 12 bit, uno dopo
+        l'altro nel file (sdk.cattura)."""
+        nome = self._send("cattura_%d_%d" % (self.risoluzione, 1 if asf else 0),
+                          attesa=self.ATTESA_ACQUISIZIONE)
+        dati, w, h, piani = self._leggi_piani(nome)
+        if piani != 3 or dati.size != w * h * 3:
+            raise ScannerError("capture: file di %d campioni, attesi %d" % (dati.size, w * h * 3))
+        p = dati.reshape(3, h, w)
+        self.ultima_esposizione = None
+        return {"R": p[0], "G": p[1], "B": p[2]}
+
     def capture_frame(self, canali: List[str],
                       esposizioni: Dict[str, float]) -> Optional[Dict[str, np.ndarray]]:
         """R, G e B in una lettura sola (grabm), ognuno col suo tempo.
@@ -1224,7 +1238,7 @@ def make_backend(cfg) -> ScannerBackend:
                                risoluzione=getattr(cfg, "sdk_resolution", 0),
                                passo_mm=cfg.transport_step_mm,
                                ingressi=getattr(cfg, "sdk_ingressi", None),
-                               ir=getattr(cfg, "sdk_ir_verificato", False),
+                               ir=getattr(cfg, "ir_sdk", True),
                                max_regola_mm=getattr(cfg, "max_regola_mm", 3.0))
     if cfg.driver == "originale":
         if not cfg.bridge_path:

@@ -194,10 +194,10 @@ class Banco(object):
         'informativo': il rifiuto e' una risposta che si vuole conoscere
         (tetto d'esposizione, comandi senza pellicola), non un guasto."""
         for k in range(tentativi):
-            t0 = time.time()
+            t0 = time.monotonic()
             try:
                 valore = fn()
-                dt = time.time() - t0
+                dt = time.monotonic() - t0
                 breve = valore if isinstance(valore, (int, float, str, bool)) or valore is None \
                     else json.dumps(valore, default=str)[:300]
                 self.r("  [ok] %-44s %5.1f s  %s" % (nome, dt, "" if breve is None else breve))
@@ -207,7 +207,7 @@ class Banco(object):
             except Emergenza:
                 raise
             except Exception as exc:                    # noqa: BLE001
-                dt = time.time() - t0
+                dt = time.monotonic() - t0
                 testo = str(exc).replace("\n", " ")
                 self.r("  [!!] %-44s %5.1f s  %s" % (nome, dt, testo[:400]))
                 self.r.dati["passi"].append({"passo": nome, "esito": "errore", "secondi": round(dt, 2),
@@ -439,6 +439,161 @@ def senza_pellicola(a) -> int:
     # La lettura unica (scan_raw canale 4) non si prova piu': sulla riserva
     # (7/11/2026) blocca l'SDK per 60 s e poi la testa rifiuta ogni lettura.
     # Al suo posto, con la pellicola, il percorso capture dell'originale.
+
+    k.titolo("Fine")
+    k.passo("stato finale", lambda: k.cmd("stato", 15))
+    k.chiudi()
+    return 0 if not k.falliti else 2
+
+
+# ---------------------------------------------------------------------------
+# con pellicola
+# ---------------------------------------------------------------------------
+
+def con_pellicola(a) -> int:
+    k = Banco(a, "auto-pellicola")
+    r = k.r
+    r("COLLAUDO AUTOMATICO CON PELLICOLA - %s" % datetime.datetime.now())
+    if not k.collega():
+        r.avviso("l'agente non e' pronto: collaudo non fatto")
+        k.chiudi()
+        return 1
+    k.passo("pressore su (partenza)", k.pressore_su, tentativi=1)
+    k.passo("formato 135", lambda: k.cmd("formato_0", 60))
+    if not k.b.pellicola_sdk():
+        k.passo("carrello in attesa della pellicola", lambda: k.cmd("carica_1", 60))
+        print("")
+        print("  >>> Inserire una striscia di negativo (non di un cliente). <<<")
+        print("  Il collaudo parte da solo appena il carrello la prende.")
+        fine = time.time() + 600
+        while time.time() < fine and not k.b.pellicola_sdk():
+            time.sleep(0.5)
+    if not k.b.pellicola_sdk():
+        r.avviso("nessuna pellicola in 10 minuti: collaudo non fatto")
+        k.chiudi()
+        return 1
+    r("Pellicola nel carrello: da qui fa tutto da solo.")
+
+    def mezzo_indietro():
+        k.pressore_su()
+        k.cmd("regola_-50", 60)
+
+    # Il DX (get_media_info) porta l'SDK nello stato 1, dove scan_raw e'
+    # rifiutato dal firmware (46/47/42, riserva 7/11/2026) finche' una
+    # capture non lo riporta a 0. Percio' qui niente DX prima delle letture:
+    # lo si legge in fondo, prima delle sonde capture.
+
+    k.titolo("Prima posizione (di solito la coda)")
+    livelli = {}
+    for ch in ("R", "G", "B"):
+        def l(ch=ch):
+            img = k.leggi(ch, 1.0)
+            livelli[ch] = float(np.percentile(img, 99))
+            k.salva("pos0_%s" % ch, img, 4095)
+            return round(float(img.mean()), 1)
+        k.passo("%s a 1x" % ch, l, recupero=k.aspetta_pronto)
+
+    k.titolo("Fotogrammi")
+    guadagni = {"R": 1.0, "G": 1.0, "B": 1.0}
+    for n in range(1, 5):
+        k.passo("fotogramma successivo (%d)" % n, lambda: k.cmd("prossimo", 90),
+                recupero=mezzo_indietro)
+        if n == 1:
+            def misura_esp():
+                for ch in ("R", "G", "B"):
+                    p99 = float(np.percentile(k.leggi(ch, 1.0), 99))
+                    guadagni[ch] = float(np.clip(0.8 * 4095 / max(p99, 1.0), 0.25, 4.0))
+                return dict((c, round(v, 2)) for c, v in guadagni.items())
+            k.passo("esposizione per canale (80% della scala)", misura_esp,
+                    recupero=k.aspetta_pronto)
+
+        def rgb(n=n):
+            piani = k.b.capture_frame(["R", "G", "B"], dict(guadagni))
+            if piani is None:
+                piani = dict((c, k.leggi(c, guadagni[c])) for c in ("R", "G", "B"))
+                modo = "un canale per volta"
+            else:
+                modo = "lettura unica"
+            for c, p in piani.items():
+                k.salva("fot%d_%s" % (n, c), p, 4095)
+            return {"modo": modo, "medie": dict((c, round(float(p.mean()), 1))
+                                                for c, p in piani.items()),
+                    "nitidezza_G": round(nitidezza(piani["G"]), 4)}
+        k.passo("R G B del fotogramma %d" % n, rgb, recupero=k.aspetta_pronto)
+
+    k.titolo("Pressore sulla pellicola (nitidezza)")
+
+    def confronto():
+        su = [nitidezza(k.leggi("G", guadagni["G"])) for _ in range(2)]
+        k.cmd("pressore_giu", 30)
+        try:
+            giu = [nitidezza(k.leggi("G", guadagni["G"])) for _ in range(2)]
+        finally:
+            k.cmd("pressore_su", 30)
+        return {"su": [round(x, 4) for x in su], "giu": [round(x, 4) for x in giu]}
+    k.passo("nitidezza G pressore su e giu'", confronto, recupero=k.pressore_su)
+    k.passo("su con il pressore gia' su", lambda: k.cmd("pressore_su", 30), tentativi=1,
+            informativo=True)
+
+    k.titolo("Fuoco sulla pellicola")
+    for metodo in ("nominale", "rapido", "gi"):
+        def fuoco(metodo=metodo):
+            k.cmd("fuoco_%s" % metodo, 240)
+            return round(nitidezza(k.leggi("G", guadagni["G"])), 4)
+        k.passo("fuoco %s, poi nitidezza" % metodo, fuoco, recupero=k.aspetta_pronto)
+
+    k.titolo("Tetto d'esposizione sulla pellicola")
+    for e in (2.0, 4.0, 8.0, 12.0):
+        k.passo("G a %gx" % e, lambda e=e: round(float(k.leggi("G", e).mean()), 1),
+                tentativi=1, informativo=True)
+
+    k.titolo("Ritorno e regolazione fine")
+    k.passo("fotogramma precedente", lambda: k.cmd("precedente", 90), recupero=mezzo_indietro)
+    # il 7/11/2026 la regolazione fine e' stata rifiutata (codice 3) dopo
+    # "precedente": si annota senza ripetere
+    k.passo("regolazione +100 passi", lambda: k.cmd("regola_100", 60), tentativi=1,
+            informativo=True)
+    k.passo("regolazione -100 passi", lambda: k.cmd("regola_-100", 60), tentativi=1,
+            informativo=True)
+
+    k.titolo("Capture del programma originale (DX + capture)")
+    # Riserva, 7/11/2026: la capture funziona solo con il codice DX letto
+    # subito prima (stato 1): alle 14:54 un fotogramma RGB in 4,9 s; alle
+    # 16:08, con il DX rifiutato (ERR_MOVE dopo "precedente"), tre attese di
+    # 60 s e il collaudo sembrava fermo. Adesso il comando "cattura" legge
+    # il DX da se' e alla prima risposta "stato non valido" si ferma. Prima
+    # di ogni capture un fotogramma avanti: e' il caso del rullo.
+    for n in range(1, 4):
+        k.passo("fotogramma successivo (capture %d)" % n, lambda: k.cmd("prossimo", 90),
+                recupero=mezzo_indietro)
+
+        def cattura(n=n, asf=False):
+            piani = k.b.cattura_originale(asf)
+            for c, p in piani.items():
+                k.salva("capture%d_%s" % (n, c), p, 4095)
+            return {"medie": dict((c, round(float(p.mean()), 1)) for c, p in piani.items()),
+                    "massimi": dict((c, int(p.max())) for c, p in piani.items()),
+                    "nitidezza_G": round(nitidezza(piani["G"]), 4)}
+        k.passo("capture %d (DX + capture)" % n, cattura, tentativi=2,
+                recupero=lambda: k.cmd("prossimo", 90))
+        k.passo("stato dopo la capture %d" % n, lambda: k.stato_sdk())
+    k.passo("G con scan_raw dopo la capture", lambda: round(float(k.leggi("G", 1.0).mean()), 1),
+            tentativi=1, informativo=True)
+
+    k.titolo("Digital ICE dell'SDK (capture con ASF)")
+    k.passo("fotogramma successivo (ICE)", lambda: k.cmd("prossimo", 90), recupero=mezzo_indietro)
+
+    def con_ice():
+        piani = k.b.cattura_originale(True)
+        for c, p in piani.items():
+            k.salva("ice_%s" % c, p, 4095)
+        return {"medie": dict((c, round(float(p.mean()), 1)) for c, p in piani.items()),
+                "nitidezza_G": round(nitidezza(piani["G"]), 4)}
+    k.passo("capture con Digital ICE", con_ice, tentativi=2,
+            recupero=lambda: k.cmd("prossimo", 90))
+    k.passo("stesso fotogramma senza ICE", lambda: (k.cmd("precedente", 90), k.cmd("prossimo", 90),
+                                                    cattura(9, False))[2],
+            tentativi=1, informativo=True)
 
     k.titolo("Fine")
     k.passo("stato finale", lambda: k.cmd("stato", 15))

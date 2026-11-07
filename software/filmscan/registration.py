@@ -240,6 +240,28 @@ def register_channels(planes: Dict[str, np.ndarray],
     return aligned, shifts
 
 
+def apply_shifts(planes: Dict[str, np.ndarray],
+                 shifts: Dict[str, Tuple[float, float]],
+                 extra: Optional[Dict[str, Tuple[float, float]]] = None
+                 ) -> Tuple[Dict[str, np.ndarray], Dict[str, Tuple[float, float]]]:
+    """Applica spostamenti gia' noti, senza stimarli: quelli salvati alla
+    prima elaborazione del fotogramma (pipeline, ProcessOptions.geometria).
+    La stima con la correlazione di fase e' la parte cara dell'allineamento;
+    riaprire un fotogramma non deve rifarla. 'extra' e' lo spostamento a mano
+    dell'operatore, che si somma a quello automatico. Ritorna i piani e gli
+    spostamenti totali applicati."""
+    extra = extra or {}
+    out: Dict[str, np.ndarray] = {}
+    totali: Dict[str, Tuple[float, float]] = {}
+    for ch, img in planes.items():
+        dy, dx = shifts.get(ch, (0.0, 0.0))
+        ey, ex = extra.get(ch, (0.0, 0.0))
+        dy, dx = float(dy) + float(ey), float(dx) + float(ex)
+        out[ch] = shift_image(img, dy, dx) if (dy or dx) else img
+        totali[ch] = (dy, dx)
+    return out, totali
+
+
 def merge_exposures(planes: list, exposures: list,
                     clip_high: float = 0.95, clip_low: float = 0.002) -> np.ndarray:
     """Fonde piu' esposizioni dello stesso canale.

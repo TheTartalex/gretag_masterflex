@@ -49,6 +49,8 @@ COMANDI
     grabm_<ris>_<eR>_<eG>_<eB>[_<eIR>]
                                 R, G, B (e IR) in una lettura sola, un tempo
                                 per LED
+    cattura_<ris>_<0|1>         R, G, B con la capture del programma originale
+                                (codice DX subito prima), 1 = Digital ICE
     flash_backup                salva il Parameter Flash in raw/
     offsetxy_<formato>          legge gli offset XY dal flash
 
@@ -97,7 +99,7 @@ MOVIMENTI = ("formato", "carica", "alimenta", "avanza", "prossimo", "precedente"
              "espelli", "espelli_retro", "regola", "fuoco", "azzera",
              "pressore", "calibrasdk",
              # il percorso capture dell'SDK puo' muovere la pellicola da solo
-             "sonda")
+             "sonda", "cattura")
 
 MAX_PASSI = 300               # 3 mm: oltre non e' piu' una regolazione fine
 MAX_ALIMENTAZIONE = 15.0      # secondi di trascinamento acceso senza comandi
@@ -316,6 +318,19 @@ class AgenteSimulato(object):
 
     def sonda_ice(self, piani, larghezza, altezza, cartella):
         return {"simulato": True, "larghezza": larghezza, "altezza": altezza}
+
+    def cattura(self, risoluzione, asf=False, attesa=30.0, cartella=None):
+        """Come sdk.cattura: tre piani uno dopo l'altro, 12 bit, ~4,5 s
+        (qui accorciati). Senza pellicola il DX fallisce e la capture con lui."""
+        if not self.pellicola_inserita:
+            raise ErroreSimulato("capture: il codice DX, che la deve precedere, non "
+                                 "si legge (codice 12 ERR_NO_FILM_LOADED)", [(12, 0, 0)])
+        time.sleep(0.5)
+        piani = []
+        for k in range(3):
+            dati, w, h = self.scansiona_canale(k, 1.0, risoluzione)
+            piani.append(dati)
+        return b"".join(piani), w, h, {"secondi": 0.5, "buffer": 1, "simulato": True}
 
     def modo_asf(self, acceso): pass
     def espelli(self): self.pellicola_inserita = False
@@ -793,6 +808,11 @@ class Agente(object):
                 return json.dumps(self.s.sonda_ice(piani, w, h, cartella))
             raise ValueError("sonda sconosciuta: %s" % comando)
 
+        if testa == "cattura":
+            # cattura_<risoluzione>_<0|1>: il percorso del programma
+            # originale (DX se serve, capture), 1 = con il Digital ICE
+            return self.cattura(int(parti[1]), len(parti) > 2 and parti[2] == "1")
+
         if testa == "grabm":
             # grabm_<risoluzione>_<eR>_<eG>_<eB>[_<eIR>]
             return self.acquisisci_insieme(int(parti[1]),
@@ -804,6 +824,27 @@ class Agente(object):
             return self.acquisisci(parti[1], int(parti[2]), float(parti[3]), buio)
 
         raise ValueError("comando sconosciuto: %s" % comando)
+
+    def cattura(self, risoluzione, asf):
+        """R, G, B con la capture dell'originale (sdk.cattura): stesso
+        formato di file della lettura unica, piani uno dopo l'altro."""
+        t0 = time.time()
+        cartella = os.path.join(self.condivisa, "raw")
+        dati, w, h, info = self.s.cattura(risoluzione, asf, cartella=cartella)
+        nome = "%d_RGB_%dx%d.raw" % (int(t0 * 1000), w, h)
+        percorso = os.path.join(cartella, nome)
+        with open(percorso, "wb") as f:
+            f.write(dati)
+        with open(percorso[:-4] + ".json", "w") as f:
+            json.dump({"canale": "RGB", "larghezza": w, "altezza": h, "piani": 3,
+                       "campioni": len(dati) // 2, "disposizione": "piani",
+                       "capture": True, "asf": bool(asf), "risoluzione": risoluzione,
+                       "dtype": "uint16", "ordine": "little",
+                       "secondi_sdk": info.get("secondi"), "buffer": info.get("buffer"),
+                       "secondi": round(time.time() - t0, 2)}, f)
+        self.log("capture%s: %s s, buffer %s" % (" con Digital ICE" if asf else "",
+                                                info.get("secondi"), info.get("buffer")))
+        return nome
 
     def acquisisci_insieme(self, risoluzione, esposizioni):
         """R, G, B (e IR se c'e' il quarto tempo) in una lettura sola, ogni
