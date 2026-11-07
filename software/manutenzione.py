@@ -818,6 +818,14 @@ def cmd_diagnosi(argv):
             _, cpu = esegui(["wmic", "cpu", "get", "Name", "/format:list"])
             print("CPU: %s" % " ".join(re.findall(r"Name=(.+)", cpu)).strip())
         cmd_verifica([])
+        try:
+            from filmscan import desktop
+            d = desktop.controlla()
+            if d.get("windows"):
+                print("")
+                print(d["testo"])
+        except Exception as exc:                        # noqa: BLE001
+            print("controllo del desktop non riuscito: %s" % exc)
         cmd_macchina([])
         cmd_avvio(["stato"])
         cmd_firmware([])

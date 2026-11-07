@@ -1570,6 +1570,21 @@ details.sez>div{padding-bottom:10px}
     <b>log</b> del software; lo zip resta anche in log\da-mandare.</div>
   </section>
   <section class="pannello">
+   <h2>Desktop di Windows</h2>
+   <div class="nota-imp">Il programma originale nasconde desktop, barra e cartelle. Controlla
+    dice perché (shell sostituita, blocchi di Explorer, explorer chiuso) e lo mette nei
+    registri. Mostra il desktop lo fa ricomparire adesso, senza cambiare la configurazione.</div>
+   <div class="row">
+    <button class="sec" onclick="desktop('controlla')">Controlla</button>
+    <button class="sec" onclick="desktop('mostra')">Mostra il desktop</button>
+   </div>
+   <div class="row">
+    <button class="ghost" onclick="if(confirm('Tolgo i blocchi di Explorer di questo utente? Se ne fa una copia per rimetterli.')) desktop('togli')">Togli i blocchi</button>
+    <button class="ghost" onclick="desktop('rimetti')">Rimetti i blocchi</button>
+   </div>
+   <pre class="nota-imp" id="desktop_esito" style="white-space:pre-wrap;max-height:240px;overflow:auto"></pre>
+  </section>
+  <section class="pannello">
    <h2>Elaboratori in rete</h2>
    <label><input type="checkbox" id="el_attivi" style="width:auto" onchange="elaboratori({attivi:this.checked})"> Elabora sugli altri PC della rete</label>
    <div class="nota-imp">Un PC Windows o un server della stessa rete fa l'elaborazione al posto
@@ -1607,6 +1622,12 @@ details.sez>div{padding-bottom:10px}
     <option value="originale">Come il programma originale (capture), Digital ICE dell'SDK</option>
    </select>
    <div class="nota-imp">Come il programma originale: codice DX e capture, R G B in una volta con i tempi dell'SDK; sui rulli con ICE la pulizia la fa l'SDK. Se la capture non riesce, quel fotogramma si legge un canale per volta.</div>
+   <label>Digital ICE (rulli con ICE)</label>
+   <select id="imp_digital_ice" onchange="impostaMacchina()">
+    <option value="kodak">della Kodak (libreria dell'SDK)</option>
+    <option value="nostro">nostro, dal canale infrarosso</option>
+   </select>
+   <div class="nota-imp" id="nota_dice">Quello della Kodak lavora nell'elaborazione sul PC della macchina (circa 5 s a fotogramma, la lettura non aspetta). Se la libreria non c'è o il risultato non convince, si usa il nostro.</div>
    <label>Negativo lineare per altri programmi</label>
    <select id="imp_negativo_lineare" onchange="impostaMacchina()">
     <option value="">no</option>
@@ -2255,6 +2276,12 @@ function muovi(mm){ post('/api/muovi',{mm:mm}).then(mostraStato); }
 /* Le impostazioni della macchina: le spunte seguono lo stato del server
    finche' nessuno le tocca, poi si salvano al cambio. */
 var IMP=['esposizione_auto','pressore_auto','avanzamento_automatico','leggi_dx'];
+function desktop(azione){
+  el('desktop_esito').textContent='...';
+  post('/api/desktop',{azione:azione}).then(function(r){
+    el('desktop_esito').textContent = r.errore ? r.errore : (r.testo||'');
+  });
+}
 function elaboratori(d){
   post('/api/elaboratori/imposta', d).then(function(r){
     if(r && r.errore){ el('el_stato').textContent=r.errore; return; }
@@ -2315,7 +2342,7 @@ function riavviaTutto(){
 }
 function impostaMacchina(){
   var d={autofocus:val('imp_autofocus'), negativo_lineare:val('imp_negativo_lineare'),
-         acquisizione:val('imp_acquisizione')};
+         acquisizione:val('imp_acquisizione'), digital_ice:val('imp_digital_ice')};
   IMP.forEach(function(k){ d[k]=el('imp_'+k).checked; });
   post('/api/macchina/impostazioni',d).then(function(r){
     if(r && r.errore){ alert(r.errore); }
@@ -2526,6 +2553,8 @@ function mostraStato(s){
       var c=el('imp_'+k);
       if(c && document.activeElement!==c) c.checked=!!s.impostazioni_macchina[k];
     });
+    var di=el('imp_digital_ice');
+    if(di && document.activeElement!==di) di.value=s.impostazioni_macchina.digital_ice||'kodak';
     var aq=el('imp_acquisizione');
     if(aq && document.activeElement!==aq) aq.value=s.impostazioni_macchina.acquisizione||'canali';
     var af=el('imp_autofocus');
@@ -3414,6 +3443,23 @@ class Handler(BaseHTTPRequestHandler):
                 s.rifai_geometria(str(d.get("cosa") or "tutto"))
                 return self._json({"avviato": True})
 
+            # --- desktop di Windows nascosto dal programma originale ---
+            if u.path == "/api/desktop":
+                from . import desktop
+                azione = str(d.get("azione") or "controlla")
+                cartella = registri.sottocartella("diagnosi")
+                if azione == "controlla":
+                    esito = desktop.controlla()
+                    desktop.salva_rapporto(cartella)
+                    return self._json({"testo": esito.get("testo"),
+                                       "problemi": esito.get("problemi", [])})
+                fn = {"mostra": desktop.mostra,
+                      "togli": lambda: desktop.togli_blocchi(cartella),
+                      "rimetti": lambda: desktop.rimetti_blocchi(cartella)}.get(azione)
+                if fn is None:
+                    return self._json({"errore": "azione sconosciuta"}, 400)
+                return self._json({"testo": fn()})
+
             # --- elaboratori della rete ---
             if u.path == "/api/elaboratori/imposta":
                 stato = s.imposta_elaboratori(
@@ -3807,6 +3853,15 @@ def avvia(host: str = "127.0.0.1", porta: int = 8080,
         # chiude - vedi Handler._autorizzato.
         token = "%08d" % secrets.randbelow(100000000)
 
+    # la chiave degli elaboratori della rete si crea una volta e si salva:
+    # il pacchetto dato a un elaboratore deve valere anche dopo un riavvio
+    if cfg.elaboratori_rete and not cfg.chiave_elaboratori:
+        cfg.chiave_elaboratori = remoti.nuova_chiave()
+        if impostazioni:
+            try:
+                cfg.save(impostazioni)
+            except (IOError, OSError):
+                pass
     Handler.servizio = ScanService(cfg, Archivio(db))
     Handler.token = token or ""
 

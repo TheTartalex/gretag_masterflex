@@ -1,6 +1,6 @@
 # Stato del progetto
 
-**Aggiornato al 29 ottobre 2026.** Questo è il documento da aggiornare a fine
+**Aggiornato al 7 novembre 2026.** Questo è il documento da aggiornare a fine
 di ogni sessione di lavoro: stato, problemi aperti e prossimi passi stanno
 qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.md).
 
@@ -466,6 +466,38 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
   browser che c'è su Win7 (WhatsApp Web potrebbe non accettare Chrome 109:
   in quel caso Supermium o il tablet).
 
+## Fatto il 7 novembre (sera)
+
+- **Collaudo con pellicola delle 16:08 "incantato"**: la capture parte
+  solo con il codice DX letto subito prima (stato 1). Dopo "precedente" il
+  DX dava ERR_MOVE, l'SDK restava nello stato 0 e la capture aspettava 60 s
+  a vuoto, tre volte. Comando `cattura` nuovo: legge il DX da sé e alla
+  prima risposta "stato non valido" si ferma. Nel collaudo un fotogramma
+  avanti prima di ogni capture. Il collaudo delle 16:34 era ancora con la
+  versione vecchia.
+- **Digital ICE della Kodak**: la libreria dell'SDK chiamata direttamente
+  (16:34) ha trovato 17679 pixel difettosi su 2,94 milioni con i pixel
+  intercalati RGBI. Integrata nell'elaborazione sulla macchina, di serie;
+  il risultato va visto sul collaudo con pellicola nuovo (immagini
+  `dice_*` nella cartella del collaudo).
+- **Acquisizione "come il programma originale"** (DX + capture, Digital ICE
+  dell'SDK): impostazione in Macchina, non di serie finché un collaudo con
+  la versione nuova non la conferma.
+- **Elaboratori in rete** ([decisione 0011](decisioni/0011-elaboratori-in-rete.md)),
+  **geometria salvata** (riapertura senza rifare le stime, rotazione e
+  canali a mano), **raddrizzamento** stimato su una copia ridotta (da 10 a
+  3 s nella prova), **anteprima dal vivo** per i fotogrammi non elaborati,
+  **negativi DNG/TIFF** dall'archivio.
+- **Motori attivi di serie**, IR attivo; tolti l'avviso delle guide e la
+  conferma "SI".
+- **Collaudo senza pellicola delle 16:16**: nessun passo fallito. Un
+  orologio di Windows tornato indietro di un minuto durante la prova
+  (durata negativa): il collaudo ora misura con un orologio monotono.
+- **Desktop nascosto dal programma originale**: pannello Macchina →
+  Desktop di Windows. Il resoconto arriva con i registri (`desktop.txt`):
+  da leggere al prossimo invio per sapere se è la shell sostituita, le
+  policy o explorer chiuso.
+
 ## Problemi aperti, in ordine di priorità
 
 1. **Motori delle guide all'avvio: RISOLTO per il 135** (28/10/2026, dalla
@@ -507,8 +539,7 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
    intensità, finestra vuota). Se le immagini sono ancora sbagliate, la
    prova che distingue resta ScanDiag/GretagEMEval: sbagliate anche lì vuol
    dire driver (DMA o ISR).
-3. **IR**: il numero di canale 3 non è verificato. Il collaudo colori con
-   `--ir` lo dice.
+3. **IR**: il canale 3 risponde (collaudi del 7/11): attivo di serie.
 4. **Sensori e verso del trasporto** (piano 3.12 e 3.13): si misurano con
    il collaudo dello scanner, voci 2 e 3.
 

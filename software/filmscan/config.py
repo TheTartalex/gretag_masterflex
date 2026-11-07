@@ -314,6 +314,13 @@ class AppConfig:
     #               subito prima (riserva, 7/11/2026), e il ponte lo fa da se'.
     # Se la capture non riesce, quel fotogramma si legge un canale per volta.
     acquisizione: str = "canali"
+    # Digital ICE sui rulli che lo chiedono (con "canali"):
+    #   "kodak"  la libreria della Kodak dell'SDK (DMLDICELib.dll) sui piani
+    #            R G B IR, nell'elaborazione sul PC della macchina (~5 s a
+    #            fotogramma, la lettura non aspetta); se non c'e', cade o
+    #            cambia troppo l'immagine, il nostro (ice_kodak.py)
+    #   "nostro" la pulizia dal canale IR (irclean), anche sugli elaboratori
+    digital_ice: str = "kodak"
 
     # --- elaboratori della rete (remoti.py, elaboratore.py) ---
     # Altri PC o server della stessa rete che elaborano i fotogrammi al
@@ -321,7 +328,8 @@ class AppConfig:
     # accende dal pannello Macchina. La chiave la genera la macchina e va
     # data agli elaboratori (dentro il pacchetto che si scarica dal pannello):
     # sta solo nelle impostazioni, e dai registri mandati si toglie.
-    elaboratori_rete: bool = False
+    # Acceso di serie: senza un elaboratore collegato non cambia niente.
+    elaboratori_rete: bool = True
     chiave_elaboratori: str = ""
     # fotogrammi mandati in rete contemporaneamente, al massimo (uno per
     # elaboratore in ascolto)

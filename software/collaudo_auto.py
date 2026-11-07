@@ -521,6 +521,32 @@ def con_pellicola(a) -> int:
                     "nitidezza_G": round(nitidezza(piani["G"]), 4)}
         k.passo("R G B del fotogramma %d" % n, rgb, recupero=k.aspetta_pronto)
 
+    k.titolo("Digital ICE della Kodak (libreria dell'SDK)")
+    # 7/11/2026 (16:34): la libreria chiamata direttamente ha trovato 17679
+    # pixel difettosi con i pixel intercalati RGBI. Qui la strada vera:
+    # ice_kodak.pulisci, come nell'elaborazione, sul fotogramma in finestra.
+
+    def dice():
+        from filmscan import ice_kodak
+        from filmscan.acquire import RawScan, ScanMetadata
+        if not ice_kodak.disponibile():
+            raise RuntimeError("DMLDICELib.dll non trovata")
+        piani = dict((c, k.leggi(c, guadagni.get(c, 1.0))) for c in ("R", "G", "B"))
+        piani["IR"] = k.leggi("IR", 1.0)
+        r = RawScan(ScanMetadata(time.time(), "135-full", "collaudo", 1569, 16,
+                                 ["R", "G", "B", "IR"], [1.0], 1, 0, 0.0, 0.0))
+        for c, p in piani.items():
+            r.add(c, np.asarray(p, dtype=np.float32) / 4095.0)
+        nuovo, esito = ice_kodak.pulisci(r)
+        for c in ("R", "G", "B"):
+            dopo = nuovo.planes[c][0] * 4095.0
+            k.salva("dice_prima_%s" % c, piani[c], 4095)
+            k.salva("dice_dopo_%s" % c, dopo, 4095)
+            k.salva("dice_differenza_%s" % c, np.abs(dopo - piani[c]), 200)
+        k.salva("dice_IR", piani["IR"], 4095)
+        return esito
+    k.passo("Digital ICE Kodak sul fotogramma", dice, tentativi=1, recupero=k.aspetta_pronto)
+
     k.titolo("Pressore sulla pellicola (nitidezza)")
 
     def confronto():
@@ -594,138 +620,6 @@ def con_pellicola(a) -> int:
     k.passo("stesso fotogramma senza ICE", lambda: (k.cmd("precedente", 90), k.cmd("prossimo", 90),
                                                     cattura(9, False))[2],
             tentativi=1, informativo=True)
-
-    k.titolo("Fine")
-    k.passo("stato finale", lambda: k.cmd("stato", 15))
-    k.chiudi()
-    return 0 if not k.falliti else 2
-
-
-# ---------------------------------------------------------------------------
-# con pellicola
-# ---------------------------------------------------------------------------
-
-def con_pellicola(a) -> int:
-    k = Banco(a, "auto-pellicola")
-    r = k.r
-    r("COLLAUDO AUTOMATICO CON PELLICOLA - %s" % datetime.datetime.now())
-    if not k.collega():
-        r.avviso("l'agente non e' pronto: collaudo non fatto")
-        k.chiudi()
-        return 1
-    k.passo("pressore su (partenza)", k.pressore_su, tentativi=1)
-    k.passo("formato 135", lambda: k.cmd("formato_0", 60))
-    if not k.b.pellicola_sdk():
-        k.passo("carrello in attesa della pellicola", lambda: k.cmd("carica_1", 60))
-        print("")
-        print("  >>> Inserire una striscia di negativo (non di un cliente). <<<")
-        print("  Il collaudo parte da solo appena il carrello la prende.")
-        fine = time.time() + 600
-        while time.time() < fine and not k.b.pellicola_sdk():
-            time.sleep(0.5)
-    if not k.b.pellicola_sdk():
-        r.avviso("nessuna pellicola in 10 minuti: collaudo non fatto")
-        k.chiudi()
-        return 1
-    r("Pellicola nel carrello: da qui fa tutto da solo.")
-
-    def mezzo_indietro():
-        k.pressore_su()
-        k.cmd("regola_-50", 60)
-
-    # Il DX (get_media_info) porta l'SDK nello stato 1, dove scan_raw e'
-    # rifiutato dal firmware (46/47/42, riserva 7/11/2026) finche' una
-    # capture non lo riporta a 0. Percio' qui niente DX prima delle letture:
-    # lo si legge in fondo, prima delle sonde capture.
-
-    k.titolo("Prima posizione (di solito la coda)")
-    livelli = {}
-    for ch in ("R", "G", "B"):
-        def l(ch=ch):
-            img = k.leggi(ch, 1.0)
-            livelli[ch] = float(np.percentile(img, 99))
-            k.salva("pos0_%s" % ch, img, 4095)
-            return round(float(img.mean()), 1)
-        k.passo("%s a 1x" % ch, l, recupero=k.aspetta_pronto)
-
-    k.titolo("Fotogrammi")
-    guadagni = {"R": 1.0, "G": 1.0, "B": 1.0}
-    for n in range(1, 5):
-        k.passo("fotogramma successivo (%d)" % n, lambda: k.cmd("prossimo", 90),
-                recupero=mezzo_indietro)
-        if n == 1:
-            def misura_esp():
-                for ch in ("R", "G", "B"):
-                    p99 = float(np.percentile(k.leggi(ch, 1.0), 99))
-                    guadagni[ch] = float(np.clip(0.8 * 4095 / max(p99, 1.0), 0.25, 4.0))
-                return dict((c, round(v, 2)) for c, v in guadagni.items())
-            k.passo("esposizione per canale (80% della scala)", misura_esp,
-                    recupero=k.aspetta_pronto)
-
-        def rgb(n=n):
-            piani = k.b.capture_frame(["R", "G", "B"], dict(guadagni))
-            if piani is None:
-                piani = dict((c, k.leggi(c, guadagni[c])) for c in ("R", "G", "B"))
-                modo = "un canale per volta"
-            else:
-                modo = "lettura unica"
-            for c, p in piani.items():
-                k.salva("fot%d_%s" % (n, c), p, 4095)
-            return {"modo": modo, "medie": dict((c, round(float(p.mean()), 1))
-                                                for c, p in piani.items()),
-                    "nitidezza_G": round(nitidezza(piani["G"]), 4)}
-        k.passo("R G B del fotogramma %d" % n, rgb, recupero=k.aspetta_pronto)
-
-    k.titolo("Pressore sulla pellicola (nitidezza)")
-
-    def confronto():
-        su = [nitidezza(k.leggi("G", guadagni["G"])) for _ in range(2)]
-        k.cmd("pressore_giu", 30)
-        try:
-            giu = [nitidezza(k.leggi("G", guadagni["G"])) for _ in range(2)]
-        finally:
-            k.cmd("pressore_su", 30)
-        return {"su": [round(x, 4) for x in su], "giu": [round(x, 4) for x in giu]}
-    k.passo("nitidezza G pressore su e giu'", confronto, recupero=k.pressore_su)
-    k.passo("su con il pressore gia' su", lambda: k.cmd("pressore_su", 30), tentativi=1,
-            informativo=True)
-
-    k.titolo("Fuoco sulla pellicola")
-    for metodo in ("nominale", "rapido", "gi"):
-        def fuoco(metodo=metodo):
-            k.cmd("fuoco_%s" % metodo, 240)
-            return round(nitidezza(k.leggi("G", guadagni["G"])), 4)
-        k.passo("fuoco %s, poi nitidezza" % metodo, fuoco, recupero=k.aspetta_pronto)
-
-    k.titolo("Tetto d'esposizione sulla pellicola")
-    for e in (2.0, 4.0, 8.0, 12.0):
-        k.passo("G a %gx" % e, lambda e=e: round(float(k.leggi("G", e).mean()), 1),
-                tentativi=1, informativo=True)
-
-    k.titolo("Ritorno e regolazione fine")
-    k.passo("fotogramma precedente", lambda: k.cmd("precedente", 90), recupero=mezzo_indietro)
-    k.passo("regolazione +100 passi", lambda: k.cmd("regola_100", 60), tentativi=1)
-    k.passo("regolazione -100 passi", lambda: k.cmd("regola_-100", 60), tentativi=1)
-
-    k.titolo("Codice DX e percorso capture dell'originale")
-    # Il 7/11/2026 la capture ha letto un fotogramma RGB intero in 4,4 s e
-    # ha riportato l'SDK dallo stato 1 a 0: e' la strada da integrare.
-    # Tre volte, per vedere come cambiano FrameInfo e i dati del DX.
-    for n in range(1, 4):
-        k.passo("DX prima della capture %d" % n, lambda: k.cmd("dx", 30), tentativi=1,
-                informativo=True)
-        k.passo("capture senza ICE %d" % n, lambda: k.cmd("sonda_capture_0_0", 120),
-                tentativi=1)
-        k.passo("stato dopo la capture %d" % n, lambda: k.stato_sdk())
-    k.passo("G con scan_raw dopo la capture", lambda: round(float(k.leggi("G", 1.0).mean()), 1),
-            tentativi=1, informativo=True)
-
-    # Per ultime, perche' il 7/11/2026 la capture con ICE e' rimasta appesa
-    # nell'SDK: se succede ancora, dopo 2 minuti l'agente si riavvia da solo
-    # e il collaudo va avanti. Non serve fermarlo.
-    k.titolo("Digital ICE (puo' bloccarsi: si riprende da solo)")
-    k.passo("capture con ICE (ASF)", lambda: k.cmd("sonda_capture_0_1", 120), tentativi=2)
-    k.passo("Digital ICE diretto", lambda: k.cmd("sonda_ice_0", 180), tentativi=1)
 
     k.titolo("Fine")
     k.passo("pressore su", k.pressore_su, tentativi=1)

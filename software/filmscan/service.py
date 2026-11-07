@@ -44,7 +44,7 @@ from .orders import Archivio
 from .orient import RollMirror
 from .pipeline import (ProcessOptions, anteprima_rapida, export, export_mask,
                        export_negativo, finiture, process)
-from . import geometria as geometrie, pellicole_dx, registri, remoti
+from . import geometria as geometrie, ice_kodak, pellicole_dx, registri, remoti
 from .rullo import MemoriaPellicole, StatisticheRullo, chiave_dx
 
 
@@ -282,6 +282,7 @@ class ScanService:
         # un'elaborazione completa alla volta sul PC della macchina (memoria
         # a 32 bit); quelle mandate agli elaboratori della rete non contano
         self._lock_locale = threading.Lock()
+        self._lock_ice = threading.Lock()
         self.elaboratori = remoti.Elaboratori(cfg.chiave_elaboratori or "")
         # la geometria del fotogramma aperto (pipeline, ProcessOptions.geometria),
         # con le scelte a mano non ancora salvate
@@ -1392,6 +1393,8 @@ class ScanService:
                 "autofocus": self.cfg.autofocus,
                 "negativo_lineare": self.cfg.negativo_lineare,
                 "acquisizione": self.cfg.acquisizione,
+                "digital_ice": self.cfg.digital_ice,
+                "digital_ice_kodak": ice_kodak.disponibile(),
                 "leggi_dx": bool(self.cfg.leggi_dx),
                 "pin_fisso": bool(self.cfg.pin_fisso)}
 
@@ -1407,6 +1410,10 @@ class ScanService:
             if valori["autofocus"] not in self.AUTOFOCUS:
                 raise ValueError("autofocus sconosciuto: %s" % valori["autofocus"])
             self.cfg.autofocus = str(valori["autofocus"])
+        if "digital_ice" in valori:
+            if valori["digital_ice"] not in ("kodak", "nostro"):
+                raise ValueError("digital_ice: 'kodak' o 'nostro'")
+            self.cfg.digital_ice = str(valori["digital_ice"])
         if "acquisizione" in valori:
             if valori["acquisizione"] not in ("canali", "originale"):
                 raise ValueError("acquisizione: 'canali' o 'originale'")
@@ -1722,6 +1729,7 @@ class ScanService:
         neg_path = os.path.join(dest, nome + "_negativo." + (
             "dng" if neg_fmt == "dng" else "tif")) if neg_fmt else ""
 
+        raw, opts = self._ice_kodak(raw, opts, numero)
         res = None
         if in_rete and self.in_rete():
             try:
@@ -1772,6 +1780,25 @@ class ScanService:
             stato="ok", avvisi=" | ".join(res.warnings),
             numero_bordo=bordo, file_negativo=neg_path)
         return res
+
+    def _ice_kodak(self, raw, opts, numero: int):
+        """Il Digital ICE della Kodak sul grezzo (ice_kodak.py), se il rullo
+        lo chiede e la libreria c'e'. Ritorna (grezzo, opzioni): pulito e
+        senza la pulizia nostra, oppure com'era se non si e' potuto."""
+        if (self.cfg.digital_ice != "kodak" or opts.ir_strength <= 0
+                or "IR" not in raw.planes or not ice_kodak.disponibile()):
+            return raw, opts
+        try:
+            with self._lock_ice:
+                nuovo, esito = ice_kodak.pulisci(raw)
+        except Exception as exc:                        # noqa: BLE001
+            _registro.warning("fotogramma %d: Digital ICE Kodak non usato (%s): "
+                              "Digital ICE nostro", numero, exc)
+            return raw, opts
+        _registro.info("fotogramma %d: Digital ICE Kodak, %s pixel difettosi, %s s, "
+                       "cambiati %s%%", numero, esito.get("difettosi"),
+                       esito.get("secondi"), esito.get("cambiati_pct"))
+        return nuovo, dataclasses.replace(opts, ir_strength=0.0)
 
     # --- elaboratori della rete (remoti.py, elaboratore.py) ---------------
 
@@ -1881,6 +1908,7 @@ class ScanService:
         """L'elaborazione per il visore (Riapri): in rete se c'e' un
         elaboratore, con la base lineare e il negativo per i cursori e il
         confronto; altrimenti qui. Nessun file."""
+        raw, opts = self._ice_kodak(raw, opts, 0)
         if self.in_rete():
             try:
                 t0 = time.time()

@@ -259,6 +259,14 @@ def raccogli(giorni: int = 7, ponte: Optional[str] = r"C:\MasterflexD\ponte",
                             z.write(p, "ponte-log/" + n)
                     except (IOError, OSError):
                         pass
+        # cosa nasconde il desktop di Windows (desktop.py): solo letture
+        try:
+            from . import desktop
+            d = desktop.controlla()
+            if d.get("windows"):
+                z.writestr("desktop.txt", d["testo"])
+        except Exception:                               # noqa: BLE001
+            pass
         if impostazioni and os.path.exists(impostazioni):
             try:
                 with io.open(impostazioni, encoding="utf-8") as f:

@@ -52,6 +52,24 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-11-07 — Digital ICE della Kodak, desktop di Windows, valori di serie
+
+- **Digital ICE della Kodak** (`filmscan/ice_kodak.py`, `ponte/dice.py`): la
+  libreria dell'SDK (DMLDICELib.dll) sui piani R G B IR, pixel intercalati a
+  14 bit (la sonda delle 16:34 ha trovato 17679 pixel difettosi così). Gira
+  nell'elaborazione sul PC della macchina, in un processo a parte; se manca,
+  cade o cambia più del 15% dell'immagine si usa il Digital ICE nostro.
+  Impostazione Macchina → Digital ICE; di serie "della Kodak".
+- **Desktop di Windows** (`filmscan/desktop.py`): pannello Macchina →
+  Controlla (shell sostituita, policy di Explorer, explorer chiuso, avvio
+  automatico), Mostra il desktop (adesso, senza cambiare la configurazione),
+  Togli/Rimetti i blocchi. Il resoconto va anche nei registri (desktop.txt).
+- Elaboratori in rete accesi di serie, con la chiave creata e salvata al
+  primo avvio.
+- Corretto il collaudo con pellicola: nella build precedente una modifica
+  aveva duplicato la funzione e restava in uso quella vecchia (capture
+  appesa 60 s). Aggiunto il passo del Digital ICE Kodak.
+
 ### 2026-11-07 — elaboratori in rete, geometria salvata, capture dell'originale
 
 - **Elaboratori in rete** (`filmscan/remoti.py`, `elaboratore.py`,
