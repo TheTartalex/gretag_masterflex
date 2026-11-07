@@ -409,6 +409,13 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
   4** e manda di continuo l'**evento 85**: non sono nella tabella dei nomi,
   probabilmente calibrazione in corso. Da annotare come finisce. Calibra
   non rifà più l'azzeramento se lo scanner si è caricato oggi.
+- **7/11, sera**: la capture dell'originale dà un fotogramma giusto (tre
+  piani R, G, B, 2100×1400, 12 bit). Rullo con `scan_raw` da 19 fotogrammi
+  letti in 146 s (3,6 s di lettura + 0,5 s di trasporto), ma
+  l'elaborazione ha impiegato ~7 minuti dopo (~23 s a fotogramma sul PC
+  della riserva): ora il registro scrive i tempi di ogni passo, per capire
+  dove andare a stringere. Espulsione dal retro corretta (ripiega sul
+  davanti).
 - **7/11, prima scansione con la versione nuova**: immagini "leggermente
   sovraesposte" (chiare, poco contrastate) secondo Alessandro. Da capire
   sui campioni ("Invia per l'analisi"): ipotesi da verificare, non ancora

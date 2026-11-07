@@ -52,6 +52,13 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-11-07 — tempi dell'elaborazione nel registro
+
+- `ProcessResult.tempi`: secondi per passo; `_esporta` scrive nel registro
+  del programma elaborazione e salvataggio di ogni fotogramma, con i passi
+  più lenti.
+- Documentata la disposizione del buffer della capture (piani R, G, B).
+
 ### 2026-11-07 — la pellicola non usciva dal retro
 
 - Espulsione dal retro: a fine striscia il carrello rifiuta il fotogramma

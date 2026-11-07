@@ -1615,13 +1615,20 @@ class ScanService:
         metadati), maschera e negativo lineare se chiesti, e registro. Lo
         usano il rullo, Salva fotogramma e Applica a tutto il rullo."""
         ordine, rullo = ordine_rullo
+        t0 = time.time()
         res = process(raw, opts)
+        t_process = time.time() - t0
         meta = self._meta_file(ordine, rullo, numero, bordo, raw, opts)
         ext = {"tiff16": ".tif", "tiff8": ".tif",
                "png": ".png", "jpeg": ".jpg"}.get(self.cfg.export_format, ".tif")
         out_path = os.path.join(dest, nome + ext)
         export(res.image, out_path, self.cfg.export_format,
                self.cfg.jpeg_quality, meta=meta)
+        # nel registro (non nel diario): dove va il tempo di ogni fotogramma
+        lenti = sorted(res.tempi.items(), key=lambda kv: -kv[1])[:5]
+        _registro.info("fotogramma %d: elaborazione %.1f s, salvataggio %.1f s (%s)",
+                       numero, t_process, time.time() - t0 - t_process,
+                       ", ".join("%s %.1f" % kv for kv in lenti))
 
         mask_path = ""
         if self.cfg.export_ir_mask and res.mask is not None:

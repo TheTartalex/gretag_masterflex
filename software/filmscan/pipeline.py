@@ -157,6 +157,9 @@ class ProcessResult:
     # chi converte con altri programmi.
     lineare: Optional[np.ndarray] = None
 
+    # secondi per passo dell'elaborazione (nome del passo -> s)
+    tempi: Dict[str, float] = field(default_factory=dict)
+
 
 def _negativo_rgb(planes: Dict[str, np.ndarray]) -> Optional[np.ndarray]:
     """Il negativo come lo vede il sensore, in RGB, pronto per lo schermo.
@@ -308,9 +311,20 @@ def finiture(base: np.ndarray, opts: ProcessOptions):
 def process(raw: RawScan, opts: ProcessOptions,
             progress: Progress = None) -> ProcessResult:
     warnings: List[str] = []
+    # quanto costa ogni passo: va nel registro (service._esporta). Sulla
+    # riserva un fotogramma costava ~23 s (7/11/2026) e bisogna sapere dove.
+    import time as _time
+    tempi: Dict[str, float] = {}
+    corrente = ["inizio", _time.time()]
+
+    def _t(msg: str, frac: float) -> None:
+        adesso = _time.time()
+        tempi[corrente[0]] = round(tempi.get(corrente[0], 0.0) + adesso - corrente[1], 2)
+        corrente[0], corrente[1] = msg, adesso
+        _tick(progress, msg, frac)
 
     # --- 2. fusione esposizioni ---
-    _tick(progress, "Fusione esposizioni", 0.05)
+    _t("Fusione esposizioni", 0.05)
     planes: Dict[str, np.ndarray] = {}
     exposures = raw.meta.exposures or [1.0]
     for ch, stack in raw.planes.items():
@@ -318,7 +332,7 @@ def process(raw: RawScan, opts: ProcessOptions,
             if len(stack) > 1 else stack[0]
 
     # --- 3. allineamento canali ---
-    _tick(progress, "Allineamento canali", 0.15)
+    _t("Allineamento canali", 0.15)
     planes, shifts = registration.register_channels(planes, reference="G")
     big = [c for c, (dy, dx) in shifts.items() if abs(dy) > 2 or abs(dx) > 2]
     if big:
@@ -329,7 +343,7 @@ def process(raw: RawScan, opts: ProcessOptions,
     ir = planes.get("IR")
 
     # --- 4. maschera difetti ---
-    _tick(progress, "Rilevamento difetti (IR)", 0.30)
+    _t("Rilevamento difetti (IR)", 0.30)
     mask = None
     if ir is not None and opts.ir_strength > 0:
         mask = irclean.defect_mask(ir, threshold=opts.ir_threshold)
@@ -343,7 +357,7 @@ def process(raw: RawScan, opts: ProcessOptions,
         cov = 0.0
 
     # --- 5. inversione ---
-    _tick(progress, "Inversione negativo", 0.45)
+    _t("Inversione negativo", 0.45)
     # Il negativo segue la stessa strada geometrica del positivo: se il
     # confronto prima/dopo mostrasse due inquadrature diverse ingannerebbe
     # invece di aiutare, ed e' esattamente cio' che serve NON fare.
@@ -362,12 +376,12 @@ def process(raw: RawScan, opts: ProcessOptions,
                                  correzione_densita=_correzione(opts))
 
     # --- 6. colore ---
-    _tick(progress, "Bilanciamento colore", 0.60)
+    _t("Bilanciamento colore", 0.60)
     img = _bilancia(img, opts)
 
     # --- 7. inpainting ---
     if mask is not None and mask.any() and opts.ir_strength > 0:
-        _tick(progress, "Correzione difetti", 0.72)
+        _t("Correzione difetti", 0.72)
         img = irclean.inpaint(img, mask, strength=opts.ir_strength)
 
     # --- 8. geometria ---
@@ -377,7 +391,7 @@ def process(raw: RawScan, opts: ProcessOptions,
     density = -np.log10(np.clip(planes[riferimento], 1e-5, None))
 
     if opts.auto_straighten:
-        _tick(progress, "Raddrizzamento", 0.82)
+        _t("Raddrizzamento", 0.82)
         angle = framing.estimate_skew(density)
         if abs(angle) > 0.02:
             img = framing.straighten(img, angle)
@@ -388,7 +402,7 @@ def process(raw: RawScan, opts: ProcessOptions,
                 mask = framing.straighten(mask.astype(np.float32), angle) > 0.5
 
     if opts.auto_crop:
-        _tick(progress, "Ritaglio fotogramma", 0.88)
+        _t("Ritaglio fotogramma", 0.88)
         ew = mm_to_px(36.0, raw.meta.dpi)
         eh = mm_to_px(24.0, raw.meta.dpi)
         box = framing.detect_frame(density, ir, ew, eh, opts.crop_margin_px)
@@ -403,7 +417,7 @@ def process(raw: RawScan, opts: ProcessOptions,
             mask = framing.crop(mask, box)
 
     if opts.subject_crop:
-        _tick(progress, "Centratura sul soggetto", 0.92)
+        _t("Centratura sul soggetto", 0.92)
         sbox = framing.suggest_crop(img, opts.subject_aspect)
         img = framing.crop(img, sbox)
         if negativo is not None:
@@ -414,7 +428,7 @@ def process(raw: RawScan, opts: ProcessOptions,
     # --- 9. orientamento ---
     orientation = None
     if opts.auto_rotate or opts.roll_mirror is not None:
-        _tick(progress, "Orientamento", 0.93)
+        _t("Orientamento", 0.93)
         img, orientation = orient.auto_orient(
             img, roll_mirror=opts.roll_mirror, rotate=opts.auto_rotate,
             min_confidence=opts.rotate_min_confidence)
@@ -445,9 +459,10 @@ def process(raw: RawScan, opts: ProcessOptions,
     if extra_mask is not None:
         mask = extra_mask if mask is None else (mask | extra_mask)
 
-    _tick(progress, "Fatto", 1.0)
+    _t("Fatto", 1.0)
+    tempi.pop("inizio", None)
     return ProcessResult(img, mask, box, shifts, cov, warnings, orientation,
-                         _riduci_per_schermo(negativo), base, lineare)
+                         _riduci_per_schermo(negativo), base, lineare, tempi)
 
 
 def riferimento_lin(planes: Dict[str, np.ndarray]) -> str:

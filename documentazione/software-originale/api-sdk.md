@@ -306,7 +306,14 @@ dell'SDK):
 lettura dà ERR_GENERAL_FW con dettaglio 6 ("restore (add) buffer failed"),
 fino a un Gretag Reset. La `capture` del programma originale invece legge un
 fotogramma RGB intero (17 640 000 byte, 2100×1400×3 a 16 bit) in 4,4 s, con
-l'evento 204 alla fine.
+l'evento 204 alla fine. Disposizione verificata sul buffer: **tre piani uno
+dopo l'altro, R poi G poi B**, ognuno 2100×1400 `uint16` little-endian, valori
+a 12 bit (137–3209 sul negativo di prova). Con due buffer registrati, il
+primo fotogramma è finito nel **secondo** (il primo è rimasto a zero). Le
+medie dei piani (R 1485, G 1235, B 2225) dicono che la capture usa già tempi
+per LED diversi, che compensano la maschera arancione. La capture con ASF
+(Digital ICE) ha invece ricevuto solo eventi `(3, 0, 0)`
+(ILLEGAL_IN_THIS_STATE) ogni 0,2 s ed è rimasta appesa.
 
 Il cambio arriva al callback d'errore come `EV_STATE_CHANGE`, nella forma
 `(203, nuovo, vecchio)` (`0x1807AAB2`). Sulla riserva lo scanner passa da 10
