@@ -84,7 +84,7 @@ class ProcessOptions:
     grain_chroma_only: bool = True
     scratch_repair: float = 0.0         # rilevamento graffi SENZA infrarosso
     dust_repair: float = 0.0
-    sharpen: float = 0.0
+    sharpen: float = 0.2                # di serie un filo di nitidezza (7/11/2026)
     grain_add: float = 0.0              # grana sintetica, resa estetica
 
     # --- orientamento ---
@@ -178,6 +178,18 @@ class ProcessResult:
     geometria: Dict[str, object] = field(default_factory=dict)
 
 
+def _abbassa_luci(img: np.ndarray, quanto: float = 0.3) -> np.ndarray:
+    """Luci e alte luci un po' piu' basse (~10% a 3/4 della scala), il nero
+    e il bianco pieno restano dove sono: come "Luci" in negativo in un
+    programma di sviluppo. Sulla luminanza, i canali la seguono in
+    proporzione. Curva y = x - quanto*4*(x-0,5)*(1-x) sopra il grigio medio:
+    monotona finche' quanto <= 0,5 (Alessandro, 7/11/2026)."""
+    lum = img.mean(axis=2, keepdims=True)
+    x = np.clip(lum, 0.0, 1.0)
+    y = np.where(x > 0.5, x - quanto * 4.0 * (x - 0.5) * (1.0 - x), x)
+    return np.clip(img * (y / np.maximum(lum, 1e-6)), 0.0, 1.0).astype(np.float32)
+
+
 # rosso, verde, blu: il caldo della stampa dopo il bilanciamento automatico
 CALDO_STAMPA = np.array([1.02, 1.0, 0.97], dtype=np.float32).reshape(1, 1, 3)
 
@@ -247,6 +259,7 @@ def _bilancia(img: np.ndarray, opts: ProcessOptions, rapida: bool = False) -> np
             # la gamma estesa non taglia: quel che la curva salva deve esserci
             nero, bianco = 0.02, 99.97
         img = invert.auto_levels(img, black_pct=nero, white_pct=bianco)
+        img = _abbassa_luci(img)
     if opts.curve:
         img = invert.apply_curve(img, opts.curve)
     if not opts.auto_levels:

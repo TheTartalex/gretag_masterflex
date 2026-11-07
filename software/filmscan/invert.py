@@ -68,8 +68,8 @@ PROFILES: Dict[str, FilmProfile] = {
     # La "carta". Con paper_grade 1.0 l'uscita era la luce della scena tale e
     # quale, chiara e slavata (campioni della riserva, 7/11/2026); 1.6 per
     # canale era troppo contrastato e saturo. 1.4 sulla luminanza e
-    # saturazione all'88%: piu' morbido, senza gonfiare il colore.
-    "c41": FilmProfile("C-41 generico", paper_grade=1.4, saturazione_carta=0.88),
+    # saturazione al 95,5% (88% era troppo spento): piu' morbido, senza gonfiare il colore.
+    "c41": FilmProfile("C-41 generico", paper_grade=1.4, saturazione_carta=0.955),
     "bn": FilmProfile("Bianco e nero", monochrome=True, paper_grade=1.15,
                       gamma_negativo=0.62),
     # XP2, BW400CN: coloranti come un C-41, quindi trasparenti all'IR, e

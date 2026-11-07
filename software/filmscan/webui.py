@@ -231,7 +231,7 @@ def _opzioni(d: Dict) -> ProcessOptions:
         grain_add=f("grana_aggiungi"),
         scratch_repair=f("graffi"),
         dust_repair=f("polvere"),
-        sharpen=f("nitidezza"),
+        sharpen=f("nitidezza", 0.2),
         densita_locale=f("densita_locale"),
         tono_bn=str(d.get("tono_bn") or ""),
         viraggio=str(d.get("viraggio") or ""),
@@ -1514,8 +1514,8 @@ details.sez>div{padding-bottom:10px}
   <input type="range" id="ir" min="0" max="1" step="0.1" value="1">
   <label>Riduzione grana <b id="v_grana_riduci">0,0</b></label>
   <input type="range" id="grana_riduci" min="0" max="1" step="0.1" value="0">
-  <label>Nitidezza <b id="v_nitidezza">0,0</b></label>
-  <input type="range" id="nitidezza" min="0" max="1" step="0.1" value="0">
+  <label>Nitidezza <b id="v_nitidezza">0,2</b></label>
+  <input type="range" id="nitidezza" min="0" max="1" step="0.1" value="0.2">
   <label>Graffi senza IR <b id="v_graffi">0,0</b></label>
   <input type="range" id="graffi" min="0" max="1" step="0.1" value="0">
   <label>Polvere <b id="v_polvere">0,0</b></label>
@@ -2640,7 +2640,7 @@ function scansiona(){
   post('/api/scansiona',Object.assign({rullo_id:parseInt(r)},opzioni())).then(esito); }
 
 function azzeraCorrezioni(){
-  var d={ir:1,grana_riduci:0,nitidezza:0,graffi:0,polvere:0,grana_aggiungi:0,densita_locale:0};
+  var d={ir:1,grana_riduci:0,nitidezza:0.2,graffi:0,polvere:0,grana_aggiungi:0,densita_locale:0};
   Object.keys(d).forEach(function(k){ el(k).value=d[k]; mostraValore(k); });
   el('tono_bn').value=''; el('viraggio').value=''; applica();
 }

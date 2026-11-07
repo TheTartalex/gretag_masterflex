@@ -52,6 +52,12 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-11-07 (sera) — nitidezza, saturazione, luci
+
+- Nitidezza di serie 0,2 (era 0), saturazione della carta C-41 al 95,5%
+  (+8,5%), luci e alte luci ~10% più basse con nero e bianco fermi
+  (pipeline._abbassa_luci).
+
 ### 2026-11-07 (sera) — bianco meno blu, un filo di contrasto, profilo Gretag
 
 - Bilanciamento: 0,85 ai grigi medi e 0,15 alle luci, e un filo di caldo
