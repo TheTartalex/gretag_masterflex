@@ -1607,7 +1607,7 @@ details.sez>div{padding-bottom:10px}
    <label><input type="checkbox" id="imp_avanzamento_automatico" style="width:auto" onchange="impostaMacchina()"> Avanzamento automatico</label>
    <div class="nota-imp">Il carrello cerca da solo il fotogramma. Spento: ogni fotogramma si mette in finestra a mano, con il video e i passi da 1 e 20 mm.</div>
    <label><input type="checkbox" id="imp_leggi_dx" style="width:auto" onchange="impostaMacchina()"> Leggi il codice DX</label>
-   <div class="nota-imp">A inizio rullo e a ogni striscia: riconosce la pellicola. Se dopo la lettura lo scanner rifiuta le letture, spegnerla e mandare i registri.</div>
+   <div class="nota-imp">A inizio rullo e a ogni striscia: riconosce la pellicola. Solo con l'acquisizione "come il programma originale": dopo il DX lo scanner rifiuta le letture un canale per volta finché una capture non lo rimette a posto.</div>
    <label>Autofocus</label>
    <select id="imp_autofocus" onchange="impostaMacchina()">
     <option value="gi">gi_focus, ricerca completa (di serie)</option>

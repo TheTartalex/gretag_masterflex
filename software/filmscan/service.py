@@ -615,6 +615,18 @@ class ScanService:
         macchina non la sa dire o se la lettura e' spenta. Mai bloccante."""
         if not getattr(self.cfg, "leggi_dx", True):
             return ""
+        if self.cfg.acquisizione != "originale":
+            # Il DX (get_media_info) porta l'SDK nello stato 1, dove il
+            # firmware rifiuta ogni scan_raw (46/47/42 con dettaglio 1, ...)
+            # finche' una capture non lo riporta a 0 (riserva, 7/11/2026:
+            # rullo fermo alla misura dell'esposizione alle 17:59). Con la
+            # lettura un canale per volta quindi non si legge.
+            if not getattr(self, "_avviso_dx", False):
+                self._avviso_dx = True
+                self.log("Codice DX non letto: con l'acquisizione un canale per volta "
+                         "bloccherebbe le letture. Si legge con l'acquisizione come il "
+                         "programma originale (Macchina).")
+            return ""
         try:
             return chiave_dx(backend.codice_dx())
         except Emergenza:
