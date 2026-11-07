@@ -368,14 +368,18 @@ class RawScan:
     def add(self, channel: str, plane: np.ndarray) -> None:
         self.planes.setdefault(channel, []).append(plane)
 
-    def save(self, directory: str, name: str) -> str:
+    def save(self, directory: str, name: str, compresso: bool = True) -> str:
+        """compresso=False: molto piu' veloce sul PC della macchina (la
+        compressione di ~35 MB costa secondi), il doppio dello spazio. Lo si
+        usa quando l'elaborazione e' stata fermata e bisogna solo mettere al
+        sicuro i grezzi rimasti."""
         os.makedirs(directory, exist_ok=True)
         base = os.path.join(directory, name)
         arrays = {}
         for ch, planes in self.planes.items():
             for i, p in enumerate(planes):
                 arrays["%s_%d" % (ch, i)] = p
-        np.savez_compressed(base + ".npz", **arrays)
+        (np.savez_compressed if compresso else np.savez)(base + ".npz", **arrays)
         with open(base + ".json", "w", encoding="utf-8") as f:
             json.dump(asdict(self.meta), f, indent=2, ensure_ascii=False)
         return base + ".npz"

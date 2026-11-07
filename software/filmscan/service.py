@@ -218,6 +218,11 @@ class _FotogrammaVuoto(Exception):
     """Esce dal blocco del fotogramma senza esportare: non e' un errore."""
 
 
+class _ElaborazioneFermata(Exception):
+    """"Ferma elaborazione" premuto mentre un fotogramma si elaborava: lo
+    si lascia a meta' e resta da elaborare."""
+
+
 class _CodaIniziale(Exception):
     """La prima lettura di una striscia e' caduta sulla coda: non e' un
     fotogramma, non prende un numero."""
@@ -583,13 +588,22 @@ class ScanService:
         E' lo stop del lavoro normale; l'emergenza e' un'altra cosa."""
         if self.job.running and self.job.kind == "rullo":
             elab = self._elab
+            if elab is not None and elab.solo_grezzi.is_set():
+                # gia' fermata: altri tocchi non aggiungono niente (prima
+                # ognuno riscriveva "Fine rullo richiesto" nel diario)
+                return self.stato()
             if (self.job.chiusura or (elab is not None and elab.lettura_finita.is_set())) \
-                    and elab is not None and not elab.solo_grezzi.is_set():
+                    and elab is not None:
                 # secondo tocco, o lettura gia' finita: l'elaborazione si
-                # ferma dove e'; il resto resta da elaborare (Applica al rullo)
+                # ferma dove e', anche a meta' fotogramma; il resto resta da
+                # elaborare (tasto Completa), con l'anteprima della scansione
                 elab.solo_grezzi.set()
                 self.log("Elaborazione fermata: i fotogrammi rimasti si salvano "
-                         "solo come grezzi, da elaborare dopo con Applica al rullo.")
+                         "solo come grezzi (Completa li elabora dopo).")
+                self.job.message = "Elaborazione fermata: salvo i grezzi rimasti"
+                self._fine_rullo.set()
+                self.job.chiusura = True
+                return self.stato()
             self._fine_rullo.set()
             self.job.chiusura = True
             self.log("Fine rullo richiesto: si chiude dopo il fotogramma in "
@@ -1427,18 +1441,112 @@ class ScanService:
     def _autofocus(self, backend, metodo: Optional[str] = None) -> bool:
         """L'autofocus scelto nelle impostazioni. Se non trova il fuoco la
         macchina torna alla posizione nominale: si annota e si va avanti."""
-        metodo = metodo or self.cfg.autofocus
-        if metodo == "spento":
+        scelto = metodo or self.cfg.autofocus
+        if scelto == "spento":
             return False
-        try:
-            if backend.autofocus(metodo):
-                self.log("Autofocus (%s) fatto." % metodo)
-                return True
-        except (Emergenza, MotoriBloccati):
-            raise
-        except ScannerError as exc:
-            self.log("Autofocus (%s) non riuscito: %s" % (metodo, exc))
+        if metodo is None and getattr(self, "_metodo_fuoco", None):
+            # quello che nel rullo ha dato l'immagine piu' nitida (_verifica_fuoco)
+            scelto = self._metodo_fuoco
+        # Se il metodo scelto non trova il fuoco si provano gli altri: con
+        # il fuoco non trovato la lente resta alla posizione nominale, e li'
+        # l'immagine e' sfocata (collaudo del 7/11/2026: nitidezza del verde
+        # ~5 prima del fuoco, ~22 dopo, con tutti e tre i metodi).
+        prove = [scelto] + ([m for m in ("gi", "rapido", "nominale") if m != scelto]
+                            if metodo is None else [])
+        for m in prove[:3]:
+            try:
+                if backend.autofocus(m):
+                    self.log("Autofocus (%s) fatto." % m)
+                    self._ultimo_metodo_fuoco = m
+                    return True
+            except (Emergenza, MotoriBloccati):
+                raise
+            except ScannerError as exc:
+                self.log("Autofocus (%s) non riuscito: %s" % (m, str(exc).split(": ")[-1]))
+        self.job.errors.append("fuoco non trovato su questa striscia: le immagini "
+                               "possono essere sfocate")
+        self.log("Attenzione: fuoco non trovato con nessun metodo, la striscia "
+                 "puo' venire sfocata.")
         return False
+
+    @staticmethod
+    def _nitidezza(raw) -> float:
+        """Quanto e' a fuoco un grezzo: varianza del laplaciano sul centro
+        del verde (meta' risoluzione, normalizzato sul 99° percentile).
+        Riserva, 7/11/2026: ~80 un fotogramma a fuoco, ~8 uno sfocato, con
+        "Autofocus fatto" in tutti e due i casi. Dipende dal soggetto: si
+        usa per confrontare, non come verita' assoluta."""
+        canale = "G" if "G" in raw.planes else next(c for c in raw.planes if c != "IR")
+        a = np.asarray(raw.planes[canale][0], dtype=np.float32)[::2, ::2]
+        h, w = a.shape
+        a = a[h // 4:3 * h // 4, w // 4:3 * w // 4]
+        a = a / max(float(np.percentile(a, 99)), 1e-6)
+        try:
+            from scipy import ndimage
+            lap = ndimage.laplace(a)
+        except ImportError:
+            lap = (4 * a[1:-1, 1:-1] - a[:-2, 1:-1] - a[2:, 1:-1]
+                   - a[1:-1, :-2] - a[1:-1, 2:])
+        return float(lap.var() * 1e4)
+
+    SOGLIA_NITIDEZZA = 15.0
+
+    def _verifica_fuoco(self, backend, raw, rif: List[float], rileggi):
+        """Dopo l'autofocus del primo fotogramma vero di una striscia: se il
+        fotogramma e' molto meno nitido del dovuto (sotto 15, o sotto un
+        terzo del migliore visto nel rullo) si provano gli altri metodi, si
+        rilegge, e si tiene la lettura migliore. Il metodo vincente vale per
+        le strisce seguenti. Un "Autofocus fatto" non basta: il 7/11/2026
+        dopo un nominale riuscito il rullo e' uscito sfocato."""
+        s = self._nitidezza(raw)
+        usato = getattr(self, "_ultimo_metodo_fuoco", None)
+        soglia = max(self.SOGLIA_NITIDEZZA, 0.35 * rif[0]) if rif[0] else self.SOGLIA_NITIDEZZA
+        _registro.info("nitidezza dopo il fuoco (%s): %.1f, soglia %.1f", usato, s, soglia)
+        if s >= soglia:
+            rif[0] = max(rif[0], s)
+            return raw
+        self.log("Fuoco dubbio (nitidezza %.0f, %s): provo un altro metodo." % (s, usato))
+        migliore = (s, raw, usato)
+        provati = [usato]
+        for m in [x for x in ("rapido", "gi", "nominale") if x != usato][:2]:
+            try:
+                with self._sotto_pressore(backend):
+                    backend.autofocus(m)
+            except (Emergenza, MotoriBloccati, PressoreBloccato):
+                raise
+            except ScannerError as exc:
+                self.log("Autofocus (%s) non riuscito: %s" % (m, str(exc).split(": ")[-1]))
+                continue
+            provati.append(m)
+            nuovo = rileggi()
+            s2 = self._nitidezza(nuovo)
+            _registro.info("nitidezza con il fuoco %s: %.1f", m, s2)
+            if s2 > migliore[0]:
+                migliore = (s2, nuovo, m)
+            if s2 >= soglia:
+                break
+        s, raw, m = migliore
+        if m and m != provati[-1]:
+            # la lente e' rimasta all'ultimo provato: si torna al migliore
+            try:
+                with self._sotto_pressore(backend):
+                    backend.autofocus(m)
+            except (Emergenza, MotoriBloccati, PressoreBloccato):
+                raise
+            except ScannerError:
+                pass
+        if m:
+            self._metodo_fuoco = m
+            self._ultimo_metodo_fuoco = m
+        rif[0] = max(rif[0], s)
+        if s < soglia:
+            self.job.errors.append("fuoco dubbio anche con gli altri metodi (nitidezza %.0f): "
+                                   "la striscia puo' venire sfocata" % s)
+            self.log("Attenzione: fuoco dubbio anche con gli altri metodi.")
+        else:
+            self.log("Fuoco migliore con il metodo %s (nitidezza %.0f): lo uso per il "
+                     "resto del rullo." % (m, s))
+        return raw
 
     def finestra_carrello(self, numero: int, mostra: bool) -> Dict[str, object]:
         """Una finestra del GateControl sul monitor del PC, per il tecnico."""
@@ -1709,7 +1817,7 @@ class ScanService:
 
     def _esporta(self, raw, opts, dest: str, nome: str, rullo_id: int,
                  numero: int, bordo: str, raw_path: str, ordine_rullo,
-                 in_rete: bool = True):
+                 in_rete: bool = True, ferma: Optional[Callable[[], bool]] = None):
         """Elaborazione completa di un grezzo, file finale (con i
         metadati), maschera e negativo lineare se chiesti, e registro. Lo
         usano il rullo, Salva fotogramma e Applica a tutto il rullo.
@@ -1729,24 +1837,34 @@ class ScanService:
         neg_path = os.path.join(dest, nome + "_negativo." + (
             "dng" if neg_fmt == "dng" else "tif")) if neg_fmt else ""
 
+        if ferma is not None and ferma():
+            raise _ElaborazioneFermata()
         raw, opts = self._ice_kodak(raw, opts, numero)
         res = None
         if in_rete and self.in_rete():
             try:
                 res, mask_path, neg_path = self._esporta_in_rete(
-                    raw, opts, raw_path, meta, out_path, mask_path, neg_path, neg_fmt)
+                    raw, opts, raw_path, meta, out_path, mask_path, neg_path, neg_fmt,
+                    ferma=ferma)
                 _registro.info("fotogramma %d: elaborato da %s in %.1f s",
                                numero, res.tempi.get("elaboratore", "?"), time.time() - t0)
             except Exception as exc:                    # noqa: BLE001
                 res = None
+                if ferma is not None and ferma():
+                    raise _ElaborazioneFermata()
                 _registro.warning("fotogramma %d: elaboratore della rete non usato (%s), "
                                   "lo elabora la macchina", numero, exc)
                 self.log("Fotogramma %d: elaboratore della rete non disponibile (%s), "
                          "lo elaboro qui." % (numero, exc))
         if res is None:
+            def controlla(msg=None, frazione=None):
+                if ferma is not None and ferma():
+                    raise _ElaborazioneFermata()
+            controlla()
             with self._lock_locale:
+                controlla()
                 t0 = time.time()
-                res = process(raw, opts)
+                res = process(raw, opts, progress=controlla if ferma is not None else None)
                 t_process = time.time() - t0
                 export(res.image, out_path, self.cfg.export_format,
                        self.cfg.jpeg_quality, meta=meta)
@@ -1872,12 +1990,12 @@ class ScanService:
         return res
 
     def _esporta_in_rete(self, raw, opts, raw_path, meta, out_path, mask_path,
-                         neg_path, neg_fmt):
+                         neg_path, neg_fmt, ferma=None):
         lavoro = {"tipo": "esporta", "formato": self.cfg.export_format,
                   "qualita": int(self.cfg.jpeg_quality), "maschera": bool(mask_path),
                   "negativo": neg_fmt, "meta": meta}
         pacco = self._pacco(raw, opts, raw_path, lavoro)
-        esito, z = self._esito(self.elaboratori.elabora(pacco))
+        esito, z = self._esito(self.elaboratori.elabora(pacco, ferma=ferma))
         del pacco
         nomi = z.namelist()
         if "file/finale" not in nomi:
@@ -2640,8 +2758,9 @@ class ScanService:
                     # Il grezzo si salva qui e non nel ciclo di lettura: la
                     # compressione di ~35 MB costa secondi sul PC della
                     # macchina, e la pellicola intanto va avanti.
-                    if self.cfg.keep_raw or vuoto:
-                        raw_path = raw.save(self.cfg.path("raw"), nome)
+                    if self.cfg.keep_raw or vuoto or elab.solo_grezzi.is_set():
+                        raw_path = raw.save(self.cfg.path("raw"), nome,
+                                            compresso=not elab.solo_grezzi.is_set())
                     if vuoto:
                         self.archivio.fotogramma_registra(
                             rullo_id, numero, file_raw=raw_path, stato="vuoto",
@@ -2668,7 +2787,8 @@ class ScanService:
                                                        **g["extra"])),
                                         dest, nome, rullo_id,
                                         numero, bordo, raw_path,
-                                        (ordine, rullo))
+                                        (ordine, rullo),
+                                        ferma=elab.solo_grezzi.is_set)
                     elaborati["ok"] += 1
                     # nel visore la versione finita, se e' ancora l'ultimo
                     # fotogramma letto: uno piu' nuovo non si copre
@@ -2680,6 +2800,14 @@ class ScanService:
                         self.preview_neg = res.negativo
                     for w in res.warnings:
                         self.log("Fotogramma %d: %s" % (numero, w))
+                except _ElaborazioneFermata:
+                    if not raw_path:
+                        raw_path = raw.save(self.cfg.path("raw"), nome, compresso=False)
+                    self._salva_anteprima_viva((rullo_id, numero), raw_path)
+                    self.archivio.fotogramma_registra(
+                        rullo_id, numero, file_raw=raw_path, stato="da_elaborare",
+                        avvisi="non elaborato: elaborazione fermata", numero_bordo=bordo)
+                    non_elaborati.append(numero)
                 except Exception as exc:                # noqa: BLE001
                     self.job.errors.append("fotogramma %d: %s" % (numero, exc))
                     self.log("Fotogramma %d non elaborato: %s" % (numero, exc))
@@ -2693,6 +2821,14 @@ class ScanService:
                     self._provini_rapidi.pop((rullo_id, numero), None)
                     self._anteprime_vive.pop((rullo_id, numero), None)
                     self.job.in_elaborazione = max(0, self.job.in_elaborazione - 1)
+                    # a lettura finita il messaggio dice quanti ne restano
+                    if elab.lettura_finita.is_set() and self.job.in_elaborazione:
+                        n = self.job.in_elaborazione
+                        self.job.message = (
+                            ("Elaborazione fermata: salvo i grezzi rimasti (%d)" % n)
+                            if elab.solo_grezzi.is_set() else
+                            "Elaborazione degli ultimi %d fotogramm%s (Ferma elaborazione "
+                            "per interromperla)" % (n, "o" if n == 1 else "i"))
                     self.job.anteprime += 1
 
             non_elaborati: List[int] = []
@@ -2738,11 +2874,21 @@ class ScanService:
             inizio_striscia = True
             # l'autofocus si fa sul primo fotogramma vero di ogni striscia
             fuoco_da_fare = True
+            # un autofocus non riuscito da quando il carrello si e' mosso
+            # l'ultima volta: dopo, il "fotogramma successivo" puo' essere
+            # rifiutato (ERR_MOVE, riserva 7/11/2026), e si riprova
+            fuoco_fallito = False
+            # la prima posizione dopo l'inserimento di una striscia
+            prima_posizione = True
+            # nitidezza migliore vista nel rullo dopo un fuoco (_verifica_fuoco)
+            rif_fuoco = [0.0]
+            self._metodo_fuoco = None
             i = 0
             giri = 0
             while i < limite and giri < limite + 50:
                 giri += 1
                 conta = True
+                fuoco_qui = False
                 if self.emergenza:
                     raise Emergenza("STOP EMERGENZA")
                 if self._stop.is_set():
@@ -2770,6 +2916,7 @@ class ScanService:
                             (gains, da_misurare, misure_opache,
                              verifica_unica) = self._riparti_esposizione(preset)
                         fuoco_da_fare = True
+                        prima_posizione = True
                         continue
 
                 # Le strisce hanno lunghezza variabile: "attesi" e' un massimo,
@@ -2842,11 +2989,20 @@ class ScanService:
                         da_misurare = False
 
                 # Autofocus a inizio striscia, col pressore giu' come per la
-                # lettura: la pellicola deve stare dove sara' letta.
-                if (fuoco_da_fare and not opaca
+                # lettura: la pellicola deve stare dove sara' letta. Mai
+                # sulla prima posizione: e' quasi sempre la coda, li' il
+                # fuoco non si trova (ERR_FOCUS_FAILED), e dopo un fuoco
+                # non riuscito il carrello rifiutava di avanzare: striscia
+                # chiusa con 0 fotogrammi (riserva, 7/11/2026, 15:24 e
+                # 16:47). Se la prima posizione e' gia' un fotogramma, il
+                # fuoco si fa dopo averla letta, e la si rilegge.
+                if (fuoco_da_fare and not opaca and not prima_posizione
                         and self.cfg.autofocus != "spento"):
                     with self._sotto_pressore(backend):
-                        self._autofocus(backend)
+                        if self._autofocus(backend):
+                            fuoco_qui = True
+                        else:
+                            fuoco_fallito = True
 
                 # il numero stampato sul bordo, se la macchina lo sa dire:
                 # mai bloccante, e se manca il rullo va avanti lo stesso
@@ -2882,6 +3038,8 @@ class ScanService:
 
                     vuoto, escursione = fotogramma_vuoto(
                         raw, self.cfg.soglia_fotogramma_vuoto_d)
+                    era_la_prima = prima_posizione
+                    prima_posizione = False
                     primo = inizio_striscia
                     inizio_striscia = False
                     if vuoto and (primo or opaca):
@@ -2893,6 +3051,35 @@ class ScanService:
                         # ancora coda e non prende un numero.
                         inizio_striscia = True
                         raise _CodaIniziale()
+                    if (era_la_prima and fuoco_da_fare and not opaca and not vuoto
+                            and self.cfg.autofocus != "spento"):
+                        # la striscia comincia gia' su un fotogramma: fuoco
+                        # adesso, e se riesce lo si rilegge a fuoco
+                        with self._sotto_pressore(backend):
+                            if self._autofocus(backend):
+                                fuoco_qui = True
+                                raw = scan_frame(backend, self.cfg, preset, fmt,
+                                                 self.calib, frame_index=i,
+                                                 channel_exposure=gains,
+                                                 annulla=self.annullato)
+                            else:
+                                fuoco_fallito = True
+                    if fuoco_qui and not opaca and not vuoto:
+                        def rileggi(i=i):
+                            with self._sotto_pressore(backend):
+                                return scan_frame(backend, self.cfg, preset, fmt,
+                                                  self.calib, frame_index=i,
+                                                  channel_exposure=gains,
+                                                  annulla=self.annullato)
+                        raw = self._verifica_fuoco(backend, raw, rif_fuoco, rileggi)
+                    elif not vuoto and not opaca:
+                        # la nitidezza di ogni fotogramma nel registro: e' da
+                        # li' che si vede se il fuoco tiene lungo la striscia
+                        try:
+                            _registro.info("fotogramma %d: nitidezza %.1f", i + 1,
+                                           self._nitidezza(raw))
+                        except Exception:               # noqa: BLE001
+                            pass
                     if not opaca:
                         fuoco_da_fare = False
                     if vuoto:
@@ -2983,7 +3170,22 @@ class ScanService:
                 try:
                     if self.cfg.avanzamento_automatico:
                         t_trasporto = time.time()
-                        backend.prossimo_fotogramma(fmt)
+                        try:
+                            backend.prossimo_fotogramma(fmt)
+                        except FinePellicola:
+                            if not fuoco_fallito:
+                                raise
+                            # dopo un fuoco non riuscito il primo avanzamento
+                            # puo' essere rifiutato: una seconda prova prima
+                            # di dire che la striscia e' finita
+                            fuoco_fallito = False
+                            _registro.warning("avanzamento rifiutato dopo un fuoco non "
+                                              "riuscito: riprovo")
+                            self.log("Il carrello non e' avanzato dopo il fuoco non "
+                                     "riuscito: riprovo.")
+                            time.sleep(2.0)
+                            backend.prossimo_fotogramma(fmt)
+                        fuoco_fallito = False
                         tempi["trasporto"] = time.time() - t_trasporto
                         if "lettura" in tempi:
                             self.log("Fotogramma %d: lettura %.1f s, trasporto "
@@ -3003,6 +3205,7 @@ class ScanService:
                         (gains, da_misurare, misure_opache,
                          verifica_unica) = self._riparti_esposizione(preset)
                     inizio_striscia = True
+                    prima_posizione = True
                     fuoco_da_fare = True
                 except Emergenza:
                     raise
@@ -3030,6 +3233,7 @@ class ScanService:
                              verifica_unica) = self._riparti_esposizione(preset)
                         inizio_striscia = True
                         fuoco_da_fare = True
+                        prima_posizione = True
                 if conta:
                     i += 1
 
@@ -3076,7 +3280,7 @@ class ScanService:
             self._chiudi_statistiche(rullo_id, gruppi, memoria)
             if non_elaborati:
                 avviso = ("%d fotogramm%s NON elaborat%s (%s): i grezzi sono salvati, "
-                          "si elaborano con Applica al rullo"
+                          "il tasto Completa li elabora"
                           % (len(non_elaborati), "o" if len(non_elaborati) == 1 else "i",
                              "o" if len(non_elaborati) == 1 else "i",
                              ", ".join(str(n) for n in sorted(non_elaborati))))

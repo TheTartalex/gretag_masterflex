@@ -63,7 +63,11 @@ class FilmProfile:
 
 
 PROFILES: Dict[str, FilmProfile] = {
-    "c41": FilmProfile("C-41 generico"),
+    # paper_grade 1.6: la "carta". Con 1.0 l'uscita era la luce della scena
+    # tale e quale, e sui campioni della riserva (7/11/2026) risultava chiara
+    # e slavata: mediana della luminosita' 0,76 su un esterno al sole, ombre
+    # a 0,37. Con 1.6 0,65 e 0,19, piu' vicino a una stampa.
+    "c41": FilmProfile("C-41 generico", paper_grade=1.6),
     "bn": FilmProfile("Bianco e nero", monochrome=True, paper_grade=1.15,
                       gamma_negativo=0.62),
     # XP2, BW400CN: coloranti come un C-41, quindi trasparenti all'IR, e

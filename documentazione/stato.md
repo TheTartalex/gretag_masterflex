@@ -498,6 +498,13 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
   da leggere al prossimo invio per sapere se è la shell sostituita, le
   policy o explorer chiuso.
 
+- **Sera, dai registri delle 16:56 e 17:25**: fuoco sulla coda che fa
+  fallire l'avanzamento (strisce da 0 fotogrammi), rullo 9 sfocato con
+  "Autofocus (nominale) fatto", immagini slavate, Ferma elaborazione che
+  aspettava il salvataggio compresso dei grezzi: corretti (vedi CHANGELOG).
+  Da vedere nel prossimo invio: le righe "nitidezza" del registro, per
+  capire quale metodo di fuoco tiene meglio su questa macchina.
+
 ## Problemi aperti, in ordine di priorità
 
 1. **Motori delle guide all'avvio: RISOLTO per il 135** (28/10/2026, dalla

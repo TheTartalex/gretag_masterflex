@@ -52,6 +52,27 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-11-07 (sera) — fuoco, strisce vuote, immagini slavate, Ferma elaborazione
+
+- **Strisce chiuse con 0 fotogrammi**: l'autofocus partiva sulla prima
+  posizione (la coda), lì falliva (ERR_FOCUS_FAILED) e dopo un fuoco fallito
+  il carrello rifiutava di avanzare (ERR_MOVE). Ora niente fuoco sulla prima
+  posizione; se la striscia comincia su un fotogramma, fuoco e rilettura;
+  dopo un fuoco fallito l'avanzamento si riprova una volta.
+- **Immagini sfocate con "Autofocus fatto"** (campione rullo 9: nitidezza 8
+  contro 81 del rullo 8): dopo il fuoco si misura la nitidezza del primo
+  fotogramma vero; se è bassa si provano gli altri metodi, si rilegge e si
+  tiene il migliore, che vale per il resto del rullo. Se il metodo scelto
+  fallisce si provano gli altri. La nitidezza di ogni fotogramma va nel
+  registro.
+- **Immagini chiare e slavate**: il profilo C-41 ha una gradazione di
+  "carta" 1,6 (era 1,0). Sui campioni: mediana della luminosità da 0,76 a
+  0,65, ombre da 0,37 a 0,19.
+- **Ferma elaborazione** si ferma davvero: anche il fotogramma a metà, e i
+  grezzi rimasti si salvano senza compressione (secondi invece di minuti);
+  i tocchi ripetuti non riempiono più il diario; il messaggio conta quelli
+  che restano.
+
 ### 2026-11-07 — Digital ICE della Kodak, desktop di Windows, valori di serie
 
 - **Digital ICE della Kodak** (`filmscan/ice_kodak.py`, `ponte/dice.py`): la

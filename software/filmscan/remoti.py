@@ -126,7 +126,8 @@ class Elaboratori(object):
                     "in_lavorazione": sum(1 for l in self._lavori.values() if l.get("chi"))}
 
     # --- lato macchina ------------------------------------------------------
-    def elabora(self, pacco: bytes, timeout: float = 600.0) -> bytes:
+    def elabora(self, pacco: bytes, timeout: float = 600.0,
+                ferma=None) -> bytes:
         """Mette un lavoro in coda e aspetta l'esito (lo zip dei file finiti).
         RuntimeError se nessuno lo prende, se chi l'ha preso sparisce o se
         l'elaboratore risponde con un errore: chi chiama lo fa in casa."""
@@ -140,7 +141,9 @@ class Elaboratori(object):
             self._cond.notify_all()
         try:
             fine = time.time() + timeout
-            while not lavoro["evento"].wait(2.0):
+            while not lavoro["evento"].wait(1.0):
+                if ferma is not None and ferma():
+                    raise RuntimeError("elaborazione fermata")
                 adesso = time.time()
                 with self._cond:
                     chi = lavoro["chi"]
