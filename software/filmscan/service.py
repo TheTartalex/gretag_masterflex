@@ -233,6 +233,15 @@ class ScanService:
     def __init__(self, cfg: AppConfig, archivio: Optional[Archivio] = None):
         registri.configura_programma()
         self.cfg = cfg
+        # la resa di stampa della Gretag (Negative2Lab_P8_neg.lut), se c'e'
+        # sulla macchina, fra le LUT da scegliere
+        try:
+            from . import lut as _lut
+            for n in _lut.porta_profili_gretag(cfg.path("lut")):
+                logging.getLogger("filmscan.servizio").info(
+                    "profilo di stampa Gretag disponibile fra le LUT: %s", n)
+        except Exception:                               # noqa: BLE001
+            pass
         self.archivio = archivio or Archivio(
             os.path.join(os.path.dirname(os.path.abspath(cfg.out_dir)) or ".",
                          "ordini.db"))

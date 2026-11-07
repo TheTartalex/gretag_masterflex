@@ -67,9 +67,9 @@ class FilmProfile:
 PROFILES: Dict[str, FilmProfile] = {
     # La "carta". Con paper_grade 1.0 l'uscita era la luce della scena tale e
     # quale, chiara e slavata (campioni della riserva, 7/11/2026); 1.6 per
-    # canale era troppo contrastato e saturo. 1.3 sulla luminanza e
+    # canale era troppo contrastato e saturo. 1.4 sulla luminanza e
     # saturazione all'88%: piu' morbido, senza gonfiare il colore.
-    "c41": FilmProfile("C-41 generico", paper_grade=1.3, saturazione_carta=0.88),
+    "c41": FilmProfile("C-41 generico", paper_grade=1.4, saturazione_carta=0.88),
     "bn": FilmProfile("Bianco e nero", monochrome=True, paper_grade=1.15,
                       gamma_negativo=0.62),
     # XP2, BW400CN: coloranti come un C-41, quindi trasparenti all'IR, e
@@ -271,8 +271,8 @@ def auto_white_balance(img: np.ndarray, strength: float = 1.0,
     il 5° e il 95° percentile di luminosita') e le luci uguali fra i canali
     (white-patch, sul 99° percentile). Prima c'erano solo le luci: un cielo
     o un muro colorato bastavano a dare una dominante (riserva, 7/11/2026:
-    esterno al sole uscito blu). Pesi 2/3 ai toni medi, 1/3 alle luci:
-    sui campioni il risultato piu' neutro senza appiattire le stanze.
+    esterno al sole uscito blu). Pesi 0,85 ai toni medi e 0,15 alle luci:
+    con 2/3 e 1/3 restava un filo di blu (Alessandro, 7/11/2026).
     'strength' lo dosa o lo spegne.
     """
     if strength <= 0:
@@ -287,7 +287,7 @@ def auto_white_balance(img: np.ndarray, strength: float = 1.0,
     grigi = m.mean() / m
     high = np.maximum(np.percentile(c, percentile, axis=0), 1e-6)
     luci = high.mean() / high
-    gain = grigi ** (2.0 / 3.0) * luci ** (1.0 / 3.0)
+    gain = grigi ** 0.85 * luci ** 0.15
     gain = 1.0 + (gain - 1.0) * float(strength)
     return np.clip(img * gain.reshape(1, 1, 3), 0.0, 1.0).astype(np.float32)
 

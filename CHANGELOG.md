@@ -52,6 +52,16 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-11-07 (sera) — bianco meno blu, un filo di contrasto, profilo Gretag
+
+- Bilanciamento: 0,85 ai grigi medi e 0,15 alle luci, e un filo di caldo
+  da stampa (R ×1,02, B ×0,97) dopo il bilanciamento automatico.
+- Carta C-41: gradazione 1,4 (era 1,3).
+- Il profilo di stampa della Gretag (Negative2Lab*.lut), se è sulla
+  macchina in C:\MasterflexD, si copia da solo fra le LUT all'avvio.
+- Confronto interno con RawTherapee (profilo Film Negative): senza scegliere
+  a mano la base della pellicola esce ciano; non lo si usa.
+
 ### 2026-11-07 (sera) — colore ed esposizione sul centro, più morbidi
 
 - Colore ed esposizione si valutano sul 60% centrale del negativo

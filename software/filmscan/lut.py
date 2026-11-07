@@ -282,6 +282,40 @@ def carica(percorso: str) -> Lut:
     return leggi(dati.decode("utf-8", errors="replace"), os.path.basename(percorso))
 
 
+def porta_profili_gretag(cartella: str, radice: str = r"C:\MasterflexD") -> List[str]:
+    """Copia nella cartella delle LUT i profili di stampa del programma
+    originale che ci sono sulla macchina (Negative2Lab*.lut): cosi' la resa
+    della Gretag si sceglie dalla sezione LUT senza copiare file a mano. I
+    file restano sulla macchina (software/lut e' fuori dal repository).
+    Ritorna quelli copiati adesso."""
+    copiati: List[str] = []
+    if not os.path.isdir(radice):
+        return copiati
+    try:
+        if any(n.lower().startswith("negative2lab") for n in os.listdir(cartella)):
+            return copiati          # gia' fatto: niente giro del disco a ogni avvio
+    except OSError:
+        pass
+    try:
+        os.makedirs(cartella, exist_ok=True)
+    except OSError:
+        return copiati
+    for base, cartelle, nomi in os.walk(radice):
+        # niente cartelle di dati enormi: i profili stanno fra i programmi
+        cartelle[:] = [c for c in cartelle if c.lower() not in ("ponte", "ponte-prova", "orders", "images")]
+        for n in nomi:
+            if n.lower().startswith("negative2lab") and n.lower().endswith(".lut"):
+                dest = os.path.join(cartella, n)
+                if not os.path.exists(dest):
+                    try:
+                        import shutil
+                        shutil.copy2(os.path.join(base, n), dest)
+                        copiati.append(n)
+                    except OSError:
+                        pass
+    return copiati
+
+
 def elenco(cartella: str) -> List[str]:
     try:
         return sorted(f for f in os.listdir(cartella)

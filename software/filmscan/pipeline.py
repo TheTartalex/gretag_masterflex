@@ -178,6 +178,10 @@ class ProcessResult:
     geometria: Dict[str, object] = field(default_factory=dict)
 
 
+# rosso, verde, blu: il caldo della stampa dopo il bilanciamento automatico
+CALDO_STAMPA = np.array([1.02, 1.0, 0.97], dtype=np.float32).reshape(1, 1, 3)
+
+
 def _negativo_rgb(planes: Dict[str, np.ndarray]) -> Optional[np.ndarray]:
     """Il negativo come lo vede il sensore, in RGB, pronto per lo schermo.
 
@@ -232,6 +236,10 @@ def _bilancia(img: np.ndarray, opts: ProcessOptions, rapida: bool = False) -> np
         return img
     if opts.correzione_densita is None and opts.auto_wb > 0:
         img = invert.auto_white_balance(img, opts.auto_wb)
+    if opts.auto_wb > 0 and not opts.profile.monochrome:
+        # un filo di caldo, come le stampe di laboratorio: col bianco
+        # "esatto" restava un'aria blu (Alessandro, 7/11/2026)
+        img = np.clip(img * CALDO_STAMPA, 0.0, 1.0).astype(np.float32)
     if opts.auto_levels:
         nero = 0.5 if opts.classe_esposizione == "velato" else 0.1
         bianco = 99.8
