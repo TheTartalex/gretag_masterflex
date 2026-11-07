@@ -52,6 +52,22 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-11-08 — menu più corto, archivio con la consegna per rullo
+
+- `MASTERFLEX.bat`: tolte Simulazione, Collaudo del programma, Diagnosi,
+  Aggiorna e Pacchetto offline (con `:collaudo`, `:diagnosi`, `:aggiorna`,
+  `:offline`, il modo "simulazione" e, in `manutenzione.py`, `diagnosi` e
+  `offline` con i loro aiuti). Menu rinumerato 1-10. Restano
+  `manutenzione.py aggiorna` (lo usa l'aggiornamento remoto), `selftest.py`
+  e `agente.py --simula` (prove nel container e collaudi simulati).
+- Archivio: le impostazioni (cartella, conservazione, WhatsApp, registro)
+  in un pannello a scomparsa dalla chiave inglese in alto, e l'elenco
+  ordini si allunga. Nell'ordine i rulli vengono per primi: premendo un
+  rullo si apre la sua consegna (foto, grezzi, da stampare, negativi e
+  positivi, provino, riapri, elimina), solo i file di quel rullo
+  (`consegne.archivio_per`, parametro `rullo` di zip, provino e positivi).
+  Scheda del cliente (nome, telefono, nota, elimina) in fondo.
+
 ### 2026-11-07 (notte) — Digital ICE: cause e collaudo IR, desktop all'avvio
 
 - Dai registri delle 19:13: nel rullo delle 19:01 nessun fotogramma è stato

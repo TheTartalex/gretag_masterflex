@@ -2,17 +2,17 @@
 REM ===========================================================================
 REM  MASTERFLEX.bat - l'unico file da lanciare.
 REM
-REM  Doppio clic: menu con tutte le funzioni (installare, aggiornare, avviare,
-REM  avvio automatico, collaudi, diagnosi...).
+REM  Doppio clic: menu con tutte le funzioni (installare, avviare, avvio
+REM  automatico, collaudi...). Aggiornamenti e registri passano dal
+REM  collegamento remoto e dall'interfaccia (Macchina).
 REM  Da riga di comando o dall'avvio automatico, senza menu:
 REM
 REM     MASTERFLEX.bat avvia [si]           completo, macchina vera ("si" salta la conferma)
 REM     MASTERFLEX.bat avvia-senza-motori   completo, motori fermi (solo per prove)
-REM     MASTERFLEX.bat simulazione          nessuna macchina
 REM     MASTERFLEX.bat osservatore          man in the middle (programma originale)
 REM     MASTERFLEX.bat automatico           l'ultimo modo usato, senza domande
 REM                                         (lo lancia l'Utilita' di pianificazione)
-REM     MASTERFLEX.bat installa | aggiorna | collaudo | diagnosi
+REM     MASTERFLEX.bat installa
 REM     MASTERFLEX.bat agente               solo l'agente dello scanner, motori
 REM                                         attivi (lo usa "AVVIA AGENTE.bat")
 REM
@@ -58,24 +58,19 @@ echo.
 echo    AVVIO   ^(Invio = l'ultimo usato: !MODO_ULTIMO!^)
 echo     1  Completo - macchina vera ^(chiude il programma originale^)
 echo     2  Completo - motori fermi, solo letture ^(per prove^)
-echo     3  Simulazione ^(nessuna macchina^)
-echo    14  Man in the middle - programma originale + osservatore:
+echo     3  Man in the middle - programma originale + osservatore:
 echo        non chiude niente e non avvia l'agente
 echo.
 echo    COLLAUDI
 echo     4  Collaudo dello scanner: automatico, senza e con pellicola
-echo     5  Collaudo del programma (senza macchina)
-echo     6  Diagnosi e registri: uno zip da inviare ^(cartella log^)
-echo    13  Firmware del carrello: controllo versione ^(richiesta 1.15^)
-echo    15  Collegamento remoto: registri e aggiornamenti senza chiavetta
+echo     5  Firmware del carrello: controllo versione ^(richiesta 1.15^)
+echo     6  Collegamento remoto: registri e aggiornamenti senza chiavetta
 echo.
 echo    MANUTENZIONE
 echo     7  Installa / ripara (Python, librerie, cartelle, firewall)
-echo     8  Aggiorna il programma
-echo     9  Avvio automatico all'accensione
-echo    10  Programma originale: stampa e densitometro
-echo    11  Prepara il pacchetto per installare senza internet
-echo    12  Disinstalla (avvio automatico, firewall, scorciatoie)
+echo     8  Avvio automatico all'accensione
+echo     9  Programma originale: stampa e densitometro
+echo    10  Disinstalla (avvio automatico, firewall, scorciatoie)
 echo.
 echo     0  Esci
 echo.
@@ -90,19 +85,14 @@ if not defined SCELTA (
 if "%SCELTA%"=="0" exit /b 0
 if "%SCELTA%"=="1"  call :azione avvia
 if "%SCELTA%"=="2"  call :azione avvia-senza-motori
-if "%SCELTA%"=="3"  call :azione simulazione
+if "%SCELTA%"=="3"  call :azione osservatore
 if "%SCELTA%"=="4"  call :azione collaudo-scanner
-if "%SCELTA%"=="5"  call :azione collaudo
-if "%SCELTA%"=="6"  call :azione diagnosi
-if "%SCELTA%"=="15" call :azione remoto
+if "%SCELTA%"=="5"  call :azione firmware
+if "%SCELTA%"=="6"  call :azione remoto
 if "%SCELTA%"=="7"  call :azione installa
-if "%SCELTA%"=="8"  call :azione aggiorna
-if "%SCELTA%"=="9"  call :azione avvio-automatico
-if "%SCELTA%"=="10" call :azione originale
-if "%SCELTA%"=="11" call :azione offline
-if "%SCELTA%"=="12" call :azione disinstalla
-if "%SCELTA%"=="13" call :azione firmware
-if "%SCELTA%"=="14" call :azione osservatore
+if "%SCELTA%"=="8"  call :azione avvio-automatico
+if "%SCELTA%"=="9"  call :azione originale
+if "%SCELTA%"=="10" call :azione disinstalla
 echo.
 pause
 goto :menu
@@ -112,7 +102,6 @@ REM ===========================================================================
 :azione
 REM ===========================================================================
 if /i "%~1"=="installa"          goto :installa
-if /i "%~1"=="offline"           goto :offline
 if not defined PY (
     echo.
     echo  Python 3.8 a 32 bit non c'e'. Scegliere prima "Installa / ripara".
@@ -120,13 +109,9 @@ if not defined PY (
 )
 if /i "%~1"=="avvia"             goto :avvia
 if /i "%~1"=="avvia-senza-motori" goto :avvia
-if /i "%~1"=="simulazione"       goto :avvia
 if /i "%~1"=="agente"            goto :agente_solo
 if /i "%~1"=="remoto"            goto :remoto
 if /i "%~1"=="collaudo-scanner"  goto :collaudo_scanner
-if /i "%~1"=="collaudo"          goto :collaudo
-if /i "%~1"=="diagnosi"          goto :diagnosi
-if /i "%~1"=="aggiorna"          goto :aggiorna
 if /i "%~1"=="avvio-automatico"  goto :avvio_automatico
 if /i "%~1"=="originale"         goto :originale
 if /i "%~1"=="disinstalla"       goto :disinstalla
@@ -150,16 +135,11 @@ set "OPZ="
 set "DRIVER=sdk"
 set "CARTELLA=%PONTE%"
 if /i "%MODO%"=="avvia-senza-motori" set "OPZ=--senza-motori"
-if /i "%MODO%"=="simulazione" (
-    set "OPZ=--simula"
-    set "CARTELLA=C:\MasterflexD\ponte-prova"
-)
 if not exist "%CARTELLA%" mkdir "%CARTELLA%" 2>nul
 "%PY%" manutenzione.py modo %MODO% >nul 2>&1
 
 "%PY%" -c "import manutenzione as m,sys;sys.exit(0 if m.agente_attivo(r'%CARTELLA%') else 1)" >nul 2>&1
 if not errorlevel 1 goto :avvia_agente_presente
-if /i "%MODO%"=="simulazione" goto :avvia_agente
 REM  Il programma originale si apre da solo e tiene scheda e COM5: si chiude
 REM  tutto quello che parte da C:\MasterflexD, PRIMA dell'agente. Dopo no:
 REM  l'SDK dell'agente usa a sua volta il GateControl di quella cartella.
@@ -192,7 +172,7 @@ exit /b 0
 REM ===========================================================================
 :remoto
 REM  Registri e aggiornamenti attraverso GitHub (remoto.py). Se l'aggiornamento
-REM  porta un MASTERFLEX.bat nuovo, lo si scambia qui, come per "Aggiorna".
+REM  porta un MASTERFLEX.bat nuovo, lo si scambia qui, come all'avvio automatico.
 REM ===========================================================================
 "%PY%" remoto.py menu
 if exist "%~dp0MASTERFLEX.bat.nuovo" (
@@ -355,7 +335,7 @@ if errorlevel 1 if defined AUTO (
     set /a ATTESE+=1
     if !ATTESE! GTR 120 (
         echo  PhxScanner.exe non si e' aperto in 10 minuti: avviare il
-        echo  programma originale e poi MASTERFLEX.bat, voce 14.
+        echo  programma originale e poi MASTERFLEX.bat, voce 3.
         exit /b 1
     )
     if !ATTESE!==1 echo  Attendo che il programma originale apra PhxScanner.exe...
@@ -364,7 +344,7 @@ if errorlevel 1 if defined AUTO (
 )
 if errorlevel 1 (
     echo  PhxScanner.exe non e' in esecuzione: avviare il programma originale
-    echo  ^(voce 10^) e aspettare che sia pronto, SENZA aprire ancora un ordine.
+    echo  ^(voce 9^) e aspettare che sia pronto, SENZA aprire ancora un ordine.
     set "OK="
     set /p "OK=  Invio quando e' aperto, 0 per tornare al menu: "
     if "!OK!"=="0" exit /b 1
@@ -424,25 +404,6 @@ exit /b 0
 
 
 REM ===========================================================================
-:collaudo
-REM ===========================================================================
-"%PY%" manutenzione.py verifica
-"%PY%" run.py --controllo
-echo.
-"%PY%" selftest.py
-exit /b !errorlevel!
-
-
-REM ===========================================================================
-:diagnosi
-REM ===========================================================================
-"%PY%" manutenzione.py diagnosi
-REM la cartella dei registri, con lo zip da mandare in da-mandare
-if exist "%~dp0log" start "" explorer "%~dp0log\da-mandare"
-exit /b !errorlevel!
-
-
-REM ===========================================================================
 :installa
 REM  Python 3.8.10 a 32 bit se manca (scaricato e controllato), librerie alle
 REM  versioni giuste, cartelle, firewall, controllo di driver e SDK.
@@ -480,7 +441,7 @@ echo  [5/5] Driver, scheda, SDK e firmware del carrello
 "%PY%" manutenzione.py macchina
 "%PY%" manutenzione.py firmware
 echo.
-echo  Fatto. La prima volta: voce 3 ^(simulazione^), e collegarsi dal tablet.
+echo  Fatto. La prima volta: voce 1, e collegarsi dal tablet.
 echo.
 set "AA="
 set /p "AA=  Attivare l'avvio automatico all'accensione? [s/N] "
@@ -497,8 +458,8 @@ if not exist "%PYEXE%" (
 )
 if not exist "%PYEXE%" (
     echo        [ERRORE] download non riuscito ^(su Windows 7 capita: TLS 1.2^).
-    echo        Preparare il pacchetto offline su un altro PC ^(voce 11^) oppure
-    echo        copiare python-3.8.10.exe nella cartella pacchetti.
+    echo        Copiare python-3.8.10.exe nella cartella pacchetti, accanto a
+    echo        questo file, e rilanciare.
     exit /b 1
 )
 call :sha256 "%PYEXE%"
@@ -543,31 +504,6 @@ exit /b 0
 
 
 REM ===========================================================================
-:aggiorna
-REM ===========================================================================
-echo.
-echo  Da dove prendo la versione nuova?
-echo    Invio  = scarica l'ultima da GitHub ^(se il repository e' pubblico^)
-echo    oppure = percorso di uno zip scaricato da GitHub o di una cartella
-echo.
-set "SORG="
-set /p "SORG=  Sorgente: "
-"%PY%" manutenzione.py aggiorna "!SORG!" || exit /b 1
-"%PY%" manutenzione.py librerie
-REM  Questo file non si puo' sovrascrivere mentre gira: manutenzione.py ha
-REM  scritto la versione nuova accanto. Il blocco fra parentesi viene letto
-REM  tutto prima di eseguirlo, quindi lo scambio e l'uscita sono sicuri.
-if exist "%~dp0MASTERFLEX.bat.nuovo" (
-    move /y "%~dp0MASTERFLEX.bat.nuovo" "%~dp0MASTERFLEX.bat" >nul
-    echo.
-    echo  Aggiornato. Rilanciare MASTERFLEX.bat.
-    pause
-    exit
-)
-exit /b 0
-
-
-REM ===========================================================================
 :avvio_automatico
 REM ===========================================================================
 REM  All'accensione parte da amministratore senza richieste: lo fa
@@ -579,9 +515,8 @@ echo.
 echo    1  attiva - completo, motori attivi
 echo    2  attiva - completo, motori fermi ^(solo per prove^)
 echo    3  attiva - man in the middle ^(programma originale + osservatore^)
-echo    4  attiva - simulazione
-echo    5  prova adesso, come all'accensione ^(senza riavviare^)
-echo    6  disattiva
+echo    4  prova adesso, come all'accensione ^(senza riavviare^)
+echo    5  disattiva
 echo    0  indietro
 set "A="
 set /p "A=  Scelta: "
@@ -589,13 +524,12 @@ set "M="
 if "%A%"=="1" set "M=avvia"
 if "%A%"=="2" set "M=avvia-senza-motori"
 if "%A%"=="3" set "M=osservatore"
-if "%A%"=="4" set "M=simulazione"
 if defined M (
     "%PY%" manutenzione.py modo !M!
     "%PY%" manutenzione.py avvio on
 )
-if "%A%"=="5" "%PY%" manutenzione.py avvio adesso
-if "%A%"=="6" "%PY%" manutenzione.py avvio off
+if "%A%"=="4" "%PY%" manutenzione.py avvio adesso
+if "%A%"=="5" "%PY%" manutenzione.py avvio off
 exit /b 0
 
 
@@ -617,23 +551,6 @@ if "%O%"=="2" "%PY%" -m filmscan.originale --ripristina
 echo.
 echo  ATTENZIONE: il programma originale e filmscan non vanno usati insieme.
 exit /b 0
-
-
-REM ===========================================================================
-:offline
-REM  Funziona da qualunque PC con Python e internet, anche moderno: le wheel
-REM  si chiedono per Windows 32 bit e Python 3.8.
-REM ===========================================================================
-set "PYO=%PY%"
-if not defined PYO (
-    where python >nul 2>&1 && set "PYO=python"
-)
-if not defined PYO (
-    echo  Serve un Python qualunque su questo PC per preparare il pacchetto.
-    exit /b 1
-)
-"%PYO%" manutenzione.py offline
-exit /b !errorlevel!
 
 
 REM ===========================================================================

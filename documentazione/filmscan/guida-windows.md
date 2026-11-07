@@ -430,7 +430,7 @@ configurazione. Di ogni file tiene una copia intatta con il suffisso
 Il perché di ogni scelta sta in
 [programma-originale.md](../software-originale/programma-originale.md).
 
-### Scansionare con l'originale e salvare con filmscan (voce 14)
+### Scansionare con l'originale e salvare con filmscan (voce 3)
 
 Serve quando il programma originale acquisisce ma non salva. Il programma
 originale comanda la macchina, e un osservatore copia le immagini grezze che

@@ -47,7 +47,7 @@ certificati/          certificati radice di Mozilla per GitHub (Windows 7 non si
 ponte/
   agente.py           l'agente sul PC della macchina (solo libreria standard)
   sdk.py              collegamento a scn_dll.dll via ctypes
-  osservatore.py      copia le immagini grezze del programma originale (voce 14)
+  osservatore.py      copia le immagini grezze del programma originale (voce 3)
 ```
 
 Creati durante il lavoro e fuori da git: `ordini.db`, `impostazioni.json`,

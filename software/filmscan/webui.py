@@ -398,6 +398,21 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
 
 .elenco{max-height:none}
+/* impostazioni dell'archivio a scomparsa (chiave inglese in alto) */
+.velo{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:20;display:none}
+.cassetto{position:fixed;top:0;right:0;bottom:0;width:min(420px,100%);z-index:21;
+ background:var(--bg);border-left:1px solid var(--line);overflow-y:auto;padding:10px;
+ transform:translateX(105%);transition:transform .18s ease}
+body.imp-aperte .velo{display:block}
+body.imp-aperte .cassetto{transform:none}
+.cassetto .testa{display:flex;align-items:center;gap:8px;margin:2px 2px 10px}
+.cassetto .testa b{flex:1}
+aside .ordini{flex:1 0 auto}
+/* il rullo si apre premendoci: dentro c'e' la sua consegna */
+.rullo h2{cursor:pointer;user-select:none}
+.rullo h2 .apri{color:var(--acc)}
+.rullo .consegna{display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+.rullo.aperto .consegna{display:block}
 .ord{border:1px solid var(--line);border-radius:7px;padding:10px 11px;
  margin-bottom:7px;cursor:pointer;background:var(--campo)}
 .ord:hover{border-color:var(--acc)}
@@ -451,17 +466,37 @@ table.sc th{color:var(--dim);font-weight:500}
  <div id="conta" style="font-size:12px;color:var(--dim)"></div>
  <div class="sp"></div>
  <a class="link" id="vaiscansione" href="/">&larr; Scansione</a>
+ <button class="tema" onclick="impostazioni(true)" title="Impostazioni dell'archivio">
+  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+   stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+   <path d="M14.7 6.3a4 4 0 0 0-5.4 5.2L3.6 17.2a1.6 1.6 0 0 0 2.3 2.3l5.7-5.7a4 4 0 0 0 5.2-5.4l-2.5 2.5-2.1-.5-.5-2.1z"/>
+  </svg></button>
  /*ICONA*/
 </header>
 
 <main>
 <aside>
- <section class="pannello">
+ <section class="pannello ordini">
   <h2>Ordini <span id="tot"></span></h2>
   <input id="cerca" placeholder="cerca un cliente...">
   <div class="elenco" id="elenco" style="margin-top:10px"></div>
  </section>
 
+ <section class="pannello">
+  <h2>Spazio <span id="scadutitot"></span></h2>
+  <div id="scaduti"></div>
+ </section>
+</aside>
+
+<section class="det" id="dettaglio">
+ <div class="pannello vuoto">Scegliere un ordine dall'elenco.</div>
+</section>
+</main>
+
+<div class="velo" onclick="impostazioni(false)"></div>
+<div class="cassetto" id="cassetto">
+ <div class="testa"><b>Impostazioni dell'archivio</b>
+  <button class="ghost" style="width:auto" onclick="impostazioni(false)">Chiudi</button></div>
  <section class="pannello">
   <h2>Registro e archivio</h2>
   <label>Cartella dell'archivio</label>
@@ -515,16 +550,7 @@ table.sc th{color:var(--dim);font-weight:500}
    aperto da qualcuno bloccherebbe le scritture.</div>
  </section>
 
- <section class="pannello">
-  <h2>Spazio <span id="scadutitot"></span></h2>
-  <div id="scaduti"></div>
- </section>
-</aside>
-
-<section class="det" id="dettaglio">
- <div class="pannello vuoto">Scegliere un ordine dall'elenco.</div>
-</section>
-</main>
+</div>
 
 <script>
 var TOKEN = new URLSearchParams(location.search).get('t') || '';
@@ -544,6 +570,17 @@ function data(t){ var d=new Date(t*1000);
 el('vaiscansione').href = url('/');
 
 var ORDINI=[], SEL=null;
+/* i rulli aperti (con la consegna in vista) restano aperti quando l'ordine
+   si ridisegna; un ordine nuovo parte chiuso, tranne se ha un rullo solo */
+var APERTI={};
+function apriRullo(rid){
+  APERTI[rid]=!APERTI[rid];
+  var e=el('rullo_'+rid); if(!e) return;
+  e.classList.toggle('aperto', !!APERTI[rid]);
+  var b=e.querySelector('h2 .apri'); if(b) b.textContent = APERTI[rid] ? 'chiudi' : 'consegna';
+}
+function impostazioni(si){ document.body.classList.toggle('imp-aperte', !!si); }
+document.addEventListener('keydown', function(e){ if(e.key==='Escape') impostazioni(false); });
 
 function caricaOrdini(){
   get('/api/archivio/ordini?cerca='+encodeURIComponent(el('cerca').value))
@@ -593,62 +630,64 @@ var RIEP = {};
 var ULTIMO_ESITO = '';
 
 function apri(id){
+  if(SEL!==id) APERTI={};
   SEL=id; caricaOrdini();
   get('/api/archivio/ordine?id='+id).then(function(r){
     if(r.errore){ el('dettaglio').innerHTML='<div class="pannello vuoto">'+r.errore+'</div>'; return; }
     var o=r.ordine, c=r.cliente||{}, ri=r.riepilogo;
     RIEP = ri;
     var h='';
-
-    h+='<section class="pannello"><h2>'+o.codice+
-       ' <span>'+data(o.creato)+' · '+Math.round(ri.giorni)+' giorni fa</span></h2>'+
-       '<div class="g2">'+
-       '<div><label>Cliente</label><input id="d_cliente" value="'+(c.nome||'').replace(/"/g,"&quot;")+'"></div>'+
-       '<div><label>Telefono</label><input id="d_tel" value="'+(c.telefono||'')+'"></div>'+
-       '</div>'+
-       '<label>Nota dell\'ordine</label><input id="d_note" value="'+(o.note||'').replace(/"/g,"&quot;")+'">'+
-       '<div class="row"><button onclick="salvaNomi('+o.id+','+o.cliente_id+')">Salva le modifiche</button>'+
-       '<button class="ghost" onclick="apri('+o.id+')">Annulla</button></div>'+
-       '<div class="nota">Cambiando il nome qui si corregge la scheda del cliente, '+
-       'quindi anche i suoi altri ordini. Per spostare questo ordine su un\'altra '+
-       'persona, scrivere il nome nuovo e salvare: se non esiste viene creata.</div>'+
-       '<div class="g2" style="margin-top:10px">'+
-       '<button class="male" onclick="eliminaOrdine('+o.id+')">Elimina l\'ordine</button>'+
-       '<button class="male" onclick="eliminaCliente('+o.cliente_id+')">Elimina il cliente</button>'+
-       '</div>'+
-       '<div class="nota" id="esitoelimina">Eliminare toglie le righe dall\'archivio. '+
-       'I file sul disco si cancellano solo se lo si conferma a parte: sono due '+
-       'decisioni diverse e si prendono due volte.</div>'+
-       '</section>';
-
-    /* Un pulsante che si puo' premere e poi risponde "questo ordine non ha
-       file" e' un pulsante che ha fatto perdere tempo. Se sul disco non c'e'
-       niente, il pulsante e' spento e sotto c'e' scritto perche'. */
+    /* Ordine (8/11/2026, Alessandro): i rulli in cima, ognuno con la sua
+       consegna che si apre premendoci; poi l'avviso al cliente e lo spazio;
+       la scheda del cliente (nome, telefono, elimina) in fondo a tutto. */
     var cf = ri.n_esportati ? '' : ' disabled';
-    var cg = ri.n_grezzi ? '' : ' disabled';
-    h+='<section class="pannello"><h2>Consegna</h2><div class="g3">'+
-       '<button class="sec"'+cf+' onclick="scegliFormato('+o.id+',\'esportati\',this)">Scarica le foto</button>'+
-       '<button class="sec"'+cg+' onclick="location.href=url(\'/api/archivio/zip?cosa=grezzi&id='+o.id+'\')">Scarica i grezzi</button>'+
-       '<button class="sec" onclick="riapri('+o.id+')">Riapri in scansione</button>'+
-       '</div>'+
-       '<div class="g2" style="margin-top:8px">'+
-       '<button class="sec"'+(ri.n_selezionati?'':' disabled')+' onclick="scegliFormato('+o.id+',\'selezionati\',this)">Scarica le foto da stampare ('+(ri.n_selezionati||0)+')</button>'+
-       '<button class="sec"'+((ri.n_negativi||ri.n_grezzi)?'':' disabled')+' onclick="scegliFormato('+o.id+',\'negativi\',this)">Scarica i negativi (Photoshop, Lightroom)</button>'+
-       '</div>'+
-       '<div class="g2" style="margin-top:8px">'+
-       '<button class="sec"'+cf+' onclick="window.open(url(\'/api/archivio/provino.jpg?id='+o.id+'\'),\'_blank\')">Vedi il provino</button>'+
-       '<button class="sec"'+cf+' onclick="salvaProvino('+o.id+')">Salva il provino</button>'+
-       '</div>'+
-       '<div class="nota">'+ri.n_esportati+' fotogrammi esportati ('+mb(ri.peso_esportati)+') · '+
-       ri.n_grezzi+' grezzi ('+mb(ri.peso_grezzi)+')'+
-       (ri.mancanti ? ('<br><b>'+ri.mancanti+(ri.mancanti===1
+    if(r.rulli.length===1) APERTI[r.rulli[0].id]=true;
+    r.rulli.forEach(function(ru){
+      var nEsp=0, nRaw=0, nSel=0, nNeg=0, nFile=0;
+      ru.fotogrammi.forEach(function(f){
+        if(f.esiste){ nEsp++; if((f.voto||0)>0) nSel++; }
+        if(f.esiste_raw) nRaw++;
+        if(f.file_negativo) nNeg++;
+        nFile += (f.esiste?1:0)+(f.esiste_raw?1:0);
+      });
+      var rf = nEsp ? '' : ' disabled', rg = nRaw ? '' : ' disabled';
+      var args = o.id+','+ru.id;
+      h+='<section class="pannello rullo'+(APERTI[ru.id]?' aperto':'')+'" id="rullo_'+ru.id+'">'+
+         '<h2 onclick="apriRullo('+ru.id+')">'+ru.etichetta+
+         ' <span>'+ru.formato+' · '+ru.fotogrammi.length+' fotogrammi · '+ru.stato+
+         (ru.pellicola?' · '+ru.pellicola:'')+(ru.sviluppo?' · sviluppo '+ru.sviluppo:'')+
+         ' · <b class="apri">'+(APERTI[ru.id]?'chiudi':'consegna')+'</b></span></h2>'+
+         '<div class="provini" onclick="apriRullo('+ru.id+')">';
+      ru.fotogrammi.forEach(function(f){
+        h+='<div class="prov'+((f.voto||0)<0?' scartato':'')+'"><img loading="lazy" src="'+url('/api/provino.jpg?id='+f.id)+'"'+
+           (f.esiste ? '' : ' title="Il file di questo fotogramma non e\' piu\' sul disco"')+
+           '>'+'<div class="n">'+f.numero+'</div>'+
+           ((f.voto||0)>0?'<div class="voto">\u2605</div>':'')+'</div>';
+      });
+      h+='</div><div class="consegna"><div class="g3">'+
+         '<button class="sec"'+rf+' onclick="scegliFormato('+args+',\'esportati\',this,'+nNeg+')">Scarica le foto</button>'+
+         '<button class="sec"'+rg+' onclick="location.href=url(\'/api/archivio/zip?cosa=grezzi&id='+o.id+'&rullo='+ru.id+'\')">Scarica i grezzi</button>'+
+         '<button class="sec" onclick="riapriRullo('+args+')">Riapri in scansione</button>'+
+         '</div>'+
+         '<div class="g2" style="margin-top:8px">'+
+         '<button class="sec"'+(nSel?'':' disabled')+' onclick="scegliFormato('+args+',\'selezionati\',this,'+nNeg+')">Scarica le foto da stampare ('+nSel+')</button>'+
+         '<button class="sec"'+((nNeg||nRaw)?'':' disabled')+' onclick="scegliFormato('+args+',\'negativi\',this,'+nNeg+')">Scarica i negativi (Photoshop, Lightroom)</button>'+
+         '</div>'+
+         '<div class="g3" style="margin-top:8px">'+
+         '<button class="sec"'+rf+' onclick="window.open(url(\'/api/archivio/provino.jpg?id='+o.id+'&rullo='+ru.id+'\'),\'_blank\')">Vedi il provino</button>'+
+         '<button class="sec"'+rf+' onclick="salvaProvino('+args+')">Salva il provino</button>'+
+         '<button class="male" onclick="eliminaRullo('+args+','+nFile+')">Elimina il rullo</button>'+
+         '</div>'+
+         '<div class="nota">'+nEsp+' foto · '+nRaw+' grezzi'+
+         (nEsp||nRaw ? '' : '<br>Niente da scaricare: di questo rullo sul disco non e\' rimasto nessun file.')+
+         '</div></div></section>';
+    });
+    if(ri.mancanti){
+      h+='<div class="nota" style="margin:0 4px"><b>'+ri.mancanti+(ri.mancanti===1
           ? ' file risultava in archivio ma non e\' piu\''
           : ' file risultavano in archivio ma non sono piu\'')+
-        ' sul disco.</b> Tolti dal conteggio; le righe dei fotogrammi restano.')
-        : '')+
-       (ri.n_esportati||ri.n_grezzi ? '' :
-        '<br>Niente da scaricare: di questo ordine sul disco non e\' rimasto nessun file.')+
-       '</div></section>';
+        ' sul disco.</b> Tolti dal conteggio; le righe dei fotogrammi restano.</div>';
+    }
 
     h+='<section class="pannello"><h2>Avvisa il cliente</h2>'+
        '<label>Messaggio</label><textarea id="d_msg">'+MODELLO+'</textarea>'+
@@ -669,27 +708,6 @@ function apri(id){
        'Invio. Su tablet e telefono Condividi apre il menu del sistema: si sceglie '+
        'WhatsApp e poi la chat. L\'invio lo fa sempre una persona.</div></section>';
 
-    r.rulli.forEach(function(ru){
-      h+='<section class="pannello"><h2>'+ru.etichetta+
-         ' <span>'+ru.formato+' · '+ru.fotogrammi.length+' fotogrammi · '+ru.stato+
-         (ru.pellicola?' · '+ru.pellicola:'')+(ru.sviluppo?' · sviluppo '+ru.sviluppo:'')+'</span></h2>'+
-         '<div class="row" style="margin-top:0"><button class="ghost" style="width:auto" '+
-         'onclick="riapriRullo('+o.id+','+ru.id+')">Riapri questo rullo</button>'+
-         '<button class="male" style="width:auto" '+
-         'onclick="eliminaRullo('+o.id+','+ru.id+','+
-           ru.fotogrammi.reduce(function(a,f){
-             return a+(f.esiste?1:0)+(f.esiste_raw?1:0); },0)+
-         ')">Elimina questo rullo</button></div>'+
-         '<div class="provini">';
-      ru.fotogrammi.forEach(function(f){
-        h+='<div class="prov'+((f.voto||0)<0?' scartato':'')+'"><img loading="lazy" src="'+url('/api/provino.jpg?id='+f.id)+'"'+
-           (f.esiste ? '' : ' title="Il file di questo fotogramma non e\' piu\' sul disco"')+
-           '>'+'<div class="n">'+f.numero+'</div>'+
-           ((f.voto||0)>0?'<div class="voto">\u2605</div>':'')+'</div>';
-      });
-      h+='</div></section>';
-    });
-
     h+='<section class="pannello"><h2>Spazio</h2>'+
        '<div class="g3">'+
        '<button class="ghost" onclick="libera('+o.id+',\'grezzi\')">Elimina i grezzi</button>'+
@@ -699,6 +717,27 @@ function apri(id){
        '<div class="nota">I grezzi occupano quasi tutto lo spazio e sono l\'unica cosa '+
        'che non si rifa\': per riaverli bisogna rimettere la pellicola nella macchina. '+
        'La riga dell\'ordine resta comunque in archivio.</div></section>';
+
+    h+='<section class="pannello"><h2>Cliente e ordine '+o.codice+
+       ' <span>'+data(o.creato)+' · '+Math.round(ri.giorni)+' giorni fa</span></h2>'+
+       '<div class="g2">'+
+       '<div><label>Cliente</label><input id="d_cliente" value="'+(c.nome||'').replace(/"/g,"&quot;")+'"></div>'+
+       '<div><label>Telefono</label><input id="d_tel" value="'+(c.telefono||'')+'"></div>'+
+       '</div>'+
+       '<label>Nota dell\'ordine</label><input id="d_note" value="'+(o.note||'').replace(/"/g,"&quot;")+'">'+
+       '<div class="row"><button onclick="salvaNomi('+o.id+','+o.cliente_id+')">Salva le modifiche</button>'+
+       '<button class="ghost" onclick="apri('+o.id+')">Annulla</button></div>'+
+       '<div class="nota">Cambiando il nome qui si corregge la scheda del cliente, '+
+       'quindi anche i suoi altri ordini. Per spostare questo ordine su un\'altra '+
+       'persona, scrivere il nome nuovo e salvare: se non esiste viene creata.</div>'+
+       '<div class="g2" style="margin-top:10px">'+
+       '<button class="male" onclick="eliminaOrdine('+o.id+')">Elimina l\'ordine</button>'+
+       '<button class="male" onclick="eliminaCliente('+o.cliente_id+')">Elimina il cliente</button>'+
+       '</div>'+
+       '<div class="nota" id="esitoelimina">Eliminare toglie le righe dall\'archivio. '+
+       'I file sul disco si cancellano solo se lo si conferma a parte: sono due '+
+       'decisioni diverse e si prendono due volte.</div>'+
+       '</section>';
 
     el('dettaglio').innerHTML=h;
     if(ULTIMO_ESITO){ esitoElim(ULTIMO_ESITO); ULTIMO_ESITO=''; }
@@ -712,14 +751,14 @@ var FORMATI = <!--FORMATI-->;
 /* i negativi per Photoshop e Lightroom, fatti dai grezzi; poi quelli gia'
    salvati a ogni fotogramma ("originale" = come sono) */
 var FORMATI_NEG = <!--FORMATI_NEG-->;
-function scegliFormato(oid, cosa, tasto){
+function scegliFormato(oid, rid, cosa, tasto, nneg){
   var vecchio=el('lista_formati'); if(vecchio){ vecchio.remove(); if(vecchio.dataset.per===cosa) return; }
   var box=document.createElement('div');
   box.id='lista_formati'; box.dataset.per=cosa; box.className='pannello';
   box.style.cssText='margin-top:8px;padding:10px';
   box.innerHTML='<div class="nota" style="margin:0 0 6px">In che formato?</div>';
   var lista = cosa==='negativi'
-    ? FORMATI_NEG.concat((RIEP.n_negativi||0) ? [['originale','Negativi gia\' salvati ('+RIEP.n_negativi+')']] : [])
+    ? FORMATI_NEG.concat(nneg ? [['originale','Negativi gia\' salvati ('+nneg+')']] : [])
     : FORMATI;
   if(cosa==='negativi') box.firstChild.textContent='In che formato? (fatti adesso dai grezzi: qualche secondo a fotogramma)';
   lista.forEach(function(f){
@@ -727,8 +766,8 @@ function scegliFormato(oid, cosa, tasto){
     b.style.cssText='display:block;width:100%;margin:4px 0';
     b.onclick=function(){
       box.remove();
-      if(f[0].indexOf('positivo_')===0){ preparaPositivi(oid, f[0], tasto); return; }
-      location.href=url('/api/archivio/zip?cosa='+cosa+'&id='+oid+'&formato='+f[0]);
+      if(f[0].indexOf('positivo_')===0){ preparaPositivi(oid, rid, f[0], tasto); return; }
+      location.href=url('/api/archivio/zip?cosa='+cosa+'&id='+oid+'&rullo='+rid+'&formato='+f[0]);
     };
     box.appendChild(b);
   });
@@ -737,12 +776,12 @@ function scegliFormato(oid, cosa, tasto){
 
 /* I positivi invertiti si rielaborano dal grezzo: lavoro in sottofondo,
    avanzamento qui sotto, lo scarico parte da solo quando lo zip e' pronto. */
-function preparaPositivi(oid, formato, tasto){
+function preparaPositivi(oid, rid, formato, tasto){
   var nota=document.createElement('div'); nota.className='nota'; nota.id='nota_positivi';
   var vecchia=el('nota_positivi'); if(vecchia) vecchia.remove();
   tasto.parentNode.parentNode.insertBefore(nota, tasto.parentNode.nextSibling);
   nota.textContent='Preparo i positivi...';
-  post('/api/archivio/positivi',{id:oid, formato:formato}).then(function(r){
+  post('/api/archivio/positivi',{id:oid, rullo:rid, formato:formato}).then(function(r){
     if(r && r.errore){ nota.textContent=r.errore; return; }
     (function giro(){
       get('/api/archivio/positivi_stato').then(function(s){
@@ -766,8 +805,8 @@ function salvaNomi(oid, cid){
 }
 function riapri(oid){ location.href = url('/?ordine='+oid); }
 function riapriRullo(oid, rid){ location.href = url('/?ordine='+oid+'&rullo='+rid); }
-function salvaProvino(oid){
-  post('/api/archivio/provino',{ordine_id:oid}).then(function(r){
+function salvaProvino(oid, rid){
+  post('/api/archivio/provino',{ordine_id:oid, rullo_id:rid||0}).then(function(r){
     var e=el('esitoavviso');
     if(e) e.textContent = r.errore ? r.errore : ('Provino salvato in: '+r.percorso);
     else alert(r.errore || ('Provino salvato in: '+r.percorso));
@@ -1655,7 +1694,7 @@ details.sez>div{padding-bottom:10px}
    </select>
    <div style="font-size:11px;color:var(--dim);margin-top:6px">
     <b>Programma originale</b>: si scansiona da PhxScanner, con
-    MASTERFLEX.bat voce 14 (osservatore) aperta; "Scansiona rullo" qui
+    MASTERFLEX.bat voce 3 (osservatore) aperta; "Scansiona rullo" qui
     raccoglie le immagini nel rullo scelto fino a STOP.</div>
    <div class="row">
     <button onclick="connetti()">Connetti</button>
@@ -3473,6 +3512,7 @@ class Handler(BaseHTTPRequestHandler):
 
         if u.path == "/api/archivio/zip":
             oid = int(q.get("id", ["0"])[0] or 0)
+            rid = int(q.get("rullo", ["0"])[0] or 0)      # consegna per rullo
             cosa = q.get("cosa", ["esportati"])[0]
             formato = q.get("formato", ["originale"])[0]
             o = s.archivio.ordine(oid)
@@ -3481,10 +3521,11 @@ class Handler(BaseHTTPRequestHandler):
             fuori = os.path.join(s.cfg.path("archivio"), "_consegne")
             if not os.path.isdir(fuori):
                 os.makedirs(fuori)
-            dest = os.path.join(fuori, "%s-%s%s.zip" % (
-                o.codice, cosa, "" if formato == "originale" else "-" + formato))
+            dest = os.path.join(fuori, "%s%s-%s%s.zip" % (
+                o.codice, consegne.suffisso_rullo(s.archivio, rid), cosa,
+                "" if formato == "originale" else "-" + formato))
             try:
-                consegne.zip_ordine(s.archivio, oid, dest, cosa, formato)
+                consegne.zip_ordine(consegne.archivio_per(s.archivio, rid), oid, dest, cosa, formato)
             except ValueError as exc:
                 return self._json({"errore": str(exc)}, 400)
             return self._scarica(dest, tipo="application/zip")
@@ -3529,13 +3570,14 @@ class Handler(BaseHTTPRequestHandler):
 
         if u.path == "/api/archivio/provino.jpg":
             oid = int(q.get("id", ["0"])[0] or 0)
+            rid = int(q.get("rullo", ["0"])[0] or 0)
             o = s.archivio.ordine(oid)
             if o is None:
                 return self._json({"errore": "ordine inesistente"}, 404)
             dest = os.path.join(s.archivio.cartella_ordine(s.cfg.out_dir, oid),
-                                "provino-%s.jpg" % o.codice)
+                                "provino-%s%s.jpg" % (o.codice, consegne.suffisso_rullo(s.archivio, rid)))
             try:
-                consegne.provino_contatto(s.archivio, oid, dest)
+                consegne.provino_contatto(consegne.archivio_per(s.archivio, rid), oid, dest)
             except ValueError as exc:
                 return self._json({"errore": str(exc)}, 400)
             with open(dest, "rb") as f:
@@ -3732,7 +3774,8 @@ class Handler(BaseHTTPRequestHandler):
                      else s.archivio_rete.accoda_tutto())
                 return self._json({"testo": "%d rulli in coda per l'archivio di rete" % n})
             if u.path == "/api/archivio/positivi":
-                s.prepara_positivi(int(d.get("id") or 0), str(d.get("formato") or ""))
+                s.prepara_positivi(int(d.get("id") or 0), str(d.get("formato") or ""),
+                                   int(d.get("rullo") or 0))
                 return self._json({"avviato": True})
             if u.path == "/api/preferenze":
                 valori = s.imposta_preferenze(d)
@@ -3966,14 +4009,15 @@ class Handler(BaseHTTPRequestHandler):
 
             if u.path == "/api/archivio/provino":
                 oid = int(d.get("ordine_id", 0))
+                rid = int(d.get("rullo_id") or 0)
                 o = s.archivio.ordine(oid)
                 if o is None:
                     return self._json({"errore": "ordine inesistente"}, 404)
                 dest = os.path.join(
                     s.archivio.cartella_ordine(s.cfg.out_dir, oid),
-                    "provino-%s.jpg" % o.codice)
+                    "provino-%s%s.jpg" % (o.codice, consegne.suffisso_rullo(s.archivio, rid)))
                 try:
-                    consegne.provino_contatto(s.archivio, oid, dest)
+                    consegne.provino_contatto(consegne.archivio_per(s.archivio, rid), oid, dest)
                 except (ValueError, OSError) as exc:
                     return self._json({"errore": str(exc)}, 400)
                 return self._json({"percorso": dest})

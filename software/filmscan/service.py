@@ -2668,7 +2668,7 @@ class ScanService:
 
     # --- positivi per altri programmi (Archivio, Scarica i negativi) ------
 
-    def prepara_positivi(self, ordine_id: int, formato: str) -> None:
+    def prepara_positivi(self, ordine_id: int, formato: str, rullo_id: int = 0) -> None:
         """I positivi invertiti di un ordine, in uno zip, come lavoro in
         sottofondo: ogni fotogramma si rielabora dal grezzo con le opzioni
         e la geometria del suo rullo (come Salva fotogramma), in rete se c'e'
@@ -2685,13 +2685,17 @@ class ScanService:
         _, ext, tipo = FORMATI_POSITIVO[formato]
         cartella = os.path.join(self.cfg.path("archivio"), "_consegne")
         os.makedirs(cartella, exist_ok=True)
-        dest = os.path.join(cartella, "%s-%s.zip" % (ordine.codice, formato))
+        from .consegne import suffisso_rullo
+        dest = os.path.join(cartella, "%s%s-%s.zip" % (
+            ordine.codice, suffisso_rullo(self.archivio, rullo_id), formato))
         self._positivi = {"pronto": "", "errore": "", "ordine": int(ordine_id)}
 
         def job():
             from .invert import to_srgb
             elenco = []
             for rullo in self.archivio.rulli(ordine.id):
+                if rullo_id and rullo.id != int(rullo_id):
+                    continue            # consegna di un rullo solo
                 for f in self.archivio.fotogrammi(rullo.id):
                     npz = f.get("file_raw") or ""
                     if npz and os.path.isfile(npz) and f.get("stato") != "vuoto":

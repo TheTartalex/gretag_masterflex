@@ -119,7 +119,7 @@ La 1.15 resta la versione da tenere: è l'ultima di Gretag, e le note della
 ~~Però non spiega le guide~~ (smentito il 28/10: le spiegava)
 ([decisione 0006](../decisioni/0006-firmware-carrello-1.15.md)).
 
-Controllo: `MASTERFLEX.bat`, voce 13, oppure `python manutenzione.py
+Controllo: `MASTERFLEX.bat`, voce 5, oppure `python manutenzione.py
 firmware`. Riporta:
 
 - la versione dell'ultimo backup;
@@ -252,7 +252,7 @@ Da `MASTERFLEX.bat`: voce 4, poi 5.
 
 > **28/10/2026: risolto per il 135** sulla riserva, tornando al firmware
 > 1.15 (§2). Questa procedura serve se il problema ricompare (prima cosa:
-> la versione del firmware, voce 13) e per APS e 110, non ancora provati.
+> la versione del firmware, voce 5) e per APS e 110, non ancora provati.
 
 In quest'ordine, con il percorso pellicola vuoto e la mano sull'interruttore:
 
@@ -264,7 +264,7 @@ In quest'ordine, con il percorso pellicola vuoto e la mano sull'interruttore:
 3. **SensorTest**: le fotocellule cambiano quando si spostano le guide a mano
    (a macchina spenta, poi accesa senza programmi)? Una fotocellula che non
    cambia mai è la causa.
-4. **Versione del firmware e flag** (voce 13): ora mostra anche i flag del
+4. **Versione del firmware e flag** (voce 5): ora mostra anche i flag del
    backup. Dal vivo: Compad, `CP_Change_Flags2.ini`, *Get Flags*.
 5. **Compad, CP_Calibrate_Size**: leggere la posizione delle guide, muoverle
    di 5 passi e rileggerla.

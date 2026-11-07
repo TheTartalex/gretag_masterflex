@@ -34,7 +34,7 @@ programma originale): `programma\` (diario di filmscan, errori con
 traceback, comunicazione col ponte), `agente\` (comandi e risposte,
 crash), `sdk\` (copie di `SDKCacheDir\log_*.txt`), `collaudi\`,
 `diagnosi\`, `da-mandare\` (gli zip). Alessandro lo zip lo prende da
-MASTERFLEX.bat voce 6 o da Macchina → Scarica i registri. Quando manda uno
+Macchina → Scarica i registri (o dal collegamento remoto, da solo). Quando manda uno
 zip `registri-*.zip`, si parte da lì. Codice: `software/filmscan/registri.py`.
 
 **Collegamento remoto** (`software/remoto.py`, decisione 0010): la

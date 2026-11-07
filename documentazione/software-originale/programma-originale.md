@@ -69,7 +69,7 @@ Le due funzioni hanno un interruttore proprio, ed e' reversibile:
     python strumenti\originale.py --alleggerisci
     python strumenti\originale.py --ripristina
 
-oppure `MASTERFLEX.bat`, voce 10, che fa le stesse cose con un menu.
+oppure `MASTERFLEX.bat`, voce 9, che fa le stesse cose con un menu.
 
 Di ogni file toccato resta una copia intatta con il suffisso `.prima-di-noi`,
 piu' una copia datata a ogni passaggio successivo. Si torna indietro quando si

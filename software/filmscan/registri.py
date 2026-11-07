@@ -58,10 +58,10 @@ programma\\   il diario di filmscan (interfaccia e scansione), un file al giorno
 agente\\      i comandi dell'agente verso lo scanner e le risposte
 sdk\\         le copie del registro dell'SDK Kodak (log_0000.txt)
 collaudi\\    i rapporti dei collaudi (MASTERFLEX.bat, voce 4)
-diagnosi\\    le diagnosi (MASTERFLEX.bat, voce 6)
+diagnosi\\    controlli del desktop e altri rapporti
 da-mandare\\  gli zip da mandare quando c'e' un problema
 
-Per una segnalazione: MASTERFLEX.bat, voce 6, oppure nell'interfaccia
+Per una segnalazione: nell'interfaccia
 Macchina > Scarica i registri. Lo zip finisce in da-mandare\\.
 I file piu' vecchi di %d giorni si cancellano da soli.
 """ % GIORNI_TENUTI

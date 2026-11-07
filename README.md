@@ -62,7 +62,7 @@ Problemi aperti e prossimi passi: **[documentazione/stato.md](documentazione/sta
 
 > ✅ **Guide del carrello: problema risolto per il 135** (28/10/2026)
 > riportando il carrello al **firmware 1.15**. Se il programma originale
-> riscarica la 1.13 il problema torna: la voce 13 di `MASTERFLEX.bat` lo
+> riscarica la 1.13 il problema torna: la voce 5 di `MASTERFLEX.bat` lo
 > controlla. Con APS e 110 la modalità "macchina vera" non è ancora
 > provata: la prima volta, mano sull'interruttore. Storia in
 > [decisione 0006](documentazione/decisioni/0006-firmware-carrello-1.15.md#esito-del-28102026).

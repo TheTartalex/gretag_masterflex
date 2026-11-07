@@ -8,13 +8,12 @@ altre librerie non sono ancora installate, o sono quelle sbagliate.
     python manutenzione.py librerie              installa o corregge le librerie
     python manutenzione.py verifica              controlla versioni e moduli
     python manutenzione.py macchina              driver, scheda, SDK
-    python manutenzione.py aggiorna [sorgente]   aggiorna il programma
+    python manutenzione.py aggiorna [sorgente]   aggiorna il programma (lo usa remoto.py)
+    python manutenzione.py desktop [controlla]   desktop e barra di Windows
     python manutenzione.py avvio on|off|stato|adesso
                                                  avvio automatico all'accensione
     python manutenzione.py modo [nuovo]          modo di lavoro (l'ultimo usato)
     python manutenzione.py termina [--prova]     chiude i programmi in C:\\MasterflexD
-    python manutenzione.py diagnosi              raccoglie lo stato in un file
-    python manutenzione.py offline               prepara pacchetti\\ per l'installazione senza rete
     python manutenzione.py firmware [--usa-1.15 cartella]
                                                  firmware, flag e posizioni del carrello
     python manutenzione.py porta-carrello        mette gli strumenti Gretag sulla COM5
@@ -75,11 +74,12 @@ CODICE = ["filmscan", "ponte", "run.py", "selftest.py", "manutenzione.py",
 AVVIO_NOME = "Masterflex D1008.bat"
 # I modi di lavoro. "osservatore" e' il man in the middle: lavora il
 # programma originale, noi copiamo le immagini, e l'agente NON parte.
-MODI_AVVIO = ("avvia", "avvia-senza-motori", "simulazione", "osservatore")
+# "simulazione" non c'e' piu' (tolta dal menu l'8/11/2026): chi l'aveva
+# come ultimo modo riparte con quello di serie.
+MODI_AVVIO = ("avvia", "avvia-senza-motori", "osservatore")
 DESCRIZIONE_MODI = {
     "avvia": "completo, motori attivi (chiude il programma originale)",
     "avvia-senza-motori": "completo, motori fermi: solo letture, per prove",
-    "simulazione": "simulazione, nessuna macchina",
     "osservatore": "man in the middle: programma originale + osservatore",
 }
 # Motori attivi di serie: il problema delle guide e' chiuso dal 28/10/2026
@@ -537,7 +537,7 @@ def _xml_attivita(utente, comando, cartella):
     return u"""<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
-    <Description>Masterflex D1008: avvio all'accensione con i diritti di amministratore. Si toglie da MASTERFLEX.bat, voce 9.</Description>
+    <Description>Masterflex D1008: avvio all'accensione con i diritti di amministratore. Si toglie da MASTERFLEX.bat, voce 8.</Description>
   </RegistrationInfo>
   <Triggers>
     <LogonTrigger>
@@ -673,7 +673,7 @@ def cmd_avvio(argv):
         print("  Avvio automatico ATTIVATO per %s, con i diritti di" % utente)
         print("  amministratore e senza richieste. All'accensione parte il modo:")
         print("      %s" % DESCRIZIONE_MODI[modo_attuale()])
-        print("  (l'ultimo usato: si cambia dal menu, voce 9 o avviando a mano)")
+        print("  (l'ultimo usato: si cambia dal menu, voce 8 o avviando a mano)")
         return fine(0)
 
     if azione == "adesso":
@@ -747,153 +747,6 @@ def cmd_termina(argv):
             % len(falliti))
         log("  potrebbe essere occupata: chiuderli a mano prima di lavorare.")
     return 1 if falliti else 0
-
-
-# --------------------------------------------------------------------------
-# Diagnosi
-# --------------------------------------------------------------------------
-
-def _coda(percorso, righe=60):
-    try:
-        with io.open(percorso, encoding="latin-1") as f:
-            return "".join(f.readlines()[-righe:])
-    except (IOError, OSError) as e:
-        return "(non leggibile: %s)\n" % e
-
-
-def _stato_ponte(ponte):
-    """Esiste, ci si scrive, cosa c'e' dentro: senza questo un ponte non
-    scrivibile si vede solo come comandi senza risposta."""
-    if not os.path.isdir(ponte):
-        print("  Cartella del ponte %s: NON ESISTE" % ponte)
-        return
-    prova = os.path.join(ponte, "diagnosi-prova-scrittura.tmp")
-    try:
-        with open(prova, "w") as f:
-            f.write("prova")
-        os.remove(prova)
-        print("  Cartella del ponte %s: scrivibile" % ponte)
-    except (IOError, OSError) as exc:
-        print("  Cartella del ponte %s: NON SCRIVIBILE (%s)" % (ponte, exc))
-    voci = []
-    for nome in sorted(os.listdir(ponte)):
-        p = os.path.join(ponte, nome)
-        if os.path.isdir(p):
-            voci.append("%s\\ (%d file)" % (nome, len(os.listdir(p))))
-        else:
-            voci.append(nome)
-    print("  Contenuto: %s" % (", ".join(voci) or "vuota"))
-
-
-def _trova_ektest():
-    for p in (os.path.join(QUI, "..", "driver", "EKframePnP", "pacchetto", "ektest.exe"),
-              os.path.join(QUI, "ektest.exe"),
-              r"C:\MasterflexD\EKframePnP\ektest.exe"):
-        if os.path.exists(p):
-            return os.path.abspath(p)
-    return None
-
-
-def cmd_diagnosi(argv):
-    """Raccoglie in un solo file tutto quello che serve per capire un problema.
-
-    Il file si allega alla segnalazione; non va nel repository (percorsi e
-    nomi della macchina).
-    """
-    from filmscan import registri
-    cartella = registri.sottocartella("diagnosi")
-    nome = os.path.join(cartella, "diagnosi-%s.txt"
-                        % datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
-    vero_stdout = sys.stdout
-    buf = io.StringIO()
-
-    class Doppio(object):
-        def write(self, t):
-            vero_stdout.write(t)
-            buf.write(t if isinstance(t, type(u"")) else t.decode("utf-8", "replace"))
-
-        def flush(self):
-            vero_stdout.flush()
-
-    sys.stdout = Doppio()
-    try:
-        print("Diagnosi Masterflex D1008 - %s" % datetime.datetime.now())
-        print("Sistema: %s %s, macchina %s" % (platform.system(), platform.version(),
-                                               platform.machine()))
-        if os.name == "nt":
-            _, cpu = esegui(["wmic", "cpu", "get", "Name", "/format:list"])
-            print("CPU: %s" % " ".join(re.findall(r"Name=(.+)", cpu)).strip())
-        cmd_verifica([])
-        try:
-            from filmscan import desktop
-            d = desktop.controlla()
-            if d.get("windows"):
-                print("")
-                print(d["testo"])
-        except Exception as exc:                        # noqa: BLE001
-            print("controllo del desktop non riuscito: %s" % exc)
-        cmd_macchina([])
-        cmd_avvio(["stato"])
-        cmd_firmware([])
-
-        titolo("Agente e ponte")
-        print("  Agente attivo: %s" % ("si" if agente_attivo() else "no"))
-        _stato_ponte(PONTE)
-        log_dir = registri.sottocartella("agente")
-        ultimi = sorted(n for n in os.listdir(log_dir) if n.startswith("agente-"))[-1:]
-        if not ultimi:
-            print("  Nessun registro dell'agente in %s: l'agente non e' mai" % log_dir)
-            print("  partito su questa cartella, oppure non ci puo' scrivere.")
-        for f in ultimi:
-            print("  --- %s (ultime righe)" % f)
-            print(_coda(os.path.join(log_dir, f), 80))
-        sdk_log = os.path.join(SCANNER, "SDKCacheDir", "log_0000.txt")
-        if os.path.exists(sdk_log):
-            print("  --- log dell'SDK (ultime righe)")
-            print(_coda(sdk_log, 200))
-
-        titolo("Ultimi collaudi")
-        coll = registri.sottocartella("collaudi")
-        recenti = sorted(os.listdir(coll))[-3:] if os.path.isdir(coll) else []
-        if not recenti:
-            print("  Nessun collaudo in %s" % coll)
-        for c in recenti:
-            r = os.path.join(coll, c, "rapporto.txt")
-            if os.path.exists(r):
-                print("  --- %s" % c)
-                print(_coda(r, 40))
-
-        titolo("ektest (driver EKframePnP)")
-        ektest = _trova_ektest()
-        if not ektest:
-            print("  ektest.exe non trovato: saltato")
-        elif agente_attivo():
-            print("  Saltato: l'agente ha la scheda in mano, e chiudendo l'handle")
-            print("  ektest la spegnerebbe anche per lui. Chiudere filmscan e rifare.")
-        else:
-            # solo "info": legge risorse, registri e contatori, non muove niente
-            _, testo = esegui([ektest, "info"])
-            print(testo)
-    finally:
-        sys.stdout = vero_stdout
-    with io.open(nome, "w", encoding="utf-8") as f:
-        f.write(buf.getvalue())
-    # e tutto il resto: registri di programma, agente, SDK e collaudi degli
-    # ultimi 7 giorni, in uno zip solo
-    try:
-        pacco = registri.raccogli(7, PONTE, SCANNER,
-                                  os.path.join(QUI, "impostazioni.json"))
-    except Exception as exc:                            # noqa: BLE001
-        pacco = ""
-        print("  Zip dei registri non preparato: %s" % exc)
-    print("")
-    print("  Diagnosi salvata in:")
-    print("    %s" % nome)
-    if pacco:
-        print("  Con i registri degli ultimi 7 giorni, da mandare:")
-        print("    %s" % pacco)
-    print("  Cartella dei registri: %s" % registri.cartella_log())
-    return 0
 
 
 # --------------------------------------------------------------------------
@@ -1243,41 +1096,6 @@ def cmd_porta_carrello(argv):
 # Pacchetto per l'installazione senza rete
 # --------------------------------------------------------------------------
 
-def cmd_offline(argv):
-    """Riempie pacchetti\\ con l'installer di Python e le wheel giuste.
-
-    Si puo' fare da qualunque PC con Python e internet, anche moderno e a 64
-    bit: le wheel si chiedono esplicitamente per Windows 32 bit e Python 3.8.
-    Poi si copia la cartella sulla macchina e "Installa" non usa la rete.
-    """
-    titolo("Pacchetto per l'installazione senza rete")
-    if not os.path.isdir(PACCHETTI):
-        os.makedirs(PACCHETTI)
-    installer = os.path.join(PACCHETTI, PYTHON_FILE)
-    try:
-        if not (os.path.exists(installer) and _sha256(installer) == PYTHON_SHA256):
-            _scarica(PYTHON_URL, installer, PYTHON_SHA256)
-        print("  Python 3.8.10: ok")
-    except Exception as e:                                  # noqa: BLE001
-        print("  ERRORE nello scaricare Python: %s" % e)
-        return 1
-    codice = subprocess.call([
-        sys.executable, "-m", "pip", "download", "--disable-pip-version-check",
-        "-r", REQUIREMENTS, "-d", PACCHETTI, "--only-binary=:all:",
-        "--platform", "win32", "--python-version", "3.8",
-        "--implementation", "cp", "--abi", "cp38"])
-    if codice != 0:
-        print("  ERRORE nello scaricare le librerie.")
-        return 1
-    print("")
-    for f in sorted(os.listdir(PACCHETTI)):
-        print("   %s" % f)
-    print("")
-    print("  Fatto. Copiare l'intera cartella sulla macchina e scegliere")
-    print("  \"Installa / ripara\": non servira' internet.")
-    return 0
-
-
 def _sha256(percorso):
     h = hashlib.sha256()
     with open(percorso, "rb") as f:
@@ -1322,8 +1140,6 @@ COMANDI = {
     "avvio": cmd_avvio,
     "modo": cmd_modo,
     "termina": cmd_termina,
-    "diagnosi": cmd_diagnosi,
-    "offline": cmd_offline,
     "pulisci-vecchio": cmd_pulisci_vecchio,
     "firmware": cmd_firmware,
     "porta-carrello": cmd_porta_carrello,

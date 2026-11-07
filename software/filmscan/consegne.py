@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import io as _io
 import os
+import re
 import shutil
 import time
 import zipfile
@@ -116,6 +117,36 @@ def ultimo_tocco(arch, ordine_id: int, creato: float = 0.0) -> float:
         except OSError:
             pass
     return ultimo
+
+
+class _SoloRullo(object):
+    """L'archivio visto come se l'ordine avesse un rullo solo: la consegna
+    per rullo (pagina Archivio, 8/11/2026) usa le stesse funzioni
+    dell'ordine intero, che scorrono arch.rulli()."""
+
+    def __init__(self, arch, rullo_id: int):
+        self._arch = arch
+        self._rullo_id = int(rullo_id)
+
+    def rulli(self, ordine_id: int):
+        return [r for r in self._arch.rulli(ordine_id) if r.id == self._rullo_id]
+
+    def __getattr__(self, nome):
+        return getattr(self._arch, nome)
+
+
+def archivio_per(arch, rullo_id: int = 0):
+    """L'archivio intero, o ristretto a un rullo se rullo_id c'e'."""
+    return _SoloRullo(arch, rullo_id) if rullo_id else arch
+
+
+def suffisso_rullo(arch, rullo_id: int = 0) -> str:
+    """Per i nomi dei file: "-rullo-2" (dall'etichetta del rullo), o niente."""
+    if not rullo_id:
+        return ""
+    r = arch.rullo(int(rullo_id))
+    etichetta = (r.etichetta if r is not None else "") or ("rullo %d" % int(rullo_id))
+    return "-" + (re.sub(r"[^\w-]+", "-", etichetta, flags=re.UNICODE).strip("-") or str(rullo_id))
 
 
 def file_ordine(arch, ordine_id: int) -> Dict[str, List[str]]:
