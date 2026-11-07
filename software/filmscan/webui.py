@@ -1749,6 +1749,9 @@ details.sez>div{padding-bottom:10px}
    <button class="sec" onclick="sposta(1,0)" title="Giu'">&darr;</button>
    <button class="sec" onclick="sposta(0,1)" title="Destra">&rarr;</button>
    <button class="ghost" onclick="geoComando('/api/fotogramma/canali_azzera',{})" title="Toglie gli spostamenti fatti a mano">Azzera</button>
+   <button class="sec" id="geo_ritaglia" onclick="ritaglio()" title="Mostra il fotogramma intero: si disegna il riquadro col dito o col mouse">Ritaglia</button>
+   <button class="sec" id="geo_applica" style="display:none" onclick="ritaglioApplica()">Applica</button>
+   <button class="ghost" onclick="if(confirm('Tolgo il ritaglio fatto a mano?')) post('/api/fotogramma/ritaglio',{azione:'togli'}).then(esito)" title="Torna al ritaglio automatico">Togli ritaglio</button>
    <button class="ghost" onclick="rifaiGeometria()" title="Rifa' da capo allineamento, raddrizzamento, ritaglio e orientamento">Ricalcola</button>
    <span id="geo_info"></span>
   </div>
@@ -2098,6 +2101,58 @@ function sposta(dy,dx){
   var p=parseFloat(val('geo_passo'))||0.5;
   geoComando('/api/fotogramma/canale',{canale:val('geo_canale'), dy:dy*p, dx:dx*p});
 }
+/* Ritaglio a mano: il fotogramma intero, poi un riquadro disegnato sopra.
+   Le coordinate vanno al server in 0..1 dell'immagine mostrata. */
+var ritaglioOn=false, riq=null;
+function ritaglio(){
+  post('/api/fotogramma/ritaglio',{azione:'inizia'}).then(function(r){
+    if(r && r.errore){ esito(r); return; }
+    ritaglioOn=true; riq=null;
+    el('geo_applica').style.display=''; el('geo_ritaglia').classList.add('on');
+    el('geo_info').textContent='Aspetto il fotogramma intero, poi disegnare il riquadro.';
+  });
+}
+function ritaglioApplica(){
+  if(!riq){ el('geo_info').textContent='Disegnare prima il riquadro sul fotogramma.'; return; }
+  post('/api/fotogramma/ritaglio',{azione:'applica', y0:riq.y0, x0:riq.x0, y1:riq.y1, x1:riq.x1}).then(function(r){
+    if(r && r.errore){ el('geo_info').textContent=r.errore; return; }
+    ritaglioFine();
+  });
+}
+function ritaglioFine(){
+  ritaglioOn=false; riq=null;
+  var q=el('riquadro'); if(q) q.style.display='none';
+  el('geo_applica').style.display='none'; el('geo_ritaglia').classList.remove('on');
+}
+(function(){
+  var tela=el('tela'), inizio=null;
+  var q=document.createElement('div'); q.id='riquadro';
+  q.style.cssText='position:absolute;display:none;border:2px dashed var(--acc);'+
+    'background:rgba(255,255,255,.08);pointer-events:none;z-index:5';
+  tela.appendChild(q);
+  function rel(e){
+    var im=el('im_dopo').getBoundingClientRect(), t=tela.getBoundingClientRect();
+    return {x:Math.max(0,Math.min(1,(e.clientX-im.left)/im.width)),
+            y:Math.max(0,Math.min(1,(e.clientY-im.top)/im.height)), im:im, t:t};
+  }
+  function disegna(a,b){
+    var im=a.im, t=a.t;
+    var x0=Math.min(a.x,b.x), x1=Math.max(a.x,b.x), y0=Math.min(a.y,b.y), y1=Math.max(a.y,b.y);
+    q.style.left=(im.left-t.left+x0*im.width)+'px'; q.style.top=(im.top-t.top+y0*im.height)+'px';
+    q.style.width=((x1-x0)*im.width)+'px'; q.style.height=((y1-y0)*im.height)+'px';
+    q.style.display='block';
+    riq={x0:x0,x1:x1,y0:y0,y1:y1};
+  }
+  tela.addEventListener('pointerdown',function(e){
+    if(!ritaglioOn) return;
+    inizio=rel(e); tela.setPointerCapture(e.pointerId); e.preventDefault(); e.stopPropagation();
+  }, true);
+  tela.addEventListener('pointermove',function(e){ if(ritaglioOn && inizio) disegna(inizio, rel(e)); });
+  tela.addEventListener('pointerup',function(e){
+    if(ritaglioOn && inizio){ disegna(inizio, rel(e)); inizio=null;
+      el('geo_info').textContent='Riquadro pronto: Applica, poi Salva per il file.'; }
+  });
+})();
 function rifaiGeometria(){
   if(!confirm('Ricalcolo da capo allineamento dei canali, raddrizzamento, ritaglio e orientamento? Le scelte fatte a mano si perdono.')) return;
   post('/api/fotogramma/rifai_geometria',{cosa:'tutto'}).then(esito);
@@ -2115,7 +2170,7 @@ function applicaRullo(){
   if(!confirm('Le regolazioni di adesso su TUTTI i fotogrammi di questo rullo? I file esportati vengono riscritti (i grezzi restano).')) return;
   post('/api/rullo/applica',{rullo_id:fotoAperto.rullo_id}).then(esito);
 }
-function chiudiFotogramma(){ fotoAperto=null; provSel=null; mostraBarraFot(); barraGeo(false); caricaStriscia(); }
+function chiudiFotogramma(){ fotoAperto=null; provSel=null; ritaglioFine(); mostraBarraFot(); barraGeo(false); caricaStriscia(); }
 
 /* ---------- comandi ---------- */
 var wbGuadagni=null;          /* guadagni dal campionamento neutro */
@@ -3439,6 +3494,18 @@ class Handler(BaseHTTPRequestHandler):
                                                   float(d.get("dx") or 0)))
             if u.path == "/api/fotogramma/canali_azzera":
                 return self._json(s.azzera_canali())
+            if u.path == "/api/fotogramma/ritaglio":
+                azione = str(d.get("azione") or "")
+                if azione == "inizia":
+                    s.ritaglio_inizia()
+                elif azione == "applica":
+                    s.ritaglio_applica(d.get("y0", 0), d.get("x0", 0),
+                                       d.get("y1", 1), d.get("x1", 1))
+                elif azione == "togli":
+                    s.ritaglio_togli()
+                else:
+                    return self._json({"errore": "azione sconosciuta"}, 400)
+                return self._json({"avviato": True})
             if u.path == "/api/fotogramma/rifai_geometria":
                 s.rifai_geometria(str(d.get("cosa") or "tutto"))
                 return self._json({"avviato": True})

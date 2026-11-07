@@ -452,7 +452,26 @@ def process(raw: RawScan, opts: ProcessOptions,
             if mask is not None:
                 mask = framing.straighten(mask.astype(np.float32), angle, order=1) > 0.5
 
-    if opts.auto_crop:
+    # Il ritaglio. Tre casi:
+    # - il riquadro scelto a mano dall'operatore (geometria "riquadro_mano",
+    #   coordinate dell'immagine raddrizzata, prima dell'orientamento): vale
+    #   sempre, anche con il ritaglio automatico spento;
+    # - "senza_ritaglio": il fotogramma intero, per disegnare quel riquadro;
+    # - il ritaglio automatico, ma solo se i bordi si sono trovati con
+    #   certezza. Altrimenti il file resta intero: il ritaglio nominale del
+    #   formato poteva tagliare via un pezzo di fotogramma, che non si
+    #   recupera; ritagliare a mano dopo si puo' sempre (Alessandro, 7/11/2026).
+    mano = geo_in.get("riquadro_mano")
+    if mano and not geo_in.get("senza_ritaglio"):
+        _t("Ritaglio fotogramma", 0.88)
+        h_im, w_im = img.shape[:2]
+        y0, x0, y1, x1 = [int(v) for v in mano[:4]]
+        y0, y1 = max(0, min(y0, h_im - 2)), max(1, min(y1, h_im))
+        x0, x1 = max(0, min(x0, w_im - 2)), max(1, min(x1, w_im))
+        if y1 > y0 + 1 and x1 > x0 + 1:
+            box = framing.FrameBox(y0, x0, y1, x1, confidence=1.0)
+            geo["riquadro_mano"] = [y0, x0, y1, x1]
+    elif opts.auto_crop and not geo_in.get("senza_ritaglio"):
         _t("Ritaglio fotogramma", 0.88)
         ew = mm_to_px(36.0, raw.meta.dpi)
         eh = mm_to_px(24.0, raw.meta.dpi)
@@ -468,8 +487,12 @@ def process(raw: RawScan, opts: ProcessOptions,
         geo["raddrizzato"] = bool(opts.auto_straighten)
         if box.confidence < 0.5:
             warnings.append(
-                "Bordi del fotogramma non individuati con certezza: usato il "
-                "ritaglio nominale del formato. Verificare a occhio.")
+                "Bordi del fotogramma non individuati con certezza: lasciato intero, "
+                "da ritagliare a mano (Ruota e canali, Ritaglia) o dopo.")
+            box = None
+    if mano and geo_in.get("senza_ritaglio"):
+        geo["riquadro_mano"] = [int(v) for v in mano[:4]]
+    if box is not None:
         img = framing.crop(img, box)
         if negativo is not None:
             negativo = framing.crop(negativo, box)

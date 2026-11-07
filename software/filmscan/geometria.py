@@ -87,6 +87,17 @@ def dalla_vista(dy: float, dx: float, rotazione: int, specchio: bool):
     return dy, dx
 
 
+def punto_dalla_vista(y: float, x: float, rotazione: int, specchio: bool):
+    """Un punto dello schermo (coordinate 0..1 dell'immagine girata e
+    specchiata) nelle coordinate 0..1 dell'immagine prima
+    dell'orientamento: serve al ritaglio a mano."""
+    if specchio:
+        x = 1.0 - x
+    for _ in range((int(rotazione) // 90) % 4):
+        y, x = x, 1.0 - y
+    return y, x
+
+
 def nella_vista(dy: float, dx: float, rotazione: int, specchio: bool):
     """Il contrario di dalla_vista: uno spostamento nelle coordinate del
     grezzo come lo si vede sullo schermo."""

@@ -2179,6 +2179,58 @@ class ScanService:
         geo.pop("canali", None)
         return esito or self._esito_mano(geo)
 
+    def ritaglio_inizia(self) -> None:
+        """Ritaglio a mano, primo passo: il fotogramma intero (raddrizzato e
+        girato, senza ritaglio) nel visore, per disegnarci il riquadro."""
+        geo = self._per_la_mano()
+        geo["senza_ritaglio"] = True
+
+        def job():
+            self.progress("Fotogramma intero per il ritaglio", 0.1)
+            self.rielabora(None, veloce=False)
+            self.log("Disegnare il riquadro sul fotogramma e premere Applica.")
+        self._avvia("geometria", job)
+
+    def ritaglio_applica(self, y0: float, x0: float, y1: float, x1: float) -> None:
+        """Il riquadro disegnato sullo schermo (0..1 sull'immagine intera
+        mostrata) diventa il ritaglio a mano del fotogramma: nelle coordinate
+        dell'immagine raddrizzata prima dell'orientamento, come il ritaglio
+        automatico. Vale per le riaperture e per Salva."""
+        geo = self._per_la_mano()
+        y0, y1 = sorted((min(max(float(y0), 0.0), 1.0), min(max(float(y1), 0.0), 1.0)))
+        x0, x1 = sorted((min(max(float(x0), 0.0), 1.0), min(max(float(x1), 0.0), 1.0)))
+        if y1 - y0 < 0.05 or x1 - x0 < 0.05:
+            raise ValueError("riquadro troppo piccolo")
+        forma = geo.get("forma")
+        if not forma:
+            raise ValueError("geometria del fotogramma sconosciuta: riaprirlo")
+        rot, specchio = self._rotazione_di(geo), bool(geo.get("specchio"))
+        punti = [geometrie.punto_dalla_vista(y, x, rot, specchio)
+                 for y, x in ((y0, x0), (y0, x1), (y1, x0), (y1, x1))]
+        h, w = int(forma[0]), int(forma[1])
+        ys, xs = [p[0] for p in punti], [p[1] for p in punti]
+        geo["riquadro_mano"] = [int(round(min(ys) * h)), int(round(min(xs) * w)),
+                                int(round(max(ys) * h)), int(round(max(xs) * w))]
+        geo.pop("senza_ritaglio", None)
+
+        def job():
+            self.progress("Ritaglio a mano", 0.1)
+            self.rielabora(None, veloce=False)
+            self.log("Ritaglio a mano applicato: Salva fotogramma lo scrive nel file.")
+        self._avvia("geometria", job)
+
+    def ritaglio_togli(self) -> None:
+        """Toglie il ritaglio a mano: torna quello automatico (o il
+        fotogramma intero, se i bordi non si trovano)."""
+        geo = self._per_la_mano()
+        geo.pop("riquadro_mano", None)
+        geo.pop("senza_ritaglio", None)
+
+        def job():
+            self.rielabora(None, veloce=False)
+            self.log("Ritaglio a mano tolto.")
+        self._avvia("geometria", job)
+
     def rifai_geometria(self, cosa: str = "tutto") -> None:
         """Rifa' le stime da capo sul fotogramma aperto: "canali" solo
         l'allineamento automatico, "tutto" anche raddrizzamento, ritaglio e

@@ -52,6 +52,17 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-11-07 (sera) — niente ritaglio nominale, ritaglio a mano
+
+- Se i bordi del fotogramma non si trovano con certezza il file resta
+  intero (prima: ritaglio nominale del formato, che poteva tagliare via un
+  pezzo). Il diario lo segnala.
+- **Ritaglio a mano** nella barra "Ruota e canali": Ritaglia mostra il
+  fotogramma intero, si disegna il riquadro col dito o col mouse, Applica;
+  si salva nella geometria del fotogramma (riaperture, Salva, Applica al
+  rullo, negativi). "Togli ritaglio" torna all'automatico.
+- Il codice DX si legge solo con l'acquisizione come l'originale.
+
 ### 2026-11-07 (sera) — fuoco, strisce vuote, immagini slavate, Ferma elaborazione
 
 - **Strisce chiuse con 0 fotogrammi**: l'autofocus partiva sulla prima
