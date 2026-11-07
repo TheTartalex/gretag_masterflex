@@ -52,6 +52,17 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-11-07 — collaudi riordinati dopo il secondo invio
+
+- Collaudo con pellicola: il DX non si legge più prima delle letture (porta
+  l'SDK nello stato 1, dove `scan_raw` è rifiutato); in fondo tre giri di
+  DX + capture dell'originale, poi una lettura `scan_raw` per vedere se lo
+  stato torna giusto; il Digital ICE per ultimo, con il riavvio automatico
+  se resta appeso.
+- Collaudo senza pellicola: niente più lettura unica; fuoco e regolazione
+  fine senza pellicola annotati come rifiuti attesi.
+- Lo zip dei registri prende anche i file delle sonde (`sonde/`).
+
 ### 2026-11-07 — dai primi registri arrivati da soli
 
 - **Lettura unica spenta di serie**: sulla riserva `scan_raw` canale 4 ha

@@ -417,15 +417,15 @@ def senza_pellicola(a) -> int:
     k.passo("stato dopo il pressore", lambda: k.stato_sdk())
 
     k.titolo("Fuoco")
-    k.passo("fuoco nominale", lambda: k.cmd("fuoco_nominale", 120), tentativi=1)
-    k.passo("autofocus rapido (senza pellicola puo' fallire)",
-            lambda: k.cmd("fuoco_rapido", 180), tentativi=1, informativo=True)
-    k.passo("fuoco nominale di nuovo", lambda: k.cmd("fuoco_nominale", 120))
+    # senza pellicola l'SDK rifiuta ogni fuoco con l'errore 12 (riserva,
+    # 7/11/2026): si annota, il fuoco vero si prova con la pellicola
+    k.passo("fuoco nominale (senza pellicola: errore 12)",
+            lambda: k.cmd("fuoco_nominale", 120), tentativi=1, informativo=True)
 
     k.titolo("Movimenti e rifiuti senza pellicola")
     k.passo("formato 135", lambda: k.cmd("formato_0", 60))
-    k.passo("regolazione fine +100 passi (1 mm)", lambda: k.cmd("regola_100", 60), tentativi=1)
-    k.passo("regolazione fine -100 passi", lambda: k.cmd("regola_-100", 60), tentativi=1)
+    k.passo("regolazione fine +100 passi (senza pellicola: errore 3)",
+            lambda: k.cmd("regola_100", 60), tentativi=1, informativo=True)
     k.passo("codice DX senza pellicola (atteso: errore 12)", lambda: k.cmd("dx", 30),
             tentativi=1, informativo=True)
     k.passo("stato dopo il DX", lambda: k.stato_sdk())
@@ -436,22 +436,9 @@ def senza_pellicola(a) -> int:
     k.passo("pellicola secondo l'SDK", lambda: k.b.pellicola_sdk())
     k.passo("video del programma originale", lambda: k.cmd("video", 60), tentativi=1)
 
-    # Per ultima: sulla riserva (7/11/2026) la lettura unica ha mandato la
-    # testa in timeout, e dopo ogni lettura dava ERR_GENERAL_FW 6. Qui si
-    # vede se succede ancora e se il Gretag Reset automatico la rimette in
-    # piedi (PonteSdkBackend._testa_bloccata).
-    k.titolo("Lettura unica (R, G, B in una scan_raw) e ripristino")
-
-    def unica():
-        k.b._lettura_unica = None
-        piani = k.b.capture_frame(["R", "G", "B"], {"R": 0.25, "G": 0.25, "B": 0.25})
-        if piani is None:
-            return "non disponibile"
-        return dict((c, round(float(p.mean()), 1)) for c, p in piani.items())
-    k.passo("grabm R G B a 0.25x", unica, tentativi=1, informativo=True)
-    k.b._lettura_unica = False
-    k.passo("G dopo la lettura unica (con ripristino se serve)",
-            lambda: round(cs.misura(k.b.capture_line_block("G", 1 << 20, 0.25))["media"], 1))
+    # La lettura unica (scan_raw canale 4) non si prova piu': sulla riserva
+    # (7/11/2026) blocca l'SDK per 60 s e poi la testa rifiuta ogni lettura.
+    # Al suo posto, con la pellicola, il percorso capture dell'originale.
 
     k.titolo("Fine")
     k.passo("stato finale", lambda: k.cmd("stato", 15))
@@ -491,11 +478,10 @@ def con_pellicola(a) -> int:
         k.pressore_su()
         k.cmd("regola_-50", 60)
 
-    k.titolo("Codice DX appena inserita")
-    k.passo("DX all'inserimento", lambda: k.cmd("dx", 30), tentativi=1)
-    k.passo("stato dopo il DX", lambda: k.stato_sdk())
-    k.passo("G subito dopo il DX", lambda: round(cs.misura(k.leggi("G", 1.0))["media"], 1),
-            recupero=k.aspetta_pronto)
+    # Il DX (get_media_info) porta l'SDK nello stato 1, dove scan_raw e'
+    # rifiutato dal firmware (46/47/42, riserva 7/11/2026) finche' una
+    # capture non lo riporta a 0. Percio' qui niente DX prima delle letture:
+    # lo si legge in fondo, prima delle sonde capture.
 
     k.titolo("Prima posizione (di solito la coda)")
     livelli = {}
@@ -512,7 +498,6 @@ def con_pellicola(a) -> int:
     for n in range(1, 5):
         k.passo("fotogramma successivo (%d)" % n, lambda: k.cmd("prossimo", 90),
                 recupero=mezzo_indietro)
-        k.passo("DX dopo il movimento (%d)" % n, lambda: k.cmd("dx", 30), tentativi=1)
         if n == 1:
             def misura_esp():
                 for ch in ("R", "G", "B"):
@@ -564,20 +549,34 @@ def con_pellicola(a) -> int:
 
     k.titolo("Ritorno e regolazione fine")
     k.passo("fotogramma precedente", lambda: k.cmd("precedente", 90), recupero=mezzo_indietro)
-    k.passo("DX dopo il ritorno", lambda: k.cmd("dx", 30), tentativi=1)
     k.passo("regolazione +100 passi", lambda: k.cmd("regola_100", 60), tentativi=1)
     k.passo("regolazione -100 passi", lambda: k.cmd("regola_-100", 60), tentativi=1)
 
-    k.titolo("Sonde del percorso capture e del Digital ICE (muovono la pellicola)")
-    k.passo("capture senza ICE", lambda: k.cmd("sonda_capture_0_0", 180), tentativi=1)
-    k.passo("capture con ICE (ASF)", lambda: k.cmd("sonda_capture_0_1", 180), tentativi=1)
-    k.passo("Digital ICE diretto", lambda: k.cmd("sonda_ice_0", 240), tentativi=1)
+    k.titolo("Codice DX e percorso capture dell'originale")
+    # Il 7/11/2026 la capture ha letto un fotogramma RGB intero in 4,4 s e
+    # ha riportato l'SDK dallo stato 1 a 0: e' la strada da integrare.
+    # Tre volte, per vedere come cambiano FrameInfo e i dati del DX.
+    for n in range(1, 4):
+        k.passo("DX prima della capture %d" % n, lambda: k.cmd("dx", 30), tentativi=1,
+                informativo=True)
+        k.passo("capture senza ICE %d" % n, lambda: k.cmd("sonda_capture_0_0", 120),
+                tentativi=1)
+        k.passo("stato dopo la capture %d" % n, lambda: k.stato_sdk())
+    k.passo("G con scan_raw dopo la capture", lambda: round(float(k.leggi("G", 1.0).mean()), 1),
+            tentativi=1, informativo=True)
+
+    # Per ultime, perche' il 7/11/2026 la capture con ICE e' rimasta appesa
+    # nell'SDK: se succede ancora, dopo 2 minuti l'agente si riavvia da solo
+    # e il collaudo va avanti. Non serve fermarlo.
+    k.titolo("Digital ICE (puo' bloccarsi: si riprende da solo)")
+    k.passo("capture con ICE (ASF)", lambda: k.cmd("sonda_capture_0_1", 120), tentativi=2)
+    k.passo("Digital ICE diretto", lambda: k.cmd("sonda_ice_0", 180), tentativi=1)
 
     k.titolo("Fine")
     k.passo("pressore su", k.pressore_su, tentativi=1)
     k.passo("espulsione dal davanti", lambda: k.cmd("espelli", 120), recupero=k.pressore_su)
     k.passo("stato finale", lambda: k.cmd("stato", 15))
-    k.chiudi(sonde=True)
+    k.chiudi()     # le sonde le mette nello zip registri.raccogli (sonde/)
     return 0 if not k.falliti else 2
 
 

@@ -292,6 +292,22 @@ confronta con l'identificativo del comando (per esempio `0x16` =
   `ERR_ILLEGAL_IN_THIS_STATE` con dettaglio 10;
 - **stato 0**: quasi tutto è ammesso.
 
+**Altri stati, visti sulla riserva il 7/11/2026** (nomi nostri, non
+dell'SDK):
+
+- **1** dopo `get_media_info` (il DX): `scan_raw` viene rifiutato dal
+  firmware (46, 47 e 42 con dettaglio `(1, 3401968)`), come pure
+  `get_xy_offset` e `frame_detect_fine_adjust` (3, `ILLEGAL_IN_THIS_STATE`).
+  Una `capture` lo fa passare a 2, poi a 3, poi a 0;
+- **4** durante `calibrate_all` (circa 60 s, intanto l'evento 85 ogni 1-2 s).
+
+`scan_raw` con il canale 4 (R, G e B insieme) fa rispondere alla testa
+"callback scan rgb failed"; l'SDK va in timeout dopo 60 s e da lì ogni
+lettura dà ERR_GENERAL_FW con dettaglio 6 ("restore (add) buffer failed"),
+fino a un Gretag Reset. La `capture` del programma originale invece legge un
+fotogramma RGB intero (17 640 000 byte, 2100×1400×3 a 16 bit) in 4,4 s, con
+l'evento 204 alla fine.
+
 Il cambio arriva al callback d'errore come `EV_STATE_CHANGE`, nella forma
 `(203, nuovo, vecchio)` (`0x1807AAB2`). Sulla riserva lo scanner passa da 10
 a 0 circa 40 s dopo l'apertura. L'agente aspetta quel momento prima di

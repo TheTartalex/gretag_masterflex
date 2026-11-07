@@ -409,6 +409,15 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
   4** e manda di continuo l'**evento 85**: non sono nella tabella dei nomi,
   probabilmente calibrazione in corso. Da annotare come finisce. Calibra
   non rifà più l'azzeramento se lo scanner si è caricato oggi.
+- **7/11, secondo invio** (collaudi automatici): a finestra vuota, dopo
+  `calibrate_all`, il bianco a 1x sta a ~3600 su 4095, satura a 2x, ed è
+  lineare (buio a 60); il canale **IR (3) risponde** con dati suoi;
+  pressore giù/su senza pellicola senza errori; 12x accettato senza
+  pellicola. Con la pellicola: il DX porta lo stato a 1 e da lì ogni
+  `scan_raw` è rifiutata; la **capture dell'originale funziona** (RGB
+  intero in 4,4 s, stato di nuovo a 0): è la strada da integrare (compito
+  20). Il Digital ICE (capture con ASF) è rimasto appeso. DX ancora da
+  decifrare: i dati stanno in `media_info`, non a +0x10.
 - **7/11: primi registri arrivati da soli** (collegamento remoto attivo,
   `gretag_masterflex_registri/riserva/2026-11/`). Trovati: la lettura
   unica blocca la testa (ora spenta, con ripristino automatico); `sensori`

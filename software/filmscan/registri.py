@@ -236,6 +236,19 @@ def raccogli(giorni: int = 7, ponte: Optional[str] = r"C:\MasterflexD\ponte",
                         z.write(p, "ponte/" + n)
                     except (IOError, OSError):
                         pass
+            # i file delle sonde dell'SDK (capture, ICE), che l'agente lascia
+            # in <ponte>/raw: i grezzi grossi no, i .json si'
+            grezzi = os.path.join(ponte, "raw")
+            if os.path.isdir(grezzi):
+                for n in sorted(os.listdir(grezzi)):
+                    p = os.path.join(grezzi, n)
+                    try:
+                        if (n.startswith("sonda_") and os.path.isfile(p)
+                                and os.path.getmtime(p) >= limite
+                                and (n.endswith(".json") or os.path.getsize(p) <= 20 * 1024 * 1024)):
+                            z.write(p, "sonde/" + n)
+                    except (IOError, OSError):
+                        pass
             # registri dell'agente rimasti nella cartella vecchia
             vecchia = os.path.join(ponte, "log")
             if os.path.isdir(vecchia):
