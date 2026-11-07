@@ -409,6 +409,11 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
   4** e manda di continuo l'**evento 85**: non sono nella tabella dei nomi,
   probabilmente calibrazione in corso. Da annotare come finisce. Calibra
   non rifà più l'azzeramento se lo scanner si è caricato oggi.
+- **7/11, prima scansione con la versione nuova**: immagini "leggermente
+  sovraesposte" (chiare, poco contrastate) secondo Alessandro. Da capire
+  sui campioni ("Invia per l'analisi"): ipotesi da verificare, non ancora
+  provata, la mancanza di una curva di stampa (oggi si esce in luce di
+  scena lineare, una stampa ha più contrasto nei toni medi).
 - **7/11, secondo invio** (collaudi automatici): a finestra vuota, dopo
   `calibrate_all`, il bianco a 1x sta a ~3600 su 4095, satura a 2x, ed è
   lineare (buio a 60); il canale **IR (3) risponde** con dati suoi;

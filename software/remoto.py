@@ -285,6 +285,18 @@ def invia(cfg, giorni=2, motivo="", db=None, scrivi=print):
     return remoto
 
 
+def carica_file(cfg, nome, dati, messaggio):
+    """Un file qualsiasi nel repository dei registri, sotto
+    <macchina>/<AAAA-MM>/<nome>. Restituisce il percorso remoto."""
+    if not cfg.get("token"):
+        raise RuntimeError("per inviare serve il token: 'configura'")
+    remoto = "%s/%s/%s" % (cfg["macchina"], time.strftime("%Y-%m"), nome)
+    _richiesta(cfg, "PUT", "/repos/%s/contents/%s" % (cfg["repo_registri"], remoto),
+               {"message": messaggio,
+                "content": base64.b64encode(dati).decode("ascii")}, timeout=300)
+    return remoto
+
+
 # --- riga di comando ------------------------------------------------------
 
 def cmd_configura():

@@ -1656,6 +1656,7 @@ details.sez>div{padding-bottom:10px}
    <button class="sec" id="bf_scarta" onclick="vota(-1)">Scarta</button>
    <button class="sec" onclick="salvaFotogramma()" title="Riesporta questo fotogramma con le regolazioni di adesso">Salva</button>
    <button class="sec" onclick="applicaRullo()" title="Le regolazioni di adesso su tutti i fotogrammi del rullo">Applica al rullo</button>
+   <button class="sec" onclick="inviaCampione()" title="Solo pellicole di prova: grezzo e foto vanno a chi segue la macchina, per capire colore ed esposizione">Invia per l'analisi</button>
    <button class="ghost" onclick="chiudiFotogramma()">Chiudi</button>
   </div>
  </div>
@@ -1929,9 +1930,25 @@ function caricaStriscia(){
 var fotoAperto=null;
 function apriFotogramma(x){
   fotoAperto=x; mostraBarraFot();
-  if(ultimoJob && ultimoJob.running) return;   /* a rullo in corso: solo il voto */
+  /* a lavoro in corso (rullo che finisce di elaborare): solo guardarlo, dal
+     file gia' esportato; per correggerlo si ritocca a lavoro finito */
+  if(ultimoJob && ultimoJob.running){
+    post('/api/fotogramma/mostra',{id:x.id}).then(function(r){
+      if(r && r.mostrato){ hoAnteprima=true; aggiornaImmagini(true); }
+      else if(r && r.messaggio) el('msg').textContent=r.messaggio;
+    });
+    return;
+  }
   if(x.stato==='vuoto' || !x.file_raw) return;
   post('/api/fotogramma/apri',{id:x.id}).then(esito);
+}
+function inviaCampione(){
+  if(!fotoAperto) return;
+  if(!confirm('Invio il fotogramma '+fotoAperto.numero+' per l\'analisi? '+
+              'Solo pellicole di PROVA: l\'immagine esce dalla macchina.')) return;
+  el('msg').textContent='Invio del fotogramma '+fotoAperto.numero+'...';
+  post('/api/fotogramma/invia',{id:fotoAperto.id}).then(function(r){
+    el('msg').textContent = r.errore ? r.errore : ('Fotogramma inviato: '+r.file); });
 }
 function mostraBarraFot(){
   var b=el('barra_fot'); if(!b) return;
@@ -3087,6 +3104,12 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/api/fotogramma/apri":
                 s.apri_fotogramma(int(d.get("id") or 0))
                 return self._json({"avviato": True})
+
+            if u.path == "/api/fotogramma/mostra":
+                return self._json(s.mostra_fotogramma(int(d.get("id") or 0)))
+
+            if u.path == "/api/fotogramma/invia":
+                return self._json({"file": s.invia_campione(int(d.get("id") or 0))})
 
             if u.path == "/api/fotogramma/salva":
                 s.salva_fotogramma()

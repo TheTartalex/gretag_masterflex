@@ -1673,6 +1673,84 @@ class ScanService:
                      % (f["numero"], rullo.etichetta))
         self._avvia("apertura", job)
 
+    def mostra_fotogramma(self, fotogramma_id: int) -> Dict[str, object]:
+        """Solo guardare, anche a lavoro in corso: il fotogramma si mostra dal
+        file gia' esportato, senza il lock dei lavori e senza la macchina.
+        Prima, mentre il rullo finiva di elaborare, toccare un fotogramma
+        della striscia non mostrava niente (riserva, 7/11/2026). Per
+        correggerlo si riapre dal grezzo a lavoro finito (apri_fotogramma)."""
+        f, rullo, ordine = self._fotogramma_e_rullo(fotogramma_id)
+        percorso = f.get("file_out") or ""
+        if not percorso or not os.path.exists(percorso):
+            return {"mostrato": False,
+                    "messaggio": "fotogramma %d ancora in elaborazione" % f["numero"]}
+        from .consegne import apri_immagine
+        im = apri_immagine(percorso).convert("RGB")
+        im.thumbnail((1600, 1600))
+        self.preview = np.asarray(im, dtype=np.float32) / 255.0
+        self.preview_neg = None
+        self.base_lineare = None
+        self.ultimo_raw = None          # i cursori non devono toccare un altro grezzo
+        self.preview_ridotta = True
+        self._ultima_rapida = None      # l'elaborazione in corso non lo copre
+        self._aperto = None
+        self.job.anteprime += 1
+        return {"mostrato": True, "numero": f["numero"]}
+
+    def invia_campione(self, fotogramma_id: int) -> str:
+        """Un fotogramma di PROVA (mai di un cliente) a chi segue la macchina,
+        con il collegamento remoto: il grezzo ridotto a meta' lato (npz),
+        il file esportato ridotto, le correzioni del rullo e la calibrazione
+        in breve. Serve a capire colore ed esposizione senza la chiavetta.
+        Lo chiede l'operatore, fotogramma per fotogramma."""
+        import zipfile
+        f, rullo, ordine = self._fotogramma_e_rullo(fotogramma_id)
+        raw_path = f.get("file_raw") or ""
+        if not raw_path or not os.path.exists(raw_path):
+            raise ScannerError("il grezzo di questo fotogramma non c'e'")
+        try:
+            import remoto
+        except ImportError:
+            raise ScannerError("collegamento remoto non installato")
+        cfg = remoto.carica()
+        if cfg is None or not cfg.get("token"):
+            raise ScannerError("collegamento remoto non configurato")
+        raw = RawScan.load(raw_path)
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+            piani = io.BytesIO()
+            np.savez_compressed(piani, **dict(
+                ("%s_%d" % (c, k), np.ascontiguousarray(p[::2, ::2]))
+                for c, pile in raw.planes.items() for k, p in enumerate(pile)))
+            z.writestr("grezzo_meta_lato.npz", piani.getvalue())
+            z.writestr("meta.json", json.dumps(
+                dict(vars(raw.meta), numero=f["numero"], profilo=rullo.profilo,
+                     dx=getattr(rullo, "dx", ""), sviluppo=getattr(rullo, "sviluppo", 0),
+                     correzione=self._correzioni_salvate(rullo.id).get(str(f["numero"])),
+                     opzioni={k: v for k, v in vars(self.options).items()
+                              if isinstance(v, (int, float, str, bool))}),
+                default=str, indent=1))
+            if self.calib is not None:
+                z.writestr("calibrazione.json", json.dumps(
+                    {"nota": self.calib.note,
+                     "flat": dict((c, [float(np.percentile(v, q)) for q in (1, 50, 99)])
+                                  for c, v in self.calib.flat.items()),
+                     "dark": dict((c, float(np.mean(v))) for c, v in self.calib.dark.items())},
+                    indent=1))
+            uscita = f.get("file_out") or ""
+            if uscita and os.path.exists(uscita):
+                from .consegne import jpeg_per_invio
+                z.writestr("esportato.jpg", jpeg_per_invio(uscita, 1600))
+        nome = "campione-%s-r%d-f%02d.zip" % (time.strftime("%Y%m%d-%H%M%S"),
+                                             rullo.id, int(f["numero"]))
+        try:
+            dove = remoto.carica_file(cfg, nome, buf.getvalue(),
+                                      "campione: rullo %d, fotogramma %d" % (rullo.id, f["numero"]))
+        except Exception as exc:                        # noqa: BLE001
+            raise ScannerError("campione non inviato: %s" % remoto.spiega(exc))
+        self.log("Fotogramma %d inviato per l'analisi: %s" % (f["numero"], dove))
+        return dove
+
     def salva_fotogramma(self) -> None:
         """Riesporta il fotogramma aperto con le regolazioni correnti."""
         if not self._aperto:

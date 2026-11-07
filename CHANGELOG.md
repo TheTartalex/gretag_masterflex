@@ -52,6 +52,15 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-11-07 — fotogrammi visibili durante l'elaborazione, campioni
+
+- Mentre il rullo finisce di elaborare, toccare un fotogramma della
+  striscia lo mostra dal file già esportato (`mostra_fotogramma`, senza il
+  lock dei lavori); prima registrava solo il voto e non si vedeva niente.
+- "Invia per l'analisi" nella barra del fotogramma: grezzo a metà lato,
+  file esportato ridotto, correzioni del rullo e calibrazione, nel
+  repository dei registri (`remoto.carica_file`). Solo pellicole di prova.
+
 ### 2026-11-07 — collaudi riordinati dopo il secondo invio
 
 - Collaudo con pellicola: il DX non si legge più prima delle letture (porta
