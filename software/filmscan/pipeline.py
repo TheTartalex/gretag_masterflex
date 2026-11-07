@@ -112,6 +112,11 @@ class ProcessOptions:
     # correzione di densita' locale (0 = spenta): schiarisce e scurisce per zone
     densita_locale: float = 0.0
 
+    # False: niente colore automatico (equilibrio del rullo, bilanciamento,
+    # livelli, ritocco delle classi d'esposizione). Resta solo l'inversione
+    # sulla base della pellicola: il negativo com'e', da correggere a mano.
+    colore_auto: bool = True
+
     # --- bianco e nero (bianconero.py): solo con un profilo monocromatico ---
     tono_bn: str = ""                   # "", alto, basso, esteso, duro
     viraggio: str = ""                  # "", seppia, selenio, caldo, freddo, cianotipia
@@ -191,7 +196,7 @@ def _riduci_per_schermo(img: Optional[np.ndarray],
 def _correzione(opts: ProcessOptions):
     """La correzione di densita' del rullo, dosata dal cursore del
     bilanciamento automatico (0 = niente)."""
-    if opts.correzione_densita is None or opts.auto_wb <= 0:
+    if opts.correzione_densita is None or opts.auto_wb <= 0 or not opts.colore_auto:
         return None
     return tuple(float(x) * float(opts.auto_wb) for x in opts.correzione_densita)
 
@@ -201,6 +206,10 @@ def _bilancia(img: np.ndarray, opts: ProcessOptions, rapida: bool = False) -> np
     Con l'equilibrio del rullo il bilanciamento per fotogramma non si fa: il
     colore e' gia' stato messo a posto in densita', e rifarlo sul singolo
     fotogramma riporterebbe proprio l'errore che il rullo evita."""
+    if not opts.colore_auto:
+        if opts.curve:
+            img = invert.apply_curve(img, opts.curve)
+        return img
     if opts.correzione_densita is None and opts.auto_wb > 0:
         img = invert.auto_white_balance(img, opts.auto_wb)
     if opts.auto_levels:

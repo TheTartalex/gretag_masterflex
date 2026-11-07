@@ -52,6 +52,24 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-11-07 — ferma elaborazione, ritaglio e colore a mano, formati di scarico
+
+- Rullo: dopo "Fine rullo", il tasto diventa "Ferma elaborazione". Il
+  fotogramma in elaborazione finisce, gli altri si salvano solo come
+  grezzi (stato `da_elaborare`); alla fine un avviso con i numeri, da
+  elaborare con Applica al rullo. Corretto anche `_chiudi_elaborazione`,
+  che azzerava la coda prima di svuotarla (il secondo tocco non la
+  trovava).
+- Ritocco: "Colore automatico" (spento: niente equilibrio del rullo,
+  bilanciamento, livelli né ritocco delle classi, resta l'inversione sulla
+  base) accanto a "Ritaglio automatico". Cambiandoli il fotogramma si
+  rielabora dal grezzo, con le correzioni del suo rullo; valgono anche per
+  Salva, Applica al rullo e i rulli dopo.
+- Archivio: "Scarica le foto" e "Scarica le foto da stampare" chiedono il
+  formato (come salvate, JPEG alta qualità, JPEG 2048 px, TIFF 16 bit,
+  TIFF 8 bit); la conversione si fa al momento, i file in archivio non si
+  toccano.
+
 ### 2026-11-07 — fotogrammi visibili durante l'elaborazione, campioni
 
 - Mentre il rullo finisce di elaborare, toccare un fotogramma della

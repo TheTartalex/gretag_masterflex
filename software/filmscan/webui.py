@@ -225,6 +225,7 @@ def _opzioni(d: Dict) -> ProcessOptions:
         auto_levels=bool(d.get("livelli", True)),
         ir_strength=f("ir", 1.0),
         auto_crop=bool(d.get("ritaglio", True)),
+        colore_auto=bool(d.get("colore_auto", True)),
         auto_straighten=bool(d.get("raddrizza", True)),
         grain_reduction=f("grana_riduci"),
         grain_add=f("grana_aggiungi"),
@@ -626,12 +627,12 @@ function apri(id){
     var cf = ri.n_esportati ? '' : ' disabled';
     var cg = ri.n_grezzi ? '' : ' disabled';
     h+='<section class="pannello"><h2>Consegna</h2><div class="g3">'+
-       '<button class="sec"'+cf+' onclick="location.href=url(\'/api/archivio/zip?cosa=esportati&id='+o.id+'\')">Scarica le foto</button>'+
+       '<button class="sec"'+cf+' onclick="scegliFormato('+o.id+',\'esportati\',this)">Scarica le foto</button>'+
        '<button class="sec"'+cg+' onclick="location.href=url(\'/api/archivio/zip?cosa=grezzi&id='+o.id+'\')">Scarica i grezzi</button>'+
        '<button class="sec" onclick="riapri('+o.id+')">Riapri in scansione</button>'+
        '</div>'+
        '<div class="g2" style="margin-top:8px">'+
-       '<button class="sec"'+(ri.n_selezionati?'':' disabled')+' onclick="location.href=url(\'/api/archivio/zip?cosa=selezionati&id='+o.id+'\')">Scarica le foto da stampare ('+(ri.n_selezionati||0)+')</button>'+
+       '<button class="sec"'+(ri.n_selezionati?'':' disabled')+' onclick="scegliFormato('+o.id+',\'selezionati\',this)">Scarica le foto da stampare ('+(ri.n_selezionati||0)+')</button>'+
        '<button class="sec"'+(ri.n_negativi?'':' disabled')+' onclick="location.href=url(\'/api/archivio/zip?cosa=negativi&id='+o.id+'\')">Scarica i negativi lineari ('+(ri.n_negativi||0)+')</button>'+
        '</div>'+
        '<div class="g2" style="margin-top:8px">'+
@@ -702,6 +703,28 @@ function apri(id){
     el('dettaglio').innerHTML=h;
     if(ULTIMO_ESITO){ esitoElim(ULTIMO_ESITO); ULTIMO_ESITO=''; }
   });
+}
+
+/* Scarica: prima il formato. La lista compare sotto il tasto; la
+   conversione si fa sul momento, un file per volta (TIFF a 16 bit su un PC
+   del 2009: qualche secondo a foto). */
+var FORMATI = <!--FORMATI-->;
+function scegliFormato(oid, cosa, tasto){
+  var vecchio=el('lista_formati'); if(vecchio){ vecchio.remove(); if(vecchio.dataset.per===cosa) return; }
+  var box=document.createElement('div');
+  box.id='lista_formati'; box.dataset.per=cosa; box.className='pannello';
+  box.style.cssText='margin-top:8px;padding:10px';
+  box.innerHTML='<div class="nota" style="margin:0 0 6px">In che formato?</div>';
+  FORMATI.forEach(function(f){
+    var b=document.createElement('button'); b.className='sec'; b.textContent=f[1];
+    b.style.cssText='display:block;width:100%;margin:4px 0';
+    b.onclick=function(){
+      box.remove();
+      location.href=url('/api/archivio/zip?cosa='+cosa+'&id='+oid+'&formato='+f[0]);
+    };
+    box.appendChild(b);
+  });
+  tasto.parentNode.parentNode.insertBefore(box, tasto.parentNode.nextSibling);
 }
 
 var MODELLO = "Buongiorno {cliente}, le sue scansioni sono pronte: ordine {codice}, {fotogrammi} fotogrammi. Puo' passare a ritirarle quando vuole. Grazie!";
@@ -1495,7 +1518,8 @@ details.sez>div{padding-bottom:10px}
     <select id="viraggio"><!--VIRAGGI--></select></div>
   </div>
   <div style="margin-top:12px">
-   <label><input type="checkbox" id="ritaglio" checked style="width:auto"> Ritaglio automatico</label>
+   <label><input type="checkbox" id="ritaglio" checked style="width:auto" onchange="rielaboraTutto()"> Ritaglio automatico</label>
+   <label title="Equilibrio del rullo, bilanciamento e livelli automatici. Spento: solo l'inversione sulla base della pellicola, il resto a mano"><input type="checkbox" id="colore_auto" checked style="width:auto" onchange="rielaboraTutto()"> Colore automatico</label>
    <label><input type="checkbox" id="auto_ruota" style="width:auto"> Orientamento automatico</label>
   </div>
   <div class="row"><button class="ghost" onclick="azzeraCorrezioni()">Azzera</button></div>
@@ -1986,7 +2010,7 @@ function opzioni(){ return {
   nitidezza:num('nitidezza'), grana_aggiungi:num('grana_aggiungi'),
   densita_locale:num('densita_locale'),
   tono_bn:val('tono_bn'), viraggio:val('viraggio'),
-  auto_ruota:val('auto_ruota'), ritaglio:val('ritaglio'),
+  auto_ruota:val('auto_ruota'), ritaglio:val('ritaglio'), colore_auto:val('colore_auto'),
   /* pannello colore */
   esposizione:num('esposizione'),
   /* i guadagni campionati hanno la precedenza sui kelvin: sono una misura,
@@ -2015,6 +2039,19 @@ function applica(subito){
       aggiornaImmagini(true); disegnaIstogramma();
     }).catch(function(){ inCorso=false; });
   }, subito?0:350);   /* il cursore si trascina: si aspetta che si fermi */
+}
+
+/* Ritaglio e colore automatico cambiano la base, non solo le finiture: il
+   fotogramma si rielabora dal grezzo (qualche secondo sul PC della macchina).
+   Valgono per il fotogramma aperto, per Salva e Applica al rullo e per i
+   rulli che vengono dopo. */
+function rielaboraTutto(){
+  if(!hoAnteprima) return;
+  el('pip_nota').textContent='Rielaborazione dal grezzo...';
+  post('/api/rielabora', Object.assign(opzioni(), {completa:true})).then(function(r){
+    el('pip_nota').textContent = (r && r.errore) ? r.errore : '';
+    aggiornaImmagini(true); disegnaIstogramma();
+  });
 }
 
 /* ---------- pipetta del neutro ---------- */
@@ -2351,6 +2388,12 @@ function mostraStato(s){
   /* Il menu del collegamento deve dire come stanno le cose, non ripartire
      ogni volta dalla prima voce: e' il modo migliore per far scegliere a
      qualcuno un backend diverso da quello con cui il server e' partito. */
+  /* fine di un rullo con fotogrammi lasciati da elaborare: avviso, una volta */
+  if(ultimoJob && ultimoJob.running && s.job && !s.job.running && s.job.non_elaborati){
+    setTimeout(function(){ alert('Rullo chiuso con '+s.job.non_elaborati+
+      ' fotogrammi NON elaborati.\nI grezzi sono salvati: aprire un fotogramma del '+
+      'rullo e premere "Applica al rullo" per elaborarli.'); }, 50);
+  }
   ultimoJob = s.job || null;
   if(dirOn && s.job && s.job.running) diretta(false);
   mostraPosizionamento(s.job && s.job.running ? s.job.posizionamento : '');
@@ -2384,8 +2427,12 @@ function mostraStato(s){
   var tr=el('tasto_rullo');
   if(tr){
     var inRullo = !!(s.job && s.job.running && s.job.kind==='rullo');
+    var elabora = inRullo && (s.job.in_elaborazione||0) > 0 &&
+                  (s.job.chiusura || /^Elaborazione degli ultimi/.test(s.job.message||''));
     tr.textContent = !inRullo ? 'Scansiona rullo'
-      : (s.job.chiusura ? 'Chiusura...' : 'Fine rullo');
+      : (elabora ? 'Ferma elaborazione' : (s.job.chiusura ? 'Chiusura...' : 'Fine rullo'));
+    tr.title = elabora ? "Ferma l'elaborazione dove e': i fotogrammi rimasti restano grezzi, "+
+                         "da elaborare con Applica al rullo" : '';
     tr.classList.toggle('rosso', inRullo);
     tr.classList.toggle('verde', !inRullo);
   }
@@ -2574,6 +2621,8 @@ PAGINA = PAGINA.replace("<!--TONI-->", "".join(
 PAGINA = PAGINA.replace("<!--VIRAGGI-->", "".join(
     '<option value="%s">%s</option>' % (k, v[0]) for k, v in bianconero.VIRAGGI.items()))
 PAGINA_ARCHIVIO = _vesti(PAGINA_ARCHIVIO)
+PAGINA_ARCHIVIO = PAGINA_ARCHIVIO.replace("<!--FORMATI-->", json.dumps(
+    [[k, v[0]] for k, v in consegne.FORMATI_SCARICO.items()]))
 PAGINA_PIN = _vesti(PAGINA_PIN)
 
 
@@ -2916,15 +2965,17 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/archivio/zip":
             oid = int(q.get("id", ["0"])[0] or 0)
             cosa = q.get("cosa", ["esportati"])[0]
+            formato = q.get("formato", ["originale"])[0]
             o = s.archivio.ordine(oid)
             if o is None:
                 return self._json({"errore": "ordine inesistente"}, 404)
             fuori = os.path.join(s.cfg.path("archivio"), "_consegne")
             if not os.path.isdir(fuori):
                 os.makedirs(fuori)
-            dest = os.path.join(fuori, "%s-%s.zip" % (o.codice, cosa))
+            dest = os.path.join(fuori, "%s-%s%s.zip" % (
+                o.codice, cosa, "" if formato == "originale" else "-" + formato))
             try:
-                consegne.zip_ordine(s.archivio, oid, dest, cosa)
+                consegne.zip_ordine(s.archivio, oid, dest, cosa, formato)
             except ValueError as exc:
                 return self._json({"errore": str(exc)}, 400)
             return self._scarica(dest, tipo="application/zip")
@@ -3139,7 +3190,9 @@ class Handler(BaseHTTPRequestHandler):
 
             if u.path == "/api/rielabora":
                 s.options = _opzioni(d)
-                return self._json(s.rielabora())
+                # ritaglio e colore automatico cambiano la base: si rifa'
+                # tutto dal grezzo, non solo le finiture
+                return self._json(s.rielabora(veloce=not d.get("completa")))
 
             if u.path == "/api/campiona":
                 s.options = _opzioni(d)

@@ -355,8 +355,70 @@ def scrivi_registro(arch, percorso: str, limite: int = 2000) -> str:
 # consegna
 # ---------------------------------------------------------------------------
 
+# Formati in cui si possono scaricare le foto (archivio, tasto Scarica).
+# "originale" = come sono state salvate; gli altri si convertono al momento,
+# un file per volta, senza toccare quelli in archivio.
+FORMATI_SCARICO = {
+    "originale": ("Come sono salvate", ""),
+    "jpeg": ("JPEG, qualita' alta", ".jpg"),
+    "jpeg_web": ("JPEG per WhatsApp e web (2048 px)", ".jpg"),
+    "tiff16": ("TIFF 16 bit (ritocco)", ".tif"),
+    "tiff8": ("TIFF 8 bit", ".tif"),
+}
+# Niente PNG: a 16 bit Pillow non lo scrive, e imageio sulla macchina non c'e'.
+
+
+def _leggi_per_convertire(percorso: str):
+    """(immagine float 0..1 RGB, descrizione) da un file esportato, a 16 bit
+    se il file lo e'."""
+    import numpy as np
+    descrizione = ""
+    if percorso.lower().endswith((".tif", ".tiff")):
+        try:
+            import tifffile
+            with tifffile.TiffFile(percorso) as t:
+                pagina = t.pages[0]
+                a = pagina.asarray()
+                tag = pagina.tags.get(270)
+                descrizione = str(tag.value) if tag is not None else ""
+            fondo = 65535.0 if a.dtype == np.uint16 else 255.0
+            a = a.astype(np.float32) / fondo
+            if a.ndim == 2:
+                a = np.repeat(a[:, :, None], 3, axis=2)
+            return a[:, :, :3], descrizione
+        except Exception:                               # noqa: BLE001
+            pass
+    im = apri_immagine(percorso).convert("RGB")
+    try:
+        descrizione = str(im.getexif().get(270, "") or "")
+    except Exception:                                   # noqa: BLE001
+        pass
+    return np.asarray(im, dtype=np.float32) / 255.0, descrizione
+
+
+def _converti(percorso: str, formato: str, cartella: str) -> str:
+    """Il file in un altro formato, scritto in 'cartella'. Restituisce il
+    percorso del file nuovo."""
+    from . import pipeline
+    img, descrizione = _leggi_per_convertire(percorso)
+    estensione = FORMATI_SCARICO[formato][1]
+    nome = os.path.splitext(os.path.basename(percorso))[0] + estensione
+    dest = os.path.join(cartella, nome)
+    if formato == "jpeg_web":
+        from PIL import Image
+        import numpy as np
+        im = Image.fromarray((np.clip(img, 0, 1) * 255).astype(np.uint8))
+        im.thumbnail((2048, 2048))
+        img = np.asarray(im, dtype=np.float32) / 255.0
+    pipeline.export(img, dest, {"jpeg": "jpeg", "jpeg_web": "jpeg", "tiff16": "tiff16",
+                                "tiff8": "tiff8"}[formato],
+                    jpeg_quality=95 if formato == "jpeg" else 88,
+                    meta={"descrizione": descrizione})
+    return dest
+
+
 def zip_ordine(arch, ordine_id: int, destinazione: str,
-               cosa: str = "esportati") -> str:
+               cosa: str = "esportati", formato: str = "originale") -> str:
     """Mette i file di un ordine in un unico archivio zip.
 
     Senza compressione, di proposito: i TIFF a 16 bit di un rullo pesano
@@ -379,10 +441,26 @@ def zip_ordine(arch, ordine_id: int, destinazione: str,
     if not dentro:
         raise ValueError("questo ordine non ha file di tipo '%s' sul disco" % cosa)
 
-    with zipfile.ZipFile(destinazione, "w", zipfile.ZIP_STORED,
-                         allowZip64=True) as z:
-        for p in dentro:
-            z.write(p, os.path.join(o.codice, os.path.basename(p)))
+    if formato not in FORMATI_SCARICO:
+        raise ValueError("formato sconosciuto: %s" % formato)
+    # si convertono solo le foto: grezzi e negativi lineari restano come sono
+    converti = formato != "originale" and cosa in ("esportati", "selezionati")
+    lavoro = destinazione + ".conversione"
+    if converti and not os.path.isdir(lavoro):
+        os.makedirs(lavoro)
+    try:
+        with zipfile.ZipFile(destinazione, "w", zipfile.ZIP_STORED,
+                             allowZip64=True) as z:
+            for p in dentro:
+                if not converti:
+                    z.write(p, os.path.join(o.codice, os.path.basename(p)))
+                    continue
+                nuovo = _converti(p, formato, lavoro)
+                z.write(nuovo, os.path.join(o.codice, os.path.basename(nuovo)))
+                os.remove(nuovo)
+    finally:
+        if converti:
+            shutil.rmtree(lavoro, ignore_errors=True)
     return destinazione
 
 

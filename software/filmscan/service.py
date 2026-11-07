@@ -78,6 +78,8 @@ class JobState:
     pellicola: str = ""
     # ordine finito (tutti i rulli letti): l'interfaccia propone l'avviso
     avviso_ordine: int = 0
+    # fotogrammi lasciati da elaborare perche' l'elaborazione e' stata fermata
+    non_elaborati: int = 0
 
     def as_dict(self) -> Dict[str, object]:
         return {"running": self.running, "kind": self.kind,
@@ -90,7 +92,8 @@ class JobState:
                 "anteprime": self.anteprime,
                 "in_elaborazione": self.in_elaborazione,
                 "pellicola": self.pellicola,
-                "avviso_ordine": self.avviso_ordine}
+                "avviso_ordine": self.avviso_ordine,
+                "non_elaborati": self.non_elaborati}
 
 
 def _peso(raw) -> int:
@@ -126,6 +129,10 @@ class _ElaborazioneInFondo(object):
         # la lettura del rullo e' finita: chi aspettava altri fotogrammi per
         # l'equilibrio del rullo non deve piu' aspettare
         self.lettura_finita = threading.Event()
+        # "Chiusura..." premuto di nuovo: i fotogrammi rimasti in coda si
+        # salvano solo come grezzi (stato "da_elaborare"), senza elaborarli.
+        # Il grezzo non si salta mai: e' l'unica copia della pellicola.
+        self.solo_grezzi = threading.Event()
         self._thread = threading.Thread(target=self._giro, name="elaborazione",
                                         daemon=True)
         self._thread.start()
@@ -524,10 +531,18 @@ class ScanService:
         striscia successiva), espelle la pellicola e lo segna completato.
         E' lo stop del lavoro normale; l'emergenza e' un'altra cosa."""
         if self.job.running and self.job.kind == "rullo":
+            elab = self._elab
+            if (self.job.chiusura or (elab is not None and elab.lettura_finita.is_set())) \
+                    and elab is not None and not elab.solo_grezzi.is_set():
+                # secondo tocco, o lettura gia' finita: l'elaborazione si
+                # ferma dove e'; il resto resta da elaborare (Applica al rullo)
+                elab.solo_grezzi.set()
+                self.log("Elaborazione fermata: i fotogrammi rimasti si salvano "
+                         "solo come grezzi, da elaborare dopo con Applica al rullo.")
             self._fine_rullo.set()
             self.job.chiusura = True
             self.log("Fine rullo richiesto: si chiude dopo il fotogramma in "
-                     "corso.")
+                     "corso (toccare di nuovo per fermare anche l'elaborazione).")
         return self.stato()
 
     def _leggi_dx(self, backend) -> str:
@@ -1079,14 +1094,20 @@ class ScanService:
         threading.Thread(target=worker, daemon=True).start()
 
     def _chiudi_elaborazione(self) -> None:
-        elab, self._elab = self._elab, None
+        # self._elab resta valorizzato finche' la coda non e' vuota: e' da li'
+        # che "Ferma elaborazione" (fine_rullo) la raggiunge. Prima veniva
+        # azzerato subito, e il secondo tocco non trovava niente da fermare.
+        elab = self._elab
         if elab is None:
             return
         if self.job.in_elaborazione:
-            self.progress("Elaborazione degli ultimi %d fotogramm%s"
+            self.progress("Elaborazione degli ultimi %d fotogramm%s (Ferma elaborazione per interromperla)"
                           % (self.job.in_elaborazione,
                              "o" if self.job.in_elaborazione == 1 else "i"), 0.98)
-        elab.chiudi()
+        try:
+            elab.chiudi()
+        finally:
+            self._elab = None
 
     def _mostra_rapida(self, raw, opts, chiave: Tuple[int, int]) -> None:
         """L'anteprima ridotta di un fotogramma appena letto, nel visore e
@@ -1446,6 +1467,9 @@ class ScanService:
             opts = ScanService._con_pellicola(opts, corr)
         if not corr.get("base") or not corr.get("densita"):
             return opts
+        if not opts.colore_auto:
+            # colore a mano: resta solo la base della pellicola
+            return dataclasses.replace(opts, base_rullo=tuple(corr["base"]))
         return dataclasses.replace(
             opts, base_rullo=tuple(corr["base"]),
             correzione_densita=tuple(corr["densita"]),
@@ -2152,6 +2176,14 @@ class ScanService:
                             rullo_id, numero, file_raw=raw_path, stato="vuoto",
                             avvisi=vuoto, numero_bordo=bordo)
                         return
+                    if elab.solo_grezzi.is_set():
+                        if not raw_path:
+                            raw_path = raw.save(self.cfg.path("raw"), nome)
+                        self.archivio.fotogramma_registra(
+                            rullo_id, numero, file_raw=raw_path, stato="da_elaborare",
+                            avvisi="non elaborato: elaborazione fermata", numero_bordo=bordo)
+                        non_elaborati.append(numero)
+                        return
                     # L'equilibrio del rullo ha bisogno di qualche fotogramma:
                     # il primo aspetta che ce ne siano 4 (o che la striscia
                     # sia finita). La lettura intanto va avanti.
@@ -2189,6 +2221,7 @@ class ScanService:
                     self.job.in_elaborazione = max(0, self.job.in_elaborazione - 1)
                     self.job.anteprime += 1
 
+            non_elaborati: List[int] = []
             elab = self._elab = _ElaborazioneInFondo(
                 elabora, int(self.cfg.memoria_elaborazione_mb) * 1024 * 1024)
             letti = {"n": 0}
@@ -2564,6 +2597,15 @@ class ScanService:
             self._chiudi_elaborazione()
             fatti = elaborati["ok"]
             self._chiudi_statistiche(rullo_id, gruppi, memoria)
+            if non_elaborati:
+                avviso = ("%d fotogramm%s NON elaborat%s (%s): i grezzi sono salvati, "
+                          "si elaborano con Applica al rullo"
+                          % (len(non_elaborati), "o" if len(non_elaborati) == 1 else "i",
+                             "o" if len(non_elaborati) == 1 else "i",
+                             ", ".join(str(n) for n in sorted(non_elaborati))))
+                self.job.errors.append(avviso)
+                self.job.non_elaborati = len(non_elaborati)
+                self.log("Attenzione: " + avviso + ".")
 
             # una striscia piu' corta del previsto non e' un problema: e' la
             # normalita' con pellicole di lunghezza variabile
@@ -2803,7 +2845,19 @@ class ScanService:
         if self.ultimo_raw is None:
             raise ValueError("nessun fotogramma da rielaborare: fare prima "
                              "un'anteprima o una scansione")
-        res = process(self.ultimo_raw, self.options)
+        opts = self.options
+        if self._aperto:
+            # fotogramma riaperto dall'archivio: con il profilo, la pellicola
+            # e le correzioni del suo rullo, come in apri_fotogramma
+            try:
+                f, rullo, _ = self._fotogramma_e_rullo(self._aperto)
+                opts = self._opzioni_fotogramma(
+                    self._opzioni_rullo(rullo),
+                    self._correzioni_salvate(rullo.id).get(str(f["numero"])))
+                opts.negativo_lineare = False
+            except (ValueError, ScannerError):
+                opts = self.options
+        res = process(self.ultimo_raw, opts)
         self.preview = res.image
         self.preview_neg = res.negativo
         self.base_lineare = res.base
