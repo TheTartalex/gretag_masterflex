@@ -322,6 +322,15 @@ class AppConfig:
     #   "nostro" la pulizia dal canale IR (irclean), anche sugli elaboratori
     digital_ice: str = "kodak"
 
+    # --- preferenze dell'elaborazione (pannello Preferenze) ---
+    # Valgono per tutti i rulli e per le rielaborazioni, finche' non si
+    # cambiano; le correzioni a mano del singolo fotogramma restano sue.
+    pref_ritaglio: bool = True          # ritaglio automatico sui bordi trovati
+    pref_raddrizza: bool = True         # rotazione automatica di pochi gradi
+    pref_luce: bool = True              # livelli automatici e ritocco d'esposizione
+    pref_bianco: bool = True            # bilanciamento del bianco e colore del rullo
+    pref_orientamento: bool = False     # 90/180 gradi automatici (euristica)
+
     # --- elaboratori della rete (remoti.py, elaboratore.py) ---
     # Altri PC o server della stessa rete che elaborano i fotogrammi al
     # posto del PC della macchina (~23 s a fotogramma sulla riserva). Si

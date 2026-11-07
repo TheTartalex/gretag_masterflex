@@ -1164,7 +1164,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .prov .voto{position:absolute;right:3px;bottom:1px;font-size:14px;color:var(--acc)}
 .prov.scartato img{opacity:.3}
 /* la barra del fotogramma riaperto dalla striscia, sopra l'immagine */
-.barra-fot{position:absolute;left:50%;bottom:8px;transform:translateX(-50%);
+.barra-fot{position:absolute;left:0;right:0;margin:0 auto;width:max-content;bottom:8px;
  z-index:6;display:flex;gap:6px;align-items:center;flex-wrap:wrap;
  justify-content:center;background:var(--card);border:1px solid var(--line);
  border-radius:8px;padding:6px 8px;max-width:calc(100% - 16px);
@@ -1366,6 +1366,8 @@ details.sez>div{padding-bottom:10px}
  <button data-s="lavoro" onclick="apriScheda('lavoro')"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 5v14M17 5v14M3 9h4M3 15h4M17 9h4M17 15h4"/></svg>Lavoro</button>
  <button data-s="colore" onclick="apriScheda('colore')"><svg viewBox="0 0 24 24"><circle cx="9" cy="10" r="5"/><circle cx="15" cy="10" r="5"/><circle cx="12" cy="15" r="5"/></svg>Colore</button>
  <button data-s="correzioni" onclick="apriScheda('correzioni')"><svg viewBox="0 0 24 24"><path d="M4 20l9-9M14 4l1.2 2.8L18 8l-2.8 1.2L14 12l-1.2-2.8L10 8l2.8-1.2z"/></svg>Ritocco</button>
+ <button data-s="geometria" onclick="apriScheda('geometria')"><svg viewBox="0 0 24 24"><path d="M6 2v16h16"/><path d="M2 6h16v16"/></svg>Geometria</button>
+ <button data-s="preferenze" onclick="apriScheda('preferenze')"><svg viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>Preferenze</button>
  <button data-s="macchina" onclick="apriScheda('macchina')"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>Macchina</button>
  <button data-s="diario" onclick="apriScheda('diario')"><svg viewBox="0 0 24 24"><path d="M6 3h9l3 3v15H6z"/><path d="M9 10h6M9 14h6M9 18h4"/></svg>Diario<span class="conta" id="conta_avvisi"></span></button>
 </nav>
@@ -1528,12 +1530,77 @@ details.sez>div{padding-bottom:10px}
    <div><label title="Solo per le pellicole in bianco e nero: il bagno di viraggio">Viraggio</label>
     <select id="viraggio"><!--VIRAGGI--></select></div>
   </div>
-  <div style="margin-top:12px">
-   <label><input type="checkbox" id="ritaglio" checked style="width:auto" onchange="rielaboraTutto()"> Ritaglio automatico</label>
-   <label title="Equilibrio del rullo, bilanciamento e livelli automatici. Spento: solo l'inversione sulla base della pellicola, il resto a mano"><input type="checkbox" id="colore_auto" checked style="width:auto" onchange="rielaboraTutto()"> Colore automatico</label>
-   <label><input type="checkbox" id="auto_ruota" style="width:auto"> Orientamento automatico</label>
-  </div>
   <div class="row"><button class="ghost" onclick="azzeraCorrezioni()">Azzera</button></div>
+ </section>
+ </div>
+
+ <div class="scheda" id="s_geometria">
+ <section class="pannello">
+  <h2>Geometria <span id="geo_info" class="nota-imp" style="margin:0"></span></h2>
+  <div class="nota-imp" id="geo_nessuno">Toccare un fotogramma nella striscia per aprirlo.</div>
+  <label>Rotazione</label>
+  <div class="row">
+   <button class="sec" onclick="ruota(1)" title="90 gradi in senso antiorario">&#10226; 90&deg;</button>
+   <button class="sec" onclick="ruota(-1)" title="90 gradi in senso orario">&#10227; 90&deg;</button>
+   <button class="sec" onclick="ruota(2)" title="Capovolge">180&deg;</button>
+  </div>
+  <label>Raddrizza a mano <b id="v_geo_angolo">0,0&deg;</b></label>
+  <input type="range" id="geo_angolo" min="-10" max="10" step="0.1" value="0" oninput="geoAngolo()">
+  <div class="row">
+   <button class="ghost" onclick="geoAngoloPasso(-0.1)">&minus;0,1&deg;</button>
+   <button class="ghost" onclick="geoAngoloPasso(0.1)">+0,1&deg;</button>
+   <button class="ghost" onclick="geoAngoloPasso(0)">0&deg;</button>
+  </div>
+  <label>Ritaglio</label>
+  <div class="row"><button class="sec" id="geo_modifica" onclick="geoModifica()" title="Mostra il fotogramma intero con il riquadro del ritaglio: si allarga, si stringe, si sposta o se ne disegna uno nuovo">Modifica il ritaglio</button></div>
+  <div id="geo_ritaglio" style="display:none">
+   <div class="nota-imp">Trascinare gli angoli o il riquadro; fuori dal riquadro se ne disegna uno nuovo.</div>
+   <div class="row">
+    <button class="sec" onclick="geoAllarga(0.01)">Allarga</button>
+    <button class="sec" onclick="geoAllarga(-0.01)">Riduci</button>
+    <button class="ghost" onclick="geoTutto()">Tutto il fotogramma</button>
+   </div>
+   <div class="row"><button class="ghost" onclick="if(confirm('Torno al ritaglio automatico?')) post('/api/fotogramma/ritaglio',{azione:'togli'}).then(function(r){ esito(r); geoEsci(); })">Ritaglio automatico</button></div>
+  </div>
+  <label>Canali</label>
+  <div class="griglia2">
+   <div><select id="geo_canale"><option value="R">Rosso</option><option value="B">Blu</option></select></div>
+   <div><select id="geo_passo" title="Di quanto si sposta a ogni tocco"><option value="0.25">&frac14; px</option><option value="0.5" selected>&frac12; px</option><option value="1">1 px</option><option value="2">2 px</option></select></div>
+  </div>
+  <div class="row">
+   <button class="sec" onclick="sposta(0,-1)" title="Sinistra">&larr;</button>
+   <button class="sec" onclick="sposta(-1,0)" title="Su">&uarr;</button>
+   <button class="sec" onclick="sposta(1,0)" title="Giu'">&darr;</button>
+   <button class="sec" onclick="sposta(0,1)" title="Destra">&rarr;</button>
+   <button class="ghost" onclick="geoComando('/api/fotogramma/canali_azzera',{})">Azzera</button>
+  </div>
+  <div class="row" style="margin-top:14px">
+   <button class="principale" onclick="geoConferma()" title="Rielabora e salva il file finale con questa geometria; il grezzo resta com'e'">Conferma e salva</button>
+   <button class="ghost" onclick="geoAnnulla()">Annulla</button>
+  </div>
+  <div class="row"><button class="ghost" onclick="rifaiGeometria()" title="Rifa' da capo allineamento, raddrizzamento, ritaglio e orientamento">Ricalcola tutto</button></div>
+  <div class="nota-imp">Tutto si vede subito nell'anteprima. "Conferma e salva" rielabora il solo file finale di questo fotogramma; i grezzi non cambiano mai.</div>
+ </section>
+ </div>
+
+ <div class="scheda" id="s_preferenze">
+ <section class="pannello">
+  <h2>Preferenze</h2>
+  <div class="nota-imp" style="margin-top:0">Valgono per tutti i rulli e per le rielaborazioni, finché non si cambiano.</div>
+  <label><input type="checkbox" id="pref_esposizione_auto" style="width:auto" onchange="preferenza(this)"> Esposizione automatica</label>
+  <div class="nota-imp">Tempi calibrati dalla macchina e misura per canale a inizio rullo. Spenta: tempi di fabbrica. Cambiandola va rifatta la calibrazione.</div>
+  <label><input type="checkbox" id="pref_avanzamento_automatico" style="width:auto" onchange="preferenza(this)"> Avanzamento automatico</label>
+  <div class="nota-imp">Il carrello cerca da solo il fotogramma. Spento: ogni fotogramma si mette in finestra a mano.</div>
+  <label><input type="checkbox" id="pref_pref_ritaglio" style="width:auto" onchange="preferenza(this)"> Ritaglio automatico</label>
+  <div class="nota-imp">Sui bordi del fotogramma, solo se trovati con certezza; altrimenti il file resta intero.</div>
+  <label><input type="checkbox" id="pref_pref_raddrizza" style="width:auto" onchange="preferenza(this)"> Rotazione automatica</label>
+  <div class="nota-imp">Raddrizza il fotogramma storto di pochi gradi.</div>
+  <label><input type="checkbox" id="pref_pref_luce" style="width:auto" onchange="preferenza(this)"> Correzione automatica della luce</label>
+  <div class="nota-imp">Livelli automatici e ritocco dei negativi sotto o sovraesposti.</div>
+  <label><input type="checkbox" id="pref_pref_bianco" style="width:auto" onchange="preferenza(this)"> Correzione automatica del bianco</label>
+  <div class="nota-imp">Bilanciamento del bianco ed equilibrio di colore del rullo.</div>
+  <label><input type="checkbox" id="pref_pref_orientamento" style="width:auto" onchange="preferenza(this)"> Orientamento automatico</label>
+  <div class="nota-imp">Gira di 90 o 180 gradi i fotogrammi messi di traverso. È una stima: sotto una certa sicurezza non tocca niente.</div>
  </section>
  </div>
 
@@ -1600,12 +1667,8 @@ details.sez>div{padding-bottom:10px}
   </section>
   <section class="pannello">
    <h2>Impostazioni macchina</h2>
-   <label><input type="checkbox" id="imp_esposizione_auto" style="width:auto" onchange="impostaMacchina()"> Esposizione automatica</label>
-   <div class="nota-imp">Tempi di esposizione calibrati dalla macchina (li aggiorna Calibra) e misura per canale a inizio rullo. Spenta: tempi di fabbrica, uguali per tutti i canali. Cambiandola va rifatta la calibrazione.</div>
    <label><input type="checkbox" id="imp_pressore_auto" style="width:auto" onchange="impostaMacchina()"> Pressore automatico</label>
    <div class="nota-imp">Giù durante ogni lettura, così la pellicola resta piatta; su prima di muoverla.</div>
-   <label><input type="checkbox" id="imp_avanzamento_automatico" style="width:auto" onchange="impostaMacchina()"> Avanzamento automatico</label>
-   <div class="nota-imp">Il carrello cerca da solo il fotogramma. Spento: ogni fotogramma si mette in finestra a mano, con il video e i passi da 1 e 20 mm.</div>
    <label><input type="checkbox" id="imp_leggi_dx" style="width:auto" onchange="impostaMacchina()"> Leggi il codice DX</label>
    <div class="nota-imp">A inizio rullo e a ogni striscia: riconosce la pellicola. Solo con l'acquisizione "come il programma originale": dopo il DX lo scanner rifiuta le letture un canale per volta finché una capture non lo rimette a posto.</div>
    <label>Autofocus</label>
@@ -1733,27 +1796,9 @@ details.sez>div{padding-bottom:10px}
    <button class="sec" onclick="salvaFotogramma()" title="Riesporta questo fotogramma con le regolazioni di adesso">Salva</button>
    <button class="sec" onclick="applicaRullo()" title="Le regolazioni di adesso su tutti i fotogrammi del rullo">Applica al rullo</button>
    <button class="sec" id="bf_completa" style="display:none" onclick="completaRullo()" title="Elabora solo i fotogrammi del rullo rimasti da elaborare">Completa</button>
-   <button class="sec" id="bf_geo" onclick="barraGeo()" title="Girare il fotogramma o allineare a mano i canali">Ruota e canali</button>
+   <button class="sec" id="bf_geo" onclick="apriScheda('geometria'); aggiornaGeo();" title="Rotazione, raddrizzamento, ritaglio e canali">Geometria</button>
    <button class="sec" onclick="inviaCampione()" title="Solo pellicole di prova: grezzo e foto vanno a chi segue la macchina, per capire colore ed esposizione">Invia per l'analisi</button>
    <button class="ghost" onclick="chiudiFotogramma()">Chiudi</button>
-  </div>
-  <div class="barra-fot" id="barra_geo" style="display:none">
-   <button class="sec" onclick="ruota(1)" title="Gira di 90 gradi in senso antiorario">&#10226;</button>
-   <button class="sec" onclick="ruota(-1)" title="Gira di 90 gradi in senso orario">&#10227;</button>
-   <button class="sec" onclick="ruota(2)" title="Capovolge (180 gradi)">180&deg;</button>
-   <span>Canale</span>
-   <select id="geo_canale"><option value="R">Rosso</option><option value="B">Blu</option></select>
-   <select id="geo_passo" title="Di quanto si sposta a ogni tocco"><option value="0.25">&frac14; px</option><option value="0.5" selected>&frac12; px</option><option value="1">1 px</option><option value="2">2 px</option></select>
-   <button class="sec" onclick="sposta(0,-1)" title="Sinistra">&larr;</button>
-   <button class="sec" onclick="sposta(-1,0)" title="Su">&uarr;</button>
-   <button class="sec" onclick="sposta(1,0)" title="Giu'">&darr;</button>
-   <button class="sec" onclick="sposta(0,1)" title="Destra">&rarr;</button>
-   <button class="ghost" onclick="geoComando('/api/fotogramma/canali_azzera',{})" title="Toglie gli spostamenti fatti a mano">Azzera</button>
-   <button class="sec" id="geo_ritaglia" onclick="ritaglio()" title="Mostra il fotogramma intero: si disegna il riquadro col dito o col mouse">Ritaglia</button>
-   <button class="sec" id="geo_applica" style="display:none" onclick="ritaglioApplica()">Applica</button>
-   <button class="ghost" onclick="if(confirm('Tolgo il ritaglio fatto a mano?')) post('/api/fotogramma/ritaglio',{azione:'togli'}).then(esito)" title="Torna al ritaglio automatico">Togli ritaglio</button>
-   <button class="ghost" onclick="rifaiGeometria()" title="Rifa' da capo allineamento, raddrizzamento, ritaglio e orientamento">Ricalcola</button>
-   <span id="geo_info"></span>
   </div>
  </div>
 
@@ -2067,24 +2112,24 @@ function completaRullo(){
   if(!fotoAperto) return;
   post('/api/rullo/applica',{rullo_id:fotoAperto.rullo_id, solo_mancanti:true}).then(esito);
 }
-/* ---------- rotazione e canali a mano ----------
-   Si fanno sul fotogramma aperto e si vedono subito; nel file entrano con
-   Salva. La geometria trovata la prima volta (allineamento, raddrizzamento,
-   ritaglio, orientamento) si riusa a ogni riapertura: Ricalcola la rifa'. */
-function barraGeo(forza){
-  var b=el('barra_geo');
-  var on = forza!==undefined ? forza : b.style.display==='none';
-  b.style.display = (on && fotoAperto) ? 'flex' : 'none';
-  el('bf_geo').classList.toggle('on', b.style.display!=='none');
-  if(b.style.display!=='none') get('/api/fotogramma/geometria').then(infoGeo);
-}
+/* ---------- Geometria: rotazione, raddrizzamento, ritaglio, canali ----------
+   Tutto si vede subito: i 90 gradi e i canali li rifa' il server sulla base
+   gia' pronta, il raddrizzamento fine e' una rotazione dell'immagine nella
+   pagina, il ritaglio un riquadro disegnato sopra il fotogramma intero.
+   "Conferma e salva" manda angolo e riquadro: il server rielabora e salva il
+   file finale dal grezzo, che non cambia. */
+var geo={modifica:false, angolo:0, riq:null};
 function infoGeo(r){
   if(!r || r.errore){ if(r && r.errore) el('geo_info').textContent=r.errore; return; }
-  var t=(r.rotazione?('ruotato '+r.rotazione+'\u00b0'):'');
+  el('geo_nessuno').style.display = r.aperto ? 'none' : '';
+  var t=(r.rotazione?('ruotato '+r.rotazione+'°'):'');
+  if(r.angolo) t+=(t?' · ':'')+'raddrizzato '+r.angolo+'°';
+  if(r.ritaglio_mano) t+=(t?' · ':'')+'ritaglio a mano';
   var c=r.canali||{};
-  ['R','B'].forEach(function(k){ if(c[k]) t+=(t?' \u00b7 ':'')+k+' '+c[k][0]+','+c[k][1]+' px'; });
+  ['R','B'].forEach(function(k){ if(c[k]) t+=(t?' · ':'')+k+' '+c[k][0]+','+c[k][1]+' px'; });
   el('geo_info').textContent=t;
 }
+function aggiornaGeo(){ get('/api/fotogramma/geometria').then(infoGeo); }
 var geoInCorso=false;
 function geoComando(percorso, dati){
   if(geoInCorso) return;
@@ -2093,6 +2138,7 @@ function geoComando(percorso, dati){
     geoInCorso=false;
     if(r && r.errore){ el('geo_info').textContent=r.errore; return; }
     infoGeo(r); hoAnteprima=true; aggiornaImmagini(true);
+    if(geo.modifica) get('/api/fotogramma/geometria').then(function(g){ if(g.intero) geoRiquadro(g.riquadro_vista); });
     if(r && r.messaggio) el('msg').textContent=r.messaggio;
   }).catch(function(){ geoInCorso=false; });
 }
@@ -2101,58 +2147,144 @@ function sposta(dy,dx){
   var p=parseFloat(val('geo_passo'))||0.5;
   geoComando('/api/fotogramma/canale',{canale:val('geo_canale'), dy:dy*p, dx:dx*p});
 }
-/* Ritaglio a mano: il fotogramma intero, poi un riquadro disegnato sopra.
-   Le coordinate vanno al server in 0..1 dell'immagine mostrata. */
-var ritaglioOn=false, riq=null;
-function ritaglio(){
+/* raddrizzamento fine: positivo = orario, come si vede */
+function geoAngolo(){
+  geo.angolo=parseFloat(val('geo_angolo'))||0;
+  el('v_geo_angolo').textContent=geo.angolo.toFixed(1).replace('.',',')+'°';
+  el('im_dopo').style.transform = geo.angolo ? 'rotate('+geo.angolo+'deg)' : '';
+}
+function geoAngoloPasso(d){
+  var a = d===0 ? 0 : Math.max(-10,Math.min(10,(parseFloat(val('geo_angolo'))||0)+d));
+  el('geo_angolo').value=a.toFixed(1); geoAngolo();
+}
+/* ritaglio */
+function geoModifica(){
+  if(!fotoAperto){ el('geo_info').textContent='Aprire prima un fotogramma dalla striscia.'; return; }
   post('/api/fotogramma/ritaglio',{azione:'inizia'}).then(function(r){
-    if(r && r.errore){ esito(r); return; }
-    ritaglioOn=true; riq=null;
-    el('geo_applica').style.display=''; el('geo_ritaglia').classList.add('on');
-    el('geo_info').textContent='Aspetto il fotogramma intero, poi disegnare il riquadro.';
-  });
-}
-function ritaglioApplica(){
-  if(!riq){ el('geo_info').textContent='Disegnare prima il riquadro sul fotogramma.'; return; }
-  post('/api/fotogramma/ritaglio',{azione:'applica', y0:riq.y0, x0:riq.x0, y1:riq.y1, x1:riq.x1}).then(function(r){
     if(r && r.errore){ el('geo_info').textContent=r.errore; return; }
-    ritaglioFine();
+    geo.modifica=true;
+    el('geo_ritaglio').style.display=''; el('geo_modifica').classList.add('on');
+    el('barra_fot').style.visibility='hidden';   /* coprirebbe il riquadro */
+    el('geo_info').textContent='Preparo il fotogramma intero...';
+    var giri=0;
+    (function aspetta(){
+      get('/api/fotogramma/geometria').then(function(g){
+        if(g.intero){ hoAnteprima=true; aggiornaImmagini(true); infoGeo(g);
+          setTimeout(function(){ geoRiquadro(g.riquadro_vista); }, 300); return; }
+        if(++giri<120) setTimeout(aspetta, 700);
+      });
+    })();
   });
 }
-function ritaglioFine(){
-  ritaglioOn=false; riq=null;
-  var q=el('riquadro'); if(q) q.style.display='none';
-  el('geo_applica').style.display='none'; el('geo_ritaglia').classList.remove('on');
+function geoRiquadro(v){ geo.riq={y0:v[0],x0:v[1],y1:v[2],x1:v[3]}; geoDisegna(); }
+function geoAllarga(d){
+  if(!geo.riq) return;
+  var q=geo.riq;
+  q.x0=Math.max(0,q.x0-d); q.y0=Math.max(0,q.y0-d); q.x1=Math.min(1,q.x1+d); q.y1=Math.min(1,q.y1+d);
+  if(q.x1-q.x0<0.05 || q.y1-q.y0<0.05){ q.x0+=-d; q.y0+=-d; q.x1-=-d; q.y1-=-d; }
+  geoDisegna();
 }
+function geoTutto(){ geo.riq={x0:0,y0:0,x1:1,y1:1}; geoDisegna(); }
+function geoBox(){
+  var im=el('im_dopo'), t=el('tela').getBoundingClientRect();
+  /* offset* ignorano la rotazione dell'immagine: il riquadro resta dritto */
+  return {left:t.left+im.offsetLeft, top:t.top+im.offsetTop, width:im.offsetWidth||1,
+          height:im.offsetHeight||1, ol:im.offsetLeft, ot:im.offsetTop};
+}
+function geoDisegna(){
+  var q=el('riquadro'); if(!q) return;
+  if(!geo.modifica || !geo.riq){ q.style.display='none'; return; }
+  var b=geoBox(), r=geo.riq;
+  q.style.left=(b.ol+r.x0*b.width)+'px'; q.style.top=(b.ot+r.y0*b.height)+'px';
+  q.style.width=((r.x1-r.x0)*b.width)+'px'; q.style.height=((r.y1-r.y0)*b.height)+'px';
+  q.style.display='block';
+}
+function geoEsci(){
+  geo.modifica=false; geo.riq=null;
+  el('geo_ritaglio').style.display='none'; el('geo_modifica').classList.remove('on');
+  el('barra_fot').style.visibility='';
+  el('geo_angolo').value='0'; geoAngolo(); geoDisegna();
+}
+function geoConferma(){
+  if(!fotoAperto){ el('geo_info').textContent='Aprire prima un fotogramma dalla striscia.'; return; }
+  post('/api/fotogramma/geometria',{azione:'conferma', angolo:geo.angolo,
+       riquadro: geo.modifica ? geo.riq : null}).then(function(r){
+    if(r && r.errore){ el('geo_info').textContent=r.errore; return; }
+    geoEsci(); el('geo_info').textContent='Rielaboro e salvo il fotogramma...';
+  });
+}
+function geoAnnulla(){
+  post('/api/fotogramma/geometria',{azione:'annulla'}).then(function(r){
+    if(r && r.errore){ el('geo_info').textContent=r.errore; return; }
+    geoEsci();
+  });
+}
+/* il riquadro: angoli da trascinare, dentro si sposta, fuori se ne disegna uno */
 (function(){
-  var tela=el('tela'), inizio=null;
+  var tela=el('tela');
   var q=document.createElement('div'); q.id='riquadro';
-  q.style.cssText='position:absolute;display:none;border:2px dashed var(--acc);'+
-    'background:rgba(255,255,255,.08);pointer-events:none;z-index:5';
+  q.style.cssText='position:absolute;display:none;border:2px solid var(--acc);'+
+    'box-shadow:0 0 0 9999px rgba(0,0,0,.45);z-index:5;cursor:move;touch-action:none';
+  ['nw','ne','sw','se'].forEach(function(k){
+    var h=document.createElement('div'); h.setAttribute('data-a',k);
+    h.style.cssText='position:absolute;width:22px;height:22px;background:var(--acc);border-radius:50%;'+
+      (k[0]==='n'?'top:-11px;':'bottom:-11px;')+(k[1]==='w'?'left:-11px;':'right:-11px;')+
+      'cursor:'+k+'-resize';
+    q.appendChild(h);
+  });
   tela.appendChild(q);
+  window.addEventListener('resize', geoDisegna);
+  var modo=null, da=null, prima=null;
   function rel(e){
-    var im=el('im_dopo').getBoundingClientRect(), t=tela.getBoundingClientRect();
-    return {x:Math.max(0,Math.min(1,(e.clientX-im.left)/im.width)),
-            y:Math.max(0,Math.min(1,(e.clientY-im.top)/im.height)), im:im, t:t};
-  }
-  function disegna(a,b){
-    var im=a.im, t=a.t;
-    var x0=Math.min(a.x,b.x), x1=Math.max(a.x,b.x), y0=Math.min(a.y,b.y), y1=Math.max(a.y,b.y);
-    q.style.left=(im.left-t.left+x0*im.width)+'px'; q.style.top=(im.top-t.top+y0*im.height)+'px';
-    q.style.width=((x1-x0)*im.width)+'px'; q.style.height=((y1-y0)*im.height)+'px';
-    q.style.display='block';
-    riq={x0:x0,x1:x1,y0:y0,y1:y1};
+    var b=geoBox();
+    return {x:Math.max(0,Math.min(1,(e.clientX-b.left)/b.width)),
+            y:Math.max(0,Math.min(1,(e.clientY-b.top)/b.height))};
   }
   tela.addEventListener('pointerdown',function(e){
-    if(!ritaglioOn) return;
-    inizio=rel(e); tela.setPointerCapture(e.pointerId); e.preventDefault(); e.stopPropagation();
+    if(!geo.modifica || !geo.riq) return;
+    var a=e.target.getAttribute && e.target.getAttribute('data-a');
+    modo = a ? a : (e.target===q ? 'sposta' : 'nuovo');
+    da=rel(e); prima={x0:geo.riq.x0,y0:geo.riq.y0,x1:geo.riq.x1,y1:geo.riq.y1};
+    tela.setPointerCapture(e.pointerId); e.preventDefault(); e.stopPropagation();
   }, true);
-  tela.addEventListener('pointermove',function(e){ if(ritaglioOn && inizio) disegna(inizio, rel(e)); });
-  tela.addEventListener('pointerup',function(e){
-    if(ritaglioOn && inizio){ disegna(inizio, rel(e)); inizio=null;
-      el('geo_info').textContent='Riquadro pronto: Applica, poi Salva per il file.'; }
+  tela.addEventListener('pointermove',function(e){
+    if(!modo) return;
+    var p=rel(e), r=geo.riq, dx=p.x-da.x, dy=p.y-da.y;
+    if(modo==='sposta'){
+      var w=prima.x1-prima.x0, h=prima.y1-prima.y0;
+      r.x0=Math.max(0,Math.min(1-w,prima.x0+dx)); r.y0=Math.max(0,Math.min(1-h,prima.y0+dy));
+      r.x1=r.x0+w; r.y1=r.y0+h;
+    } else if(modo==='nuovo'){
+      r.x0=Math.min(da.x,p.x); r.x1=Math.max(da.x,p.x); r.y0=Math.min(da.y,p.y); r.y1=Math.max(da.y,p.y);
+    } else {
+      if(modo[0]==='n') r.y0=Math.min(p.y, r.y1-0.05); else r.y1=Math.max(p.y, r.y0+0.05);
+      if(modo[1]==='w') r.x0=Math.min(p.x, r.x1-0.05); else r.x1=Math.max(p.x, r.x0+0.05);
+    }
+    geoDisegna();
+  });
+  tela.addEventListener('pointerup',function(){
+    if(modo==='nuovo' && geo.riq && (geo.riq.x1-geo.riq.x0<0.05 || geo.riq.y1-geo.riq.y0<0.05)){
+      geo.riq=prima; geoDisegna();
+    }
+    modo=null;
   });
 })();
+/* ---------- preferenze ---------- */
+function preferenza(c){
+  var d={}; d[c.id.replace(/^pref_/,'')]=c.checked;
+  post('/api/preferenze', d).then(function(r){
+    if(r && r.errore){ esito(r); c.checked=!c.checked; return; }
+    mostraPreferenze(r);
+    /* quelle dell'elaborazione si vedono subito sul fotogramma aperto */
+    if(/^pref_pref_/.test(c.id) && hoAnteprima) rielaboraTutto();
+  });
+}
+function mostraPreferenze(p){
+  if(!p) return;
+  Object.keys(p).forEach(function(k){
+    var c=el('pref_'+k); if(c && document.activeElement!==c) c.checked=!!p[k];
+  });
+}
 function rifaiGeometria(){
   if(!confirm('Ricalcolo da capo allineamento dei canali, raddrizzamento, ritaglio e orientamento? Le scelte fatte a mano si perdono.')) return;
   post('/api/fotogramma/rifai_geometria',{cosa:'tutto'}).then(esito);
@@ -2170,7 +2302,7 @@ function applicaRullo(){
   if(!confirm('Le regolazioni di adesso su TUTTI i fotogrammi di questo rullo? I file esportati vengono riscritti (i grezzi restano).')) return;
   post('/api/rullo/applica',{rullo_id:fotoAperto.rullo_id}).then(esito);
 }
-function chiudiFotogramma(){ fotoAperto=null; provSel=null; ritaglioFine(); mostraBarraFot(); barraGeo(false); caricaStriscia(); }
+function chiudiFotogramma(){ fotoAperto=null; provSel=null; geoEsci(); mostraBarraFot(); caricaStriscia(); }
 
 /* ---------- comandi ---------- */
 var wbGuadagni=null;          /* guadagni dal campionamento neutro */
@@ -2185,7 +2317,6 @@ function opzioni(){ return {
   nitidezza:num('nitidezza'), grana_aggiungi:num('grana_aggiungi'),
   densita_locale:num('densita_locale'),
   tono_bn:val('tono_bn'), viraggio:val('viraggio'),
-  auto_ruota:val('auto_ruota'), ritaglio:val('ritaglio'), colore_auto:val('colore_auto'),
   /* pannello colore */
   esposizione:num('esposizione'),
   /* i guadagni campionati hanno la precedenza sui kelvin: sono una misura,
@@ -2330,7 +2461,7 @@ function muovi(mm){ post('/api/muovi',{mm:mm}).then(mostraStato); }
    invece chiede il nome del tecnico: e' lui che dice che si puo' ripartire. */
 /* Le impostazioni della macchina: le spunte seguono lo stato del server
    finche' nessuno le tocca, poi si salvano al cambio. */
-var IMP=['esposizione_auto','pressore_auto','avanzamento_automatico','leggi_dx'];
+var IMP=['pressore_auto','leggi_dx'];
 function desktop(azione){
   el('desktop_esito').textContent='...';
   post('/api/desktop',{azione:azione}).then(function(r){
@@ -2615,6 +2746,7 @@ function mostraStato(s){
     var af=el('imp_autofocus');
     if(af && document.activeElement!==af) af.value=s.impostazioni_macchina.autofocus;
     if(s.elaboratori) mostraElaboratori(s.elaboratori);
+    if(s.preferenze) mostraPreferenze(s.preferenze);
     var rs=el('remoto_stato'), rm=s.remoto||{};
     if(rs){
       var c=rm.controllo||{}, t;
@@ -3494,6 +3626,23 @@ class Handler(BaseHTTPRequestHandler):
                                                   float(d.get("dx") or 0)))
             if u.path == "/api/fotogramma/canali_azzera":
                 return self._json(s.azzera_canali())
+            if u.path == "/api/preferenze":
+                valori = s.imposta_preferenze(d)
+                if self.impostazioni:
+                    try:
+                        s.cfg.save(self.impostazioni)
+                    except (IOError, OSError) as exc:
+                        s.log("Impostazioni non salvate: %s" % exc)
+                return self._json(valori)
+            if u.path == "/api/fotogramma/geometria":
+                azione = str(d.get("azione") or "")
+                if azione == "conferma":
+                    s.geometria_conferma(float(d.get("angolo") or 0.0), d.get("riquadro") or None)
+                elif azione == "annulla":
+                    s.geometria_annulla()
+                else:
+                    return self._json({"errore": "azione sconosciuta"}, 400)
+                return self._json({"avviato": True})
             if u.path == "/api/fotogramma/ritaglio":
                 azione = str(d.get("azione") or "")
                 if azione == "inizia":

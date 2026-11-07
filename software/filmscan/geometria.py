@@ -98,6 +98,16 @@ def punto_dalla_vista(y: float, x: float, rotazione: int, specchio: bool):
     return y, x
 
 
+def punto_nella_vista(y: float, x: float, rotazione: int, specchio: bool):
+    """Il contrario di punto_dalla_vista: un punto dell'immagine prima
+    dell'orientamento (0..1) dove lo si vede sullo schermo."""
+    for _ in range((int(rotazione) // 90) % 4):
+        y, x = 1.0 - x, y
+    if specchio:
+        x = 1.0 - x
+    return y, x
+
+
 def nella_vista(dy: float, dx: float, rotazione: int, specchio: bool):
     """Il contrario di dalla_vista: uno spostamento nelle coordinate del
     grezzo come lo si vede sullo schermo."""

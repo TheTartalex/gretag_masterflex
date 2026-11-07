@@ -52,6 +52,22 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-11-07 (sera) — Preferenze e Geometria
+
+- **Preferenze**, sezione nuova fra Ritocco e Macchina: esposizione
+  automatica, avanzamento automatico, ritaglio automatico, rotazione
+  automatica (raddrizzamento), correzione automatica della luce, del bianco,
+  orientamento automatico. Salvate nelle impostazioni della macchina e
+  applicate a ogni elaborazione dal servizio (non più dalle spunte della
+  pagina). Tolte da Ritocco e da Macchina.
+- **Geometria**, sezione sua (prima una barra sopra l'immagine): rotazione
+  di 90°/180°, raddrizzamento a mano di decimi di grado (si vede subito,
+  positivo = orario), ritaglio sul fotogramma intero con il riquadro
+  automatico di partenza da allargare, ridurre, spostare o ridisegnare,
+  canali. "Conferma e salva" rielabora e salva il solo file finale; i
+  grezzi non cambiano. L'angolo a mano vale anche con la rotazione
+  automatica spenta.
+
 ### 2026-11-07 (sera) — niente ritaglio nominale, ritaglio a mano
 
 - Se i bordi del fotogramma non si trovano con certezza il file resta

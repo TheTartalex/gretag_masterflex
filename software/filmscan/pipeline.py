@@ -241,6 +241,9 @@ def _bilancia(img: np.ndarray, opts: ProcessOptions, rapida: bool = False) -> np
         img = invert.auto_levels(img, black_pct=nero, white_pct=bianco)
     if opts.curve:
         img = invert.apply_curve(img, opts.curve)
+    if not opts.auto_levels:
+        # luce automatica spenta nelle preferenze: niente ritocco di classe
+        return img
     return _ritocco_classe(img, opts.classe_esposizione, rapida)
 
 
@@ -433,13 +436,17 @@ def process(raw: RawScan, opts: ProcessOptions,
         opts.auto_crop and r_salvato
         and int(geo_in.get("margine", -1)) == int(opts.crop_margin_px)
         and bool(geo_in.get("raddrizzato")) == bool(opts.auto_straighten))
-    if opts.auto_straighten:
+    # l'angolo scelto a mano (Geometria) vale anche con il raddrizzamento
+    # automatico spento nelle preferenze
+    if opts.auto_straighten or geo_in.get("angolo_mano"):
         _t("Raddrizzamento", 0.82)
         if "angolo" in geo_in:
             angle = float(geo_in["angolo"])
         else:
             angle = framing.estimate_skew(density)
         geo["angolo"] = round(float(angle), 3)
+        if geo_in.get("angolo_mano"):
+            geo["angolo_mano"] = True
         if abs(angle) > 0.02:
             img = framing.straighten(img, angle)
             # la densita' serve solo a cercare i bordi: con il riquadro

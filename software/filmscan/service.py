@@ -292,6 +292,8 @@ class ScanService:
         # la geometria del fotogramma aperto (pipeline, ProcessOptions.geometria),
         # con le scelte a mano non ancora salvate
         self._geometria_aperta: Optional[Dict[str, object]] = None
+        # nel visore c'e' il fotogramma intero (sezione Geometria, Modifica)
+        self._intero_mostrato = False
         # gli spostamenti a mano gia' dentro base_lineare (coordinate della vista)
         self._canali_in_base: Dict[str, Tuple[float, float]] = {}
         self._ultima_rapida: Optional[Tuple[int, int]] = None
@@ -348,6 +350,7 @@ class ScanService:
                 "driver": self.cfg.driver, "job": self.job.as_dict(),
                 "remoto": self.remoto,
                 "elaboratori": self.stato_elaboratori(),
+                "preferenze": self.preferenze(),
                 "ambiente": check_environment(dpi=self.cfg.optical_dpi)}
 
     # ------------------------------------------------------------------
@@ -460,6 +463,7 @@ class ScanService:
     def options(self, valore: ProcessOptions) -> None:
         # La LUT e' una scelta del programma, valida per tutti gli ordini: ogni
         # ProcessOptions che arriva (dalla pagina, da un rullo) la riceve qui.
+        valore = self.con_preferenze(valore)
         valore.lut = self._lut_corrente()
         valore.lut_intensita = self.cfg.lut_intensita
         self._options = valore
@@ -1690,8 +1694,10 @@ class ScanService:
             return dataclasses.replace(opts, base_rullo=tuple(corr["base"]))
         return dataclasses.replace(
             opts, base_rullo=tuple(corr["base"]),
-            correzione_densita=tuple(corr["densita"]),
-            classe_esposizione=str(corr.get("classe", "")),
+            # bianco automatico spento: niente equilibrio di colore del rullo
+            correzione_densita=(tuple(corr["densita"]) if opts.auto_wb > 0 else None),
+            # luce automatica spenta: niente ritocco della classe d'esposizione
+            classe_esposizione=(str(corr.get("classe", "")) if opts.auto_levels else ""),
             avvisi_rullo=list(corr.get("avvisi", [])))
 
     @staticmethod
@@ -2081,6 +2087,35 @@ class ScanService:
         geo = geometrie.leggi(self.cfg.path("raw"), rullo_id, numero)
         return dataclasses.replace(opts, geometria=geo) if geo else opts
 
+    # --- preferenze ------------------------------------------------------
+
+    PREFERENZE = ("esposizione_auto", "avanzamento_automatico", "pref_ritaglio",
+                  "pref_raddrizza", "pref_luce", "pref_bianco", "pref_orientamento")
+
+    def preferenze(self) -> Dict[str, bool]:
+        return dict((k, bool(getattr(self.cfg, k))) for k in self.PREFERENZE)
+
+    def imposta_preferenze(self, valori: Dict[str, object]) -> Dict[str, bool]:
+        if self.job.running and any(k in valori for k in ("esposizione_auto",
+                                                         "avanzamento_automatico")):
+            raise ScannerError("c'e' un lavoro in corso: esposizione e avanzamento "
+                               "si cambiano a lavoro finito")
+        for k in self.PREFERENZE:
+            if k in valori:
+                setattr(self.cfg, k, bool(valori[k]))
+        self.options = self.options        # il setter le rimette
+        return self.preferenze()
+
+    def con_preferenze(self, opts: ProcessOptions) -> ProcessOptions:
+        """Le opzioni con gli interruttori del pannello Preferenze: sono loro
+        a decidere, non i cursori mandati dalla pagina."""
+        c = self.cfg
+        return dataclasses.replace(
+            opts, auto_crop=bool(c.pref_ritaglio), auto_straighten=bool(c.pref_raddrizza),
+            auto_levels=bool(c.pref_luce), auto_wb=(1.0 if c.pref_bianco else 0.0),
+            auto_rotate=bool(c.pref_orientamento),
+            colore_auto=bool(c.pref_luce or c.pref_bianco))
+
     def _per_la_mano(self) -> Dict[str, object]:
         """Rotazione e canali a mano si fanno sul fotogramma aperto dalla
         striscia, a lavoro finito, e cambiano la sua geometria in memoria:
@@ -2111,7 +2146,83 @@ class ScanService:
         return {"aperto": bool(self._aperto), "rotazione": self._rotazione_di(geo),
                 "canali": geo.get("canali") or {},
                 "spostamenti": geo.get("spostamenti") or {},
-                "angolo": geo.get("angolo"), "a_mano": geo.get("rotazione") is not None}
+                "angolo": geo.get("angolo"), "a_mano": geo.get("rotazione") is not None,
+                "specchio": bool(geo.get("specchio")),
+                "intero": bool(self._intero_mostrato),
+                "riquadro_vista": self._riquadro_vista(geo),
+                "ritaglio_mano": bool(geo.get("riquadro_mano"))}
+
+    def _riquadro_vista(self, geo: Dict[str, object]) -> List[float]:
+        """Il ritaglio di adesso (a mano, o quello automatico se i bordi si
+        sono trovati) come lo si vede sul fotogramma intero girato: 0..1,
+        [y0, x0, y1, x1]. Da li' parte il riquadro della sezione Geometria."""
+        forma = geo.get("forma")
+        r = geo.get("riquadro_mano")
+        if not r and geo.get("riquadro") and float(geo["riquadro"][4]) >= 0.5 \
+                and self.cfg.pref_ritaglio:
+            r = geo["riquadro"]
+        if not forma or not r:
+            return [0.0, 0.0, 1.0, 1.0]
+        h, w = float(forma[0]), float(forma[1])
+        rot, specchio = self._rotazione_di(geo), bool(geo.get("specchio"))
+        punti = [geometrie.punto_nella_vista(y / h, x / w, rot, specchio)
+                 for y, x in ((r[0], r[1]), (r[0], r[3]), (r[2], r[1]), (r[2], r[3]))]
+        ys, xs = [p[0] for p in punti], [p[1] for p in punti]
+        return [round(min(ys), 4), round(min(xs), 4), round(max(ys), 4), round(max(xs), 4)]
+
+    def geometria_conferma(self, angolo_schermo: float = 0.0,
+                           riquadro: Optional[Dict[str, float]] = None) -> None:
+        """Conferma della sezione Geometria: l'angolo girato a mano sullo
+        schermo (gradi, positivo = orario, come lo mostra l'anteprima) e il
+        riquadro del ritaglio (0..1 sul fotogramma intero mostrato) entrano
+        nella geometria del fotogramma, che si rielabora e si risalva. Il
+        grezzo non si tocca: si rielabora sempre da li'."""
+        geo = self._per_la_mano()
+        a = float(angolo_schermo or 0.0)
+        if abs(a) > 45:
+            raise ValueError("angolo troppo grande: per i 90 gradi ci sono i tasti di rotazione")
+        if abs(a) >= 0.01:
+            # schermo orario = antiorario per ndimage; lo specchio lo inverte
+            delta = -a * (-1.0 if geo.get("specchio") else 1.0)
+            geo["angolo"] = round(float(geo.get("angolo") or 0.0) + delta, 3)
+            geo["angolo_mano"] = True
+        if riquadro:
+            if not self._intero_mostrato:
+                raise ValueError("il riquadro si sceglie sul fotogramma intero (Modifica)")
+            forma = geo.get("forma")
+            if not forma:
+                raise ValueError("geometria del fotogramma sconosciuta: riaprirlo")
+            y0, y1 = sorted((float(riquadro["y0"]), float(riquadro["y1"])))
+            x0, x1 = sorted((float(riquadro["x0"]), float(riquadro["x1"])))
+            y0, x0 = max(0.0, y0), max(0.0, x0)
+            y1, x1 = min(1.0, y1), min(1.0, x1)
+            if y1 - y0 < 0.05 or x1 - x0 < 0.05:
+                raise ValueError("riquadro troppo piccolo")
+            rot, specchio = self._rotazione_di(geo), bool(geo.get("specchio"))
+            punti = [geometrie.punto_dalla_vista(y, x, rot, specchio)
+                     for y, x in ((y0, x0), (y0, x1), (y1, x0), (y1, x1))]
+            h, w = int(forma[0]), int(forma[1])
+            ys, xs = [p[0] for p in punti], [p[1] for p in punti]
+            geo["riquadro_mano"] = [int(round(min(ys) * h)), int(round(min(xs) * w)),
+                                    int(round(max(ys) * h)), int(round(max(xs) * w))]
+        geo.pop("senza_ritaglio", None)
+        self._intero_mostrato = False
+        self.log("Geometria confermata: rielaboro e salvo il fotogramma (il grezzo resta com'e').")
+        self.salva_fotogramma()
+
+    def geometria_annulla(self) -> None:
+        """Lascia le modifiche non confermate: torna la geometria salvata."""
+        if not self._aperto:
+            raise ValueError("nessun fotogramma aperto")
+        f, rullo, _ = self._fotogramma_e_rullo(self._aperto)
+        self._geometria_aperta = geometrie.leggi(self.cfg.path("raw"), rullo.id,
+                                                 int(f["numero"]))
+        self._intero_mostrato = False
+
+        def job():
+            self.rielabora(None, veloce=False)
+            self.log("Modifiche della geometria lasciate.")
+        self._avvia("geometria", job)
 
     def ruota(self, passi: int) -> Dict[str, object]:
         """Gira il fotogramma aperto di 90 gradi per passo (1 = antiorario,
@@ -2188,7 +2299,11 @@ class ScanService:
         def job():
             self.progress("Fotogramma intero per il ritaglio", 0.1)
             self.rielabora(None, veloce=False)
-            self.log("Disegnare il riquadro sul fotogramma e premere Applica.")
+            # rielabora rimette la geometria del risultato, senza il segno:
+            # lo si ripristina, cosi' le rotazioni seguenti restano sull'intero
+            if self._geometria_aperta is not None:
+                self._geometria_aperta["senza_ritaglio"] = True
+            self._intero_mostrato = True
         self._avvia("geometria", job)
 
     def ritaglio_applica(self, y0: float, x0: float, y1: float, x1: float) -> None:
@@ -2303,6 +2418,7 @@ class ScanService:
             self._geometria_aperta = dict(res.geometria or {}) or None
             self._canali_in_base = {}
             self._aperto = int(f["id"])
+            self._intero_mostrato = False
             self.log("Fotogramma %d del rullo %s aperto: correggere e premere "
                      "Salva fotogramma, o Applica a tutto il rullo."
                      % (f["numero"], rullo.etichetta))
