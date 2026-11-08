@@ -350,8 +350,12 @@ class AppConfig:
     # Acceso di serie: senza un elaboratore collegato non cambia niente.
     elaboratori_rete: bool = True
     chiave_elaboratori: str = ""
-    # fotogrammi mandati in rete contemporaneamente, al massimo (uno per
-    # elaboratore in ascolto)
+    # fotogrammi mandati in rete contemporaneamente, al massimo: tanti quanti
+    # i processi elaboratori in ascolto, fino a questo tetto (8/11/2026: un
+    # Threadripper ne regge 16). La macchina tiene in memoria solo i
+    # fotogrammi in trasferimento, non quelli in lavorazione (remoti.prendi).
+    elaboratori_massimo: int = 16
+    # il tetto di prima, fisso a 4: resta per leggere le impostazioni vecchie
     elaboratori_paralleli: int = 4
 
     # Calibra azzera i motori (Gretag Reset) "se_serve": non se lo scanner si

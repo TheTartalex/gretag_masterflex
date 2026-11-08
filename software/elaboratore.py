@@ -7,6 +7,17 @@ del PC della macchina.
     python elaboratore.py --macchina http://192.168.1.50:8080 --chiave abcd...
     python elaboratore.py --processi 3          tre fotogrammi alla volta
 
+Le stesse cose si possono dare con le variabili d'ambiente (comodo in un
+container Docker, per esempio su Unraid): MASTERFLEX_MACCHINA,
+MASTERFLEX_CHIAVE, MASTERFLEX_NOME, MASTERFLEX_PROCESSI. Senza --processi
+i processi si contano da soli: meta' dei processori che il PC (o il
+container) puo' usare, 2 GB di memoria l'uno, al massimo 16.
+
+Acceso giorno e notte va bene: con la macchina spenta aspetta e la cerca
+ogni 30 s (solo il primo processo cerca nella rete, gli altri usano
+l'indirizzo che ha trovato lui), e quando la macchina si riaccende
+riprende da solo.
+
 Su Windows lo si avvia con ELABORATORE.bat (installa Python e le librerie la
 prima volta). Il pacchetto con questo file, il .bat e elaboratore.json
 (indirizzo e chiave) si scarica dalla macchina: pannello Macchina,
@@ -257,6 +268,62 @@ def elabora_pacco(pacco: bytes, nome: str) -> bytes:
     return out.getvalue()
 
 
+def _processori() -> int:
+    """I processori usabili davvero: quelli assegnati al processo e, in un
+    container con --cpus, la quota del cgroup."""
+    try:
+        n = len(os.sched_getaffinity(0))
+    except (AttributeError, OSError):
+        n = os.cpu_count() or 2
+    try:
+        with open("/sys/fs/cgroup/cpu.max") as f:            # cgroup v2
+            quota, periodo = f.read().split()[:2]
+        if quota != "max":
+            n = min(n, max(1, int(int(quota) / int(periodo))))
+    except (IOError, OSError, ValueError):
+        pass
+    return max(1, n)
+
+
+def _memoria_gb() -> float:
+    """La memoria del PC (o il limite del container), in GB."""
+    gb = 0.0
+    try:
+        gb = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / 1e9
+    except (AttributeError, ValueError, OSError):
+        pass
+    if not gb and os.name == "nt":
+        try:
+            import ctypes
+
+            class MS(ctypes.Structure):
+                _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
+                            ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
+                            ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong),
+                            ("ullTotalVirtual", ctypes.c_ulonglong), ("ullAvailVirtual", ctypes.c_ulonglong),
+                            ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+            m = MS()
+            m.dwLength = ctypes.sizeof(MS)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m)):
+                gb = m.ullTotalPhys / 1e9
+        except Exception:                               # noqa: BLE001
+            pass
+    try:
+        with open("/sys/fs/cgroup/memory.max") as f:          # container con -m
+            v = f.read().strip()
+        if v != "max":
+            gb = min(gb or 1e9, int(v) / 1e9)
+    except (IOError, OSError, ValueError):
+        pass
+    return gb or 4.0
+
+
+def processi_di_serie() -> int:
+    """Meta' dei processori, 2 GB di memoria a processo, al massimo 16. Un
+    Threadripper con 64 GB: 16; un PC da ufficio con 4 core e 8 GB: 2."""
+    return max(1, min(16, _processori() // 2, int(_memoria_gb() // 2)))
+
+
 def figlio(args) -> int:
     conf = carica_conf()
     chiave = args.chiave or conf.get("chiave") or ""
@@ -269,11 +336,21 @@ def figlio(args) -> int:
     nome = args.nome or ("%s-%d" % (socket.gethostname(), args.indice))
     nome = "".join(c for c in nome if c.isalnum() or c in "-_.")[:40]
     url = None
+    detto = False
     while not url:
-        url = trova_macchina(conf, chiave, args.porta)
+        if args.indice == 1:
+            url = trova_macchina(conf, chiave, args.porta)
+        else:
+            # gli altri processi non scandiscono la rete: aspettano
+            # l'indirizzo che trova il primo (elaboratore.json)
+            conf = dict(carica_conf(), **({"macchina": args.macchina} if args.macchina else {}))
+            noto = (conf.get("macchina") or "").rstrip("/")
+            url = noto if noto and prova(noto, chiave) else None
         if not url:
-            scrivi("macchina non trovata: riprovo fra 30 s (interfaccia accesa? "
-                   "elaboratori accesi nel pannello Macchina?)")
+            if not detto or args.indice == 1:
+                scrivi("macchina non trovata: riprovo ogni 30 s (spenta? interfaccia "
+                       "accesa? elaboratori accesi nel pannello Macchina?)")
+                detto = True
             time.sleep(30)
     cartella = args.cartella or os.path.join(QUI, "cache")
     os.makedirs(cartella, exist_ok=True)
@@ -356,8 +433,9 @@ def padre(args) -> int:
     """Tiene in vita N processi figli: uno per fotogramma in parallelo.
     Un figlio che esce con 3 (codice nuovo sulla macchina) riparte subito;
     uno che cade riparte dopo 5 s."""
-    n = max(1, int(args.processi or 0) or max(1, min(4, (os.cpu_count() or 2) // 4)))
-    scrivi("elaboratore Masterflex: %d processi (Ctrl+C per smettere)" % n)
+    n = max(1, int(args.processi or 0) or processi_di_serie())
+    scrivi("elaboratore Masterflex: %d processi (%d processori, %.0f GB) - Ctrl+C per smettere"
+           % (n, _processori(), _memoria_gb()))
     base = [sys.executable, os.path.abspath(__file__), "--figlio"]
     for k in ("macchina", "chiave", "nome", "cartella"):
         v = getattr(args, k)
@@ -390,11 +468,16 @@ def padre(args) -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Elaboratore della rete per la Masterflex D1008")
-    ap.add_argument("--macchina", help="indirizzo dell'interfaccia, es. http://192.168.1.50:8080")
-    ap.add_argument("--chiave", help="la chiave degli elaboratori (pannello Macchina)")
-    ap.add_argument("--nome", help="come si chiama questo elaboratore nella macchina")
-    ap.add_argument("--processi", type=int, default=0,
-                    help="fotogrammi alla volta (di serie: 1 ogni 4 processori, max 4)")
+    amb = os.environ.get
+    ap.add_argument("--macchina", default=amb("MASTERFLEX_MACCHINA") or None,
+                    help="indirizzo dell'interfaccia, es. http://192.168.1.50:8080")
+    ap.add_argument("--chiave", default=amb("MASTERFLEX_CHIAVE") or None,
+                    help="la chiave degli elaboratori (pannello Macchina)")
+    ap.add_argument("--nome", default=amb("MASTERFLEX_NOME") or None,
+                    help="come si chiama questo elaboratore nella macchina")
+    ap.add_argument("--processi", type=int, default=int(amb("MASTERFLEX_PROCESSI") or 0),
+                    help="fotogrammi alla volta (di serie: meta' dei processori, "
+                         "2 GB di memoria l'uno, al massimo 16)")
     ap.add_argument("--porta", type=int, default=PORTA)
     ap.add_argument("--cartella", help="dove tenere il codice scaricato")
     ap.add_argument("--figlio", action="store_true", help=argparse.SUPPRESS)

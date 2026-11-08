@@ -1886,12 +1886,17 @@ class ScanService:
 
         if ferma is not None and ferma():
             raise _ElaborazioneFermata()
-        raw, opts = self._ice_kodak(raw, opts, numero)
+        pulito, opts = self._ice_kodak(raw, opts, numero)
+        # Pulito dal Digital ICE Kodak, il grezzo non e' piu' quello del file
+        # sul disco: all'elaboratore va il grezzo pulito, non il file (fino
+        # all'8/11/2026 partiva il file, cioe' il grezzo NON pulito).
+        file_rete = raw_path if pulito is raw else ""
+        raw = pulito
         res = None
         if in_rete and self.in_rete():
             try:
                 res, mask_path, neg_path = self._esporta_in_rete(
-                    raw, opts, raw_path, meta, out_path, mask_path, neg_path, neg_fmt,
+                    raw, opts, file_rete, meta, out_path, mask_path, neg_path, neg_fmt,
                     ferma=ferma)
                 _registro.info("fotogramma %d: elaborato da %s in %.1f s",
                                numero, res.tempi.get("elaboratore", "?"), time.time() - t0)
@@ -1981,6 +1986,47 @@ class ScanService:
         return bool(self.cfg.elaboratori_rete and self.elaboratori.chiave
                     and self.elaboratori.presenti())
 
+    def _quanti_insieme(self, tetto: int = 0) -> int:
+        """Quanti fotogrammi lavorare insieme nei lavori in blocco (Completa,
+        Applica, Positivi): uno per processo elaboratore collegato, fino a
+        cfg.elaboratori_massimo (e a 'tetto', se c'e'). Senza elaboratori
+        uno: la macchina li fa uno alla volta, come prima."""
+        if not self.in_rete():
+            return 1
+        n = min(self.elaboratori.processi_presenti(), int(self.cfg.elaboratori_massimo or 1))
+        if tetto:
+            n = min(n, int(tetto))
+        return max(1, n)
+
+    def _in_parallelo(self, elementi, fai, quanti: int, messaggio) -> int:
+        """fai(elemento) su tutti, 'quanti' alla volta. Ritorna quanti sono
+        riusciti (fai restituisce True). STOP ferma quelli non ancora
+        partiti; l'avanzamento conta quelli finiti."""
+        import concurrent.futures
+        fatti = {"ok": 0, "finiti": 0}
+        lock = threading.Lock()
+        totale = max(len(elementi), 1)
+
+        def uno(e):
+            if self._stop.is_set():
+                return
+            esito = bool(fai(e))
+            with lock:
+                fatti["finiti"] += 1
+                fatti["ok"] += 1 if esito else 0
+                self.progress(messaggio(e, fatti["finiti"], totale),
+                              fatti["finiti"] / float(totale))
+        if quanti <= 1:
+            for e in elementi:
+                if self._stop.is_set():
+                    break
+                uno(e)
+            return fatti["ok"]
+        with concurrent.futures.ThreadPoolExecutor(max_workers=quanti) as ex:
+            for f in [ex.submit(uno, e) for e in elementi]:
+                f.result()
+        return fatti["ok"]
+
     def _aiuto_rete(self) -> bool:
         """Per gli aiutanti della coda: un elaboratore e' in ascolto adesso."""
         return bool(self.cfg.elaboratori_rete and self.elaboratori.chiave
@@ -2051,9 +2097,10 @@ class ScanService:
                   "qualita": int(self.cfg.jpeg_quality), "maschera": bool(mask_path),
                   "negativo": neg_fmt, "meta": meta,
                   "positivo": bool(self.archivio_rete.attivo())}
-        pacco = self._pacco(raw, opts, raw_path, lavoro)
-        esito, z = self._esito(self.elaboratori.elabora(pacco, ferma=ferma))
-        del pacco
+        # il pacco (~40 MB) lo tiene solo la coda degli elaboratori, che lo
+        # lascia appena un elaboratore l'ha preso (remoti.prendi)
+        esito, z = self._esito(self.elaboratori.elabora(
+            lambda: self._pacco(raw, opts, raw_path, lavoro), ferma=ferma))
         nomi = z.namelist()
         if "file/finale" not in nomi:
             raise RuntimeError("l'elaboratore non ha mandato il file finito")
@@ -2080,16 +2127,19 @@ class ScanService:
         return (res, mask_path if mask_path in scritti else "",
                 neg_path if neg_path in scritti else "")
 
-    def _processa(self, raw, opts):
+    def _processa(self, raw, opts, raw_path: str = ""):
         """L'elaborazione per il visore (Riapri): in rete se c'e' un
         elaboratore, con la base lineare e il negativo per i cursori e il
         confronto; altrimenti qui. Nessun file."""
-        raw, opts = self._ice_kodak(raw, opts, 0)
+        pulito, opts = self._ice_kodak(raw, opts, 0)
+        file_rete = raw_path if pulito is raw else ""
+        raw = pulito
         if self.in_rete():
             try:
                 t0 = time.time()
-                pacco = self._pacco(raw, opts, "", {"tipo": "processa"})
-                esito, z = self._esito(self.elaboratori.elabora(pacco, timeout=180.0))
+                esito, z = self._esito(self.elaboratori.elabora(
+                    lambda: self._pacco(raw, opts, file_rete, {"tipo": "processa"}),
+                    timeout=180.0))
                 res = self._risultato_da_esito(esito, z)
                 if res.base is None:
                     raise RuntimeError("l'elaboratore non ha mandato la base")
@@ -2633,21 +2683,16 @@ class ScanService:
                           if f.get("stato") != "vuoto"
                           and (not solo_mancanti
                                or f.get("stato") in ("da_elaborare", "errore"))]
-            fatti, senza = 0, 0
-            for k, f in enumerate(fotogrammi):
-                if self._stop.is_set():
-                    self.log("Applica a tutto il rullo fermato dopo %d "
-                             "fotogrammi." % fatti)
-                    break
-                self.progress("Fotogramma %d (%d di %d)"
-                              % (f["numero"], k + 1, len(fotogrammi)),
-                              k / float(max(len(fotogrammi), 1)))
-                raw_path = f.get("file_raw") or ""
-                if not raw_path or not os.path.exists(raw_path):
-                    senza += 1
-                    continue
+            con_grezzo = [f for f in fotogrammi
+                          if f.get("file_raw") and os.path.exists(f["file_raw"])]
+            senza = len(fotogrammi) - len(con_grezzo)
+
+            def rifai(f):
+                raw_path = f["file_raw"]
                 try:
-                    raw = RawScan.load(raw_path)
+                    # pigro: a un elaboratore va il file, i piani li legge
+                    # la macchina solo se lo deve fare lei
+                    raw = RawScan.load(raw_path, pigro=True)
                     self._esporta(raw, self._con_geometria(self._opzioni_fotogramma(
                                       opts, correzioni.get(str(f["numero"]))),
                                       rullo.id, int(f["numero"])),
@@ -2655,10 +2700,22 @@ class ScanService:
                                   rullo.id, int(f["numero"]),
                                   f.get("numero_bordo") or "", raw_path,
                                   (ordine, rullo))
-                    fatti += 1
+                    return True
                 except Exception as exc:                # noqa: BLE001
                     self.job.errors.append("fotogramma %d: %s" % (f["numero"], exc))
                     self.log("Fotogramma %d non rielaborato: %s" % (f["numero"], exc))
+                    return False
+
+            # con gli elaboratori della rete, tanti insieme quanti sono i
+            # loro processi (un Threadripper: 16); senza, uno alla volta
+            insieme = self._quanti_insieme()
+            if insieme > 1:
+                self.log("Rielaborazione in rete: %d fotogrammi alla volta." % insieme)
+            fatti = self._in_parallelo(
+                con_grezzo, rifai, insieme,
+                lambda f, k, n: "Fotogramma %d (%d di %d)" % (f["numero"], k, n))
+            if self._stop.is_set():
+                self.log("Applica a tutto il rullo fermato dopo %d fotogrammi." % fatti)
             self._cache_prov.clear()
             self.log("Rullo %s rielaborato: %d fotogrammi%s." % (
                 rullo.etichetta, fatti,
@@ -2703,24 +2760,22 @@ class ScanService:
             if not elenco:
                 self._positivi["errore"] = "questo ordine non ha grezzi sul disco"
                 return
-            fatti = 0
+            scrivi_zip = threading.Lock()
             with zipfile.ZipFile(dest + ".tmp", "w", zipfile.ZIP_STORED, allowZip64=True) as z:
-                for k, (rullo, f) in enumerate(elenco):
-                    if self._stop.is_set():
-                        break
-                    self.progress("Positivo %d di %d (fotogramma %d)" % (
-                        k + 1, len(elenco), f["numero"]), k / float(len(elenco)))
+                def positivo(voce):
+                    rullo, f = voce
                     try:
-                        raw = RawScan.load(f["file_raw"])
+                        raw = RawScan.load(f["file_raw"], pigro=True)
                         opts = self._con_geometria(self._opzioni_fotogramma(
                             self._opzioni_rullo(rullo),
                             self._correzioni_salvate(rullo.id).get(str(f["numero"]))),
                             rullo.id, int(f["numero"]))
                         opts.negativo_lineare = False
-                        res = self._processa(raw, opts)
+                        res = self._processa(raw, opts, raw_path=f["file_raw"])
                         if res.base is None:
                             raise RuntimeError("base non disponibile")
                         base = np.clip(np.asarray(res.base, dtype=np.float32), 0.0, 1.0)
+                        res = None
                         nome = self._nome_file(f, ordine, rullo) + "_positivo" + ext
                         tmp = os.path.join(cartella, nome)
                         meta = self._meta_file(ordine, rullo, int(f["numero"]),
@@ -2729,11 +2784,19 @@ class ScanService:
                             export_negativo(base, tmp, "dng", meta=meta)
                         else:
                             export(to_srgb(base), tmp, "tiff16", meta=meta)
-                        z.write(tmp, os.path.join(ordine.codice, nome))
+                        del base
+                        with scrivi_zip:
+                            z.write(tmp, os.path.join(ordine.codice, nome))
                         os.remove(tmp)
-                        fatti += 1
+                        return True
                     except Exception as exc:            # noqa: BLE001
                         self.log("Positivo del fotogramma %d non fatto: %s" % (f["numero"], exc))
+                        return False
+                # la base di ogni positivo (~35 MB) torna sulla macchina: al
+                # massimo 4 alla volta, per la memoria del PC a 32 bit
+                fatti = self._in_parallelo(
+                    elenco, positivo, self._quanti_insieme(tetto=4),
+                    lambda v, k, n: "Positivo %d di %d (fotogramma %d)" % (k, n, v[1]["numero"]))
             os.replace(dest + ".tmp", dest)
             self._positivi["pronto"] = dest
             self.log("Positivi pronti: %d fotogrammi (%s)." % (fatti, os.path.basename(dest)))
@@ -3081,7 +3144,7 @@ class ScanService:
                         # messo su disco dalla lettura con la memoria piena
                         # (su_disco): e' gia' il grezzo definitivo
                         raw_path = raw
-                        raw = RawScan.load(raw_path)
+                        raw = RawScan.load(raw_path, pigro=True)
                     # Il grezzo si salva qui e non nel ciclo di lettura: la
                     # compressione di ~35 MB costa secondi sul PC della
                     # macchina, e la pellicola intanto va avanti.
@@ -3163,7 +3226,7 @@ class ScanService:
             non_elaborati: List[int] = []
             elab = self._elab = _ElaborazioneInFondo(
                 elabora, int(self.cfg.memoria_elaborazione_mb) * 1024 * 1024,
-                aiutanti=(int(self.cfg.elaboratori_paralleli)
+                aiutanti=(int(self.cfg.elaboratori_massimo)
                           if self.cfg.elaboratori_rete else 0),
                 aiuto=self._aiuto_rete)
             letti = {"n": 0}

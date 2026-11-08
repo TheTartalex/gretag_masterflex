@@ -52,6 +52,27 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-11-08 — elaboratori: Threadripper, Unraid, lavori in blocco in parallelo
+
+- Elaboratore: processi contati da core e memoria (metà dei processori, 2 GB
+  l'uno, massimo 16; nei container conta la quota `--cpus`/`-m`), variabili
+  `MASTERFLEX_MACCHINA/CHIAVE/NOME/PROCESSI`, la ricerca nella rete la fa
+  solo il primo processo (gli altri usano l'indirizzo che trova lui).
+- Pacchetto dell'elaboratore con `docker-compose.yml` e `LEGGIMI-UNRAID.txt`
+  per un server sempre acceso (`restart: unless-stopped`, rete dell'host,
+  `numpy<2`).
+- Macchina: fotogrammi in rete fino a `elaboratori_massimo` (16; il vecchio
+  `elaboratori_paralleli` non si usa più). Il pacco lo tiene solo la coda
+  finché un elaboratore non l'ha preso (`remoti.prendi`), e i grezzi su disco
+  si leggono solo se li elabora la macchina (`RawScan.load(pigro=True)`): con
+  16 fotogrammi in viaggio il PC a 32 bit non teneva 16 grezzi in memoria.
+- Completa / Applica a tutto il rullo in parallelo, uno per processo
+  elaboratore collegato; Positivi dall'archivio fino a 4 alla volta.
+- Corretto: con il Digital ICE Kodak acceso all'elaboratore andava il file
+  del grezzo dal disco, cioè NON pulito; ora va il grezzo pulito.
+- Pannello Elaboratori: una riga per PC con processi, al lavoro, fatti e
+  tempo medio.
+
 ### 2026-11-08 — menu più corto, archivio con la consegna per rullo
 
 - `MASTERFLEX.bat`: tolte Simulazione, Collaudo del programma, Diagnosi,

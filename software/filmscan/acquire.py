@@ -397,15 +397,50 @@ class RawScan:
         return base + ".npz"
 
     @classmethod
-    def load(cls, npz_path: str) -> "RawScan":
+    def load(cls, npz_path: str, pigro: bool = False) -> "RawScan":
+        """pigro: si leggono subito solo i metadati, i piani al primo uso.
+        Per i fotogrammi che vanno a un elaboratore della rete, che riceve il
+        file cosi' com'e': il PC della macchina (32 bit) non tiene in
+        memoria ~50 MB per ogni fotogramma in viaggio (8/11/2026)."""
         with open(npz_path[:-4] + ".json", encoding="utf-8") as f:
             meta = ScanMetadata(**json.load(f))
+        if pigro:
+            return _RawPigro(meta, npz_path)
         obj = cls(meta)
+        obj._carica_piani(npz_path)
+        return obj
+
+    def _carica_piani(self, npz_path: str) -> None:
         z = np.load(npz_path)
         for key in sorted(z.files):
             ch = key.rsplit("_", 1)[0]
-            obj.add(ch, z[key])
-        return obj
+            self.add(ch, z[key])
+
+
+class _RawPigro(RawScan):
+    """Un RawScan con i piani letti dal disco solo quando qualcuno li usa."""
+
+    def __init__(self, meta: ScanMetadata, npz_path: str):
+        self._npz = npz_path
+        self._piani: Optional[Dict[str, List[np.ndarray]]] = None
+        RawScan.__init__(self, meta)
+
+    @property
+    def planes(self) -> Dict[str, List[np.ndarray]]:
+        if self._piani is None:
+            self._piani = {}
+            self._carica_piani(self._npz)
+        return self._piani
+
+    @planes.setter
+    def planes(self, valore) -> None:
+        # RawScan.__init__ mette {}: quello non conta, si carica al primo uso
+        self._piani = valore if valore else None
+
+    def add(self, channel: str, plane: np.ndarray) -> None:
+        if self._piani is None:
+            self._piani = {}
+        self._piani.setdefault(channel, []).append(plane)
 
 
 def scan_frame(backend: ScannerBackend, cfg: AppConfig, preset: ScanPreset,

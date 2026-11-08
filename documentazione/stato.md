@@ -505,6 +505,33 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
   Da vedere nel prossimo invio: le righe "nitidezza" del registro, per
   capire quale metodo di fuoco tiene meglio su questa macchina.
 
+## Fatto il 7 notte e l'8 novembre
+
+- **Resa delle foto**: tornati alla versione delle 19:13 del 7/11 ("quelli
+  a sinistra sono molto più belli"); da allora colore, luminosità e
+  contrasto non si toccano. Grana colorata dimezzata, flat a immagine
+  intera (va rifatta Calibra a percorso vuoto per togliere le macchioline
+  di polvere dell'ottica).
+- **Digital ICE**: nel rullo delle 19:01 nessun fotogramma è stato pulito
+  davvero. La libreria Kodak non partiva (processo figlio senza stdin,
+  corretto), l'IR era saturo su tutto il fotogramma (ora riconosciuto e non
+  usato), la capture con ICE dell'SDK rifiutata (codice 5). Come esporre
+  l'IR nel rullo si decide dopo il **collaudo IR** (`MASTERFLEX.bat` → 4 →
+  3): da fare sulla riserva e mandare i registri.
+- **Desktop**: con l'avvio automatico tornano desktop e barra (blocchi
+  tolti, collegamento dell'originale fuori dall'Esecuzione automatica, con
+  copia in `software/backup/windows`).
+- **Archivio di rete** per cliente e rullo, **grezzi su disco** quando la
+  memoria è piena (la lettura non si ferma più sui rulli lunghi),
+  **positivi** dall'archivio.
+- **Menu** del .bat ridotto a 10 voci; **pagina Archivio** con le
+  impostazioni a scomparsa e la consegna per rullo.
+- **Elaboratori** ([decisione 0011](decisioni/0011-elaboratori-in-rete.md),
+  aggiornata): Threadripper fino a 16 processi, Unraid in Docker sempre
+  acceso, Completa e Applica in parallelo. Da provare con i PC veri: nelle
+  impostazioni della riserva gli elaboratori risultano spenti
+  (`elaboratori_rete: false`), vanno accesi dal pannello Macchina.
+
 ## Problemi aperti, in ordine di priorità
 
 1. **Motori delle guide all'avvio: RISOLTO per il 135** (28/10/2026, dalla

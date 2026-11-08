@@ -1740,8 +1740,8 @@ details.sez>div{padding-bottom:10px}
     di questo PC (qui ~23 s a fotogramma). Se si spegne o non risponde, il fotogramma lo rifà la
     macchina: non se ne perde nessuno. Per collegarne uno: scaricare il pacchetto qui sotto
     <b>da quel PC</b> (aprendo questa pagina dal suo browser), estrarlo e fare doppio clic su
-    ELABORATORE.bat. Sul server: <code>python3 elaboratore.py</code> nella stessa cartella.</div>
-   <div class="nota-imp" id="el_stato">Spento.</div>
+    ELABORATORE.bat. Su un server sempre acceso (Unraid, Docker): LEGGIMI-UNRAID.txt nel pacchetto.</div>
+   <div class="nota-imp" id="el_stato" style="white-space:pre-line">Spento.</div>
    <div class="row">
     <button class="sec" id="el_kit" onclick="location.href=url('/api/elaboratori/kit.zip')" disabled>Scarica il pacchetto per l'elaboratore</button>
     <button class="ghost" style="width:auto" onclick="if(confirm('Nuova chiave? Gli elaboratori collegati vanno ricollegati con il pacchetto nuovo.')) elaboratori({nuova_chiave:true})">Nuova chiave</button>
@@ -2599,11 +2599,15 @@ function mostraElaboratori(e){
   var t;
   if(!e.attivi) t='Spento: elabora solo questo PC.';
   else {
-    var vivi=(e.elaboratori||[]).filter(function(x){ return x.collegato; });
+    var pc=e.pc||[];
     t='Chiave '+e.chiave+'. ';
-    t+= vivi.length ? ('Collegati: '+vivi.map(function(x){
-          return x.nome+' ('+x.ip+(x.fatti?', '+x.fatti+' fatti, '+x.media_s+' s l\'uno':'')+
-                 (x.errori?', '+x.errori+' errori':'')+')'; }).join(', ')+'.')
+    /* una riga per PC: quanti processi ha, quanti stanno lavorando, quanti
+       fotogrammi ha fatto e in quanto tempo l'uno */
+    t+= pc.length ? ('Collegati:\n'+pc.map(function(x){
+          return ' - '+x.nome+' ('+x.ip+'): '+x.processi+(x.processi===1?' processo':' processi')+
+                 (x.al_lavoro?', '+x.al_lavoro+' al lavoro':'')+
+                 (x.fatti?', '+x.fatti+' fatti, '+x.media_s+' s l\'uno':'')+
+                 (x.errori?', '+x.errori+' errori':''); }).join('\n'))
         : 'Nessun elaboratore collegato: elabora questo PC.';
     if(e.in_lavorazione) t+=' In lavorazione in rete: '+e.in_lavorazione+'.';
   }
@@ -3271,6 +3275,9 @@ class Handler(BaseHTTPRequestHandler):
                 "macchina": ("http://" + host) if host else "",
                 "chiave": s.cfg.chiave_elaboratori}, indent=1))
             z.writestr("elaboratore/LEGGIMI.txt", remoti.LEGGIMI_KIT)
+            # per un server sempre acceso (Unraid, Docker)
+            z.writestr("elaboratore/docker-compose.yml", remoti.COMPOSE_KIT % {"nome": "unraid"})
+            z.writestr("elaboratore/LEGGIMI-UNRAID.txt", remoti.LEGGIMI_DOCKER % {"nome": "unraid"})
         return buf.getvalue()
 
     def do_GET(self) -> None:

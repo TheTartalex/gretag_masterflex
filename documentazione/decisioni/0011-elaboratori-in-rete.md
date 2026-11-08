@@ -49,3 +49,19 @@ macchina o ricerca automatica.
 - Il grezzo viaggia in rete (~35-50 MB a fotogramma): su una rete a 100
   Mbit sono 3-4 s, su una gigabit meno di mezzo secondo.
 - Acceso di serie: senza elaboratori collegati non cambia niente.
+
+## Aggiornamento dell'8/11/2026
+
+- I PC disponibili includono un Threadripper con 64 GB e un server Unraid
+  sempre acceso. L'elaboratore conta da solo i processi (metà dei core, 2 GB
+  l'uno, massimo 16) e la macchina ne usa fino a `elaboratori_massimo` (16).
+- Su Unraid gira in un container (`docker-compose.yml` nel pacchetto,
+  `restart: unless-stopped`, rete dell'host): con la macchina spenta aspetta,
+  e la ritrova quando si riaccende.
+- Il limite vero è la memoria del PC della macchina (32 bit): il pacco resta
+  solo in coda finché un elaboratore non lo prende, e i grezzi già su disco
+  non si caricano se vanno in rete. I positivi, che tornano come base a
+  35 MB, al massimo 4 alla volta.
+- La GPU (GTX 1080) non si usa: il processore basta a stare dietro allo
+  scanner. Se in futuro servisse, solo sugli elaboratori, con lo stesso
+  risultato della macchina.

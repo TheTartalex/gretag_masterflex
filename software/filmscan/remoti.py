@@ -23,6 +23,7 @@ una persona davanti a un tablet. Senza la chiave giusta non si prende niente.
 from __future__ import annotations
 
 import collections
+import re
 import hashlib
 import hmac
 import io
@@ -113,10 +114,34 @@ class Elaboratori(object):
         with self._cond:
             return max(0, self._in_ascolto - len(self._attesa))
 
+    def processi_presenti(self) -> int:
+        return len(self.presenti())
+
     def stato(self) -> Dict[str, object]:
         adesso = time.time()
         with self._cond:
-            return {"elaboratori": [
+            # un PC con piu' processi si presenta come "nome", "nome-2",
+            # "nome-3"...: nel pannello va una riga per PC
+            al_lavoro = collections.Counter(l.get("chi") for l in self._lavori.values()
+                                            if l.get("chi"))
+            pc: Dict[str, dict] = {}
+            for v in self._visti.values():
+                if adesso - v["ultimo"] >= PRESENZA_S:
+                    continue
+                base = re.sub(r"-\d+$", "", v["nome"]) or v["nome"]
+                g = pc.setdefault(base, {"nome": base, "ip": v["ip"], "processi": 0,
+                                         "al_lavoro": 0, "fatti": 0, "errori": 0,
+                                         "secondi": 0.0})
+                g["processi"] += 1
+                g["al_lavoro"] += al_lavoro.get(v["nome"], 0)
+                g["fatti"] += v["fatti"]
+                g["errori"] += v["errori"]
+                g["secondi"] += v["secondi"]
+            for g in pc.values():
+                secondi = g.pop("secondi")
+                g["media_s"] = round(secondi / g["fatti"], 1) if g["fatti"] else None
+            return {"pc": sorted(pc.values(), key=lambda g: g["nome"]),
+                    "elaboratori": [
                         {"nome": v["nome"], "ip": v["ip"], "fatti": v["fatti"],
                          "errori": v["errori"],
                          "media_s": round(v["secondi"] / v["fatti"], 1) if v["fatti"] else None,
@@ -126,11 +151,19 @@ class Elaboratori(object):
                     "in_lavorazione": sum(1 for l in self._lavori.values() if l.get("chi"))}
 
     # --- lato macchina ------------------------------------------------------
-    def elabora(self, pacco: bytes, timeout: float = 600.0,
+    def elabora(self, pacco, timeout: float = 600.0,
                 ferma=None) -> bytes:
         """Mette un lavoro in coda e aspetta l'esito (lo zip dei file finiti).
         RuntimeError se nessuno lo prende, se chi l'ha preso sparisce o se
-        l'elaboratore risponde con un errore: chi chiama lo fa in casa."""
+        l'elaboratore risponde con un errore: chi chiama lo fa in casa.
+
+        'pacco' puo' essere una funzione che lo prepara: cosi' l'unico
+        riferimento ai ~40 MB e' quello della coda, che lo lascia appena un
+        elaboratore l'ha preso (prendi). Con i byte passati direttamente li
+        terrebbe anche chi chiama, per tutta l'elaborazione: con 16
+        fotogrammi in viaggio il PC della macchina (32 bit) non ci sta."""
+        if callable(pacco):
+            pacco = pacco()
         with self._cond:
             self._contatore += 1
             ident = "%d-%d" % (int(time.time()), self._contatore)
@@ -139,6 +172,7 @@ class Elaboratori(object):
             self._lavori[ident] = lavoro
             self._attesa.append(ident)
             self._cond.notify_all()
+        del pacco
         try:
             fine = time.time() + timeout
             while not lavoro["evento"].wait(1.0):
@@ -188,7 +222,8 @@ class Elaboratori(object):
                 lavoro = self._lavori[ident]
                 lavoro["chi"] = nome
                 lavoro["dato_alle"] = time.time()
-                return ident, lavoro["pacco"]
+                pacco, lavoro["pacco"] = lavoro["pacco"], None
+                return ident, pacco
             finally:
                 self._in_ascolto -= 1
 
@@ -212,6 +247,66 @@ class Elaboratori(object):
 # --- il codice per gli elaboratori ---------------------------------------
 
 _codice: Dict[str, object] = {}
+
+
+# Per un server sempre acceso (Unraid, o qualunque PC con Docker): il
+# container ricomincia da solo all'accensione, e l'elaboratore ritrova la
+# macchina quando lei si riaccende. Le librerie si installano la prima volta
+# nella cartella montata e restano li'. numpy<2: il codice e' scritto per la
+# 1.22 della macchina, con la 2 non e' provato.
+COMPOSE_KIT = """# Elaboratore Masterflex in un container (Unraid: plugin Compose Manager,
+# oppure "docker compose up -d" in questa cartella).
+# CARTELLA: dove hai copiato questa cartella "elaboratore" sul server.
+services:
+  masterflex-elaboratore:
+    image: python:3.11-slim
+    container_name: masterflex-elaboratore
+    restart: unless-stopped
+    # la rete del server, non quella interna di Docker: serve per trovare
+    # la macchina se cambia indirizzo
+    network_mode: host
+    working_dir: /app
+    volumes:
+      - /mnt/user/appdata/masterflex-elaboratore:/app
+    environment:
+      - HOME=/app
+      - PYTHONUNBUFFERED=1
+      - MASTERFLEX_NOME=%(nome)s
+      # quanti fotogrammi alla volta; di serie meta' dei processori, 2 GB
+      # di memoria l'uno, al massimo 16. Su un server che fa anche altro:
+      # - MASTERFLEX_PROCESSI=4
+    command: >
+      sh -c "pip install --user -q --disable-pip-version-check 'numpy<2' scipy pillow tifffile
+      && exec python elaboratore.py"
+"""
+
+LEGGIMI_DOCKER = """ELABORATORE SEMPRE ACCESO SU UNRAID (o su qualunque server con Docker)
+
+1. Copia questa cartella "elaboratore" sul server, in
+   /mnt/user/appdata/masterflex-elaboratore
+   (dentro ci devono essere elaboratore.py ed elaboratore.json).
+
+2a. Con il plugin "Compose Manager" di Unraid: nuovo stack, incolla
+    docker-compose.yml, Compose Up. Se hai messo la cartella altrove,
+    cambia il percorso in "volumes".
+
+2b. Senza plugin, dal terminale di Unraid, una volta sola:
+
+    docker run -d --name masterflex-elaboratore --restart unless-stopped \\
+      --network host -e HOME=/app -e PYTHONUNBUFFERED=1 -e MASTERFLEX_NOME=%(nome)s \\
+      -v /mnt/user/appdata/masterflex-elaboratore:/app -w /app python:3.11-slim \\
+      sh -c "pip install --user -q 'numpy<2' scipy pillow tifffile && exec python elaboratore.py"
+
+3. Scheda Docker di Unraid: Autostart acceso sul container.
+
+4. I messaggi: docker logs -f masterflex-elaboratore
+   Nel pannello Macchina della macchina compare come "%(nome)s".
+
+La prima partenza scarica le librerie (serve internet, un paio di minuti);
+le volte dopo parte subito. Con la macchina spenta aspetta e la ricerca ogni
+30 s; quando si riaccende riprende da solo, e se la macchina si aggiorna
+scarica da lei il codice nuovo.
+"""
 
 
 def codice_zip(software: str) -> Tuple[bytes, str]:
