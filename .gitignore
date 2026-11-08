@@ -55,6 +55,8 @@ software/impostazioni.json
 software/lut/
 software/modo-avvio.txt
 software/modo-avvio.txt.scelto
+# il sensore intero misurato dal collaudo senza pellicola
+software/sensore.json
 software/attivita-avvio.xml
 # Wheel e installer di Python per l'installazione senza rete: si rifanno con
 # MASTERFLEX.bat, voce "prepara pacchetto offline".

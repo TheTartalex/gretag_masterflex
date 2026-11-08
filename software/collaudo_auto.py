@@ -321,6 +321,115 @@ class Banco(object):
 # senza pellicola
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# sensore intero (8/11/2026)
+# ---------------------------------------------------------------------------
+# La finestra del formato e' 2100x1400 dall'offset XY tarato (47, 76): come il
+# programma originale, che sul 135 taglia ~1 mm per lato in larghezza e
+# ~0,65 mm in altezza (16,19 um di pellicola a pixel). Il sensore, con pixel
+# da 6,8 um, e' con ogni probabilita' un Kodak KAF-3200 (2184x1472 attivi):
+# letto tutto darebbe ~35,4x23,8 mm. Qui si misura davvero: rettangoli
+# crescenti da (0, 0), quali accetta il firmware e dove finisce la luce.
+
+RETTANGOLI_SENSORE = ((0, 0, 2184, 1472), (0, 0, 2200, 1500),
+                      (0, 0, 2268, 1512), (0, 0, 2304, 1536))
+FILE_SENSORE = os.path.join(QUI, "sensore.json")
+
+
+def leggi_rettangolo(k, canale: str, esposizione: float, rett) -> np.ndarray:
+    nome = k.b._send("grab_%s_0_%.3f_f%d.%d.%d.%d" % ((canale, esposizione) + tuple(rett)),
+                     attesa=k.b.ATTESA_ACQUISIZIONE)
+    return k.b._leggi(nome)
+
+
+def limiti_luce(img: np.ndarray, soglia: float = 0.15):
+    """Prima e ultima colonna, prima e ultima riga con luce (oltre il 15%
+    del livello al centro): fuori ci sono i pixel coperti del sensore."""
+    a = np.asarray(img, dtype=np.float64)
+    h, w = a.shape
+    centro = float(np.median(a[h // 3:2 * h // 3, w // 3:2 * w // 3]))
+    col = a.mean(axis=0)
+    riga = a.mean(axis=1)
+    cs_ = np.flatnonzero(col > soglia * centro)
+    rs_ = np.flatnonzero(riga > soglia * centro)
+    if not cs_.size or not rs_.size:
+        return None
+    return int(cs_[0]), int(cs_[-1]), int(rs_[0]), int(rs_[-1]), round(centro, 1)
+
+
+def prova_sensore(k, pellicola: bool) -> None:
+    """Senza pellicola misura il rettangolo illuminato e lo scrive in
+    software/sensore.json (lo usa il programma: Macchina, Area del
+    sensore). Con la pellicola legge il rettangolo misurato su un
+    fotogramma: nelle immagini si vede se compaiono tutti e quattro i
+    bordi del fotogramma."""
+    r = k.r
+    dati = {}
+    r.dati["sensore"] = dati
+    e = 1.0 if pellicola else 0.25
+    if pellicola:
+        try:
+            with open(FILE_SENSORE, encoding="utf-8") as f:
+                misurato = json.load(f).get("rettangolo")
+        except (IOError, OSError, ValueError):
+            misurato = None
+        prove = [tuple(misurato)] if misurato else list(RETTANGOLI_SENSORE)
+        dati["formato"] = k.passo("G a %gx, finestra del formato" % e,
+                                  lambda: (k.salva("sensore_formato_G", k.leggi("G", e), 4095),
+                                           "salvata")[1])
+    else:
+        prove = list(RETTANGOLI_SENSORE)
+        dati["formato"] = k.passo("G a %gx, finestra del formato (2100x1400)" % e,
+                                  lambda: limiti_luce(k.leggi("G", e)))
+    accettati = []
+    for rett in prove:
+        def l(rett=rett):
+            img = leggi_rettangolo(k, "G", e, rett)
+            k.salva("sensore_%dx%d_G" % (rett[2], rett[3]), img, 4095)
+            lim = limiti_luce(img)
+            accettati.append((rett, img.shape, lim))
+            return {"forma": list(img.shape), "luce": lim}
+        dati["%dx%d" % rett[2:]] = k.passo("G a %gx, sensore da (%d,%d) %dx%d" % ((e,) + tuple(rett)),
+                                         l, tentativi=1, informativo=True)
+    if pellicola or not accettati:
+        if not accettati:
+            r("  -> nessun rettangolo piu' grande accettato: resta la finestra del formato")
+        return
+    rett, forma, lim = max(accettati, key=lambda t: t[0][2] * t[0][3])
+    if lim is None:
+        r("  -> il rettangolo piu' grande non ha luce misurabile: non si scrive niente")
+        return
+    c0, c1, r0, r1, centro = lim
+    # due pixel di margine dalla luce, lati pari (le risoluzioni ridotte)
+    x0, y0 = rett[0] + c0 + 2, rett[1] + r0 + 2
+    w = (c1 - c0 + 1 - 4) // 2 * 2
+    h = (r1 - r0 + 1 - 4) // 2 * 2
+    bordo = []
+    if c1 >= forma[1] - 2:
+        bordo.append("a destra")
+    if r1 >= forma[0] - 2:
+        bordo.append("in basso")
+    misura = {"rettangolo": [x0, y0, w, h], "data": datetime.date.today().isoformat(),
+              "collaudo": os.path.basename(r.cartella), "letto": list(rett),
+              "luce_al_centro": centro,
+              "nota": ("la luce arriva fino al bordo %s del rettangolo letto: il "
+                       "sensore potrebbe continuare oltre" % " e ".join(bordo)) if bordo else ""}
+    dati["misura"] = misura
+    mm = 6.8 / 0.420026 / 1000.0
+    r("  -> sensore illuminato: da colonna %d, riga %d, %dx%d pixel = %.1f x %.1f mm "
+      "sul 135 (la finestra del formato: 2100x1400 = %.1f x %.1f mm)"
+      % (x0, y0, w, h, w * mm, h * mm, 2100 * mm, 1400 * mm))
+    if bordo:
+        r("     " + misura["nota"])
+    try:
+        with open(FILE_SENSORE + ".tmp", "w", encoding="utf-8") as f:
+            json.dump(misura, f, indent=1)
+        os.replace(FILE_SENSORE + ".tmp", FILE_SENSORE)
+        r("     scritto in %s: si sceglie in Macchina, Area del sensore" % FILE_SENSORE)
+    except (IOError, OSError) as exc:
+        r("     %s non scritto: %s" % (FILE_SENSORE, exc))
+
+
 def senza_pellicola(a) -> int:
     k = Banco(a, "auto-senza")
     r = k.r
@@ -390,6 +499,9 @@ def senza_pellicola(a) -> int:
             r("  linearita' %s: %.3gx -> %.3gx, medie %.0f -> %.0f (rapporto %.2f, atteso %.2f)"
               % (ch, e0, e1, m0, m1, m1 / max(m0, 1), e1 / e0))
     r.dati["finestra_vuota"] = dict(("%s@%g" % kv[0], kv[1]) for kv in medie.items())
+
+    k.titolo("Sensore intero (oltre la finestra 2100x1400 del programma originale)")
+    prova_sensore(k, pellicola=False)
 
     k.titolo("Buio, rumore, infrarosso")
     k.passo("G al buio (bit di buio)", lambda: cs.misura(k.leggi("G", 1.0, buio=True))["media"],
@@ -530,6 +642,9 @@ def con_pellicola(a) -> int:
                                                 for c, p in piani.items()),
                     "nitidezza_G": round(nitidezza(piani["G"]), 4)}
         k.passo("R G B del fotogramma %d" % n, rgb, recupero=k.aspetta_pronto)
+
+    k.titolo("Sensore intero sulla pellicola")
+    prova_sensore(k, pellicola=True)
 
     k.titolo("Digital ICE della Kodak (libreria dell'SDK)")
     # 7/11/2026 (16:34): la libreria chiamata direttamente ha trovato 17679

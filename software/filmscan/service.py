@@ -36,7 +36,8 @@ from .acquire import (Annullato, Calibration, RawScan, ScanMetadata, film_presen
 from .compat import check_environment
 from .config import AppConfig, FORMATS, PRESETS
 from .hal import (FILE_EMERGENZA, Emergenza, FilmSensors, FinePellicola,
-                  MotoriBloccati, OriginaleBackend, PressoreBloccato, ScannerBackend, ScannerError,
+                  MotoriBloccati, OriginaleBackend, PonteSdkBackend, PressoreBloccato,
+                  ScannerBackend, ScannerError,
                   make_backend)
 from . import colore
 from .invert import PROFILES
@@ -579,6 +580,7 @@ class ScanService:
         backend = make_backend(self.cfg)
         backend.connect()
         self.backend = backend
+        self._applica_area()
         self.log("Backend '%s' connesso." % self.cfg.driver)
         existing = Calibration.latest(self.cfg.path("calib"))
         if existing is not None:
@@ -1440,12 +1442,49 @@ class ScanService:
         # si cambia, ogni lettura esce scalata di un fattore per canale
         note = self.calib.note or ""
         voluto = self._tag_esposizione()
+        # il flat e' pixel per pixel: con un'altra area del sensore non vale
+        if isinstance(self.backend, PonteSdkBackend) and self.calib.flat:
+            larga = int(next(iter(self.calib.flat.values())).shape[-1])
+            if larga != self._larghezza_attesa():
+                raise ScannerError(
+                    "la calibrazione e' larga %d pixel, l'area del sensore scelta "
+                    "ne legge %d: rifare Calibra, con il percorso pellicola vuoto"
+                    % (larga, self._larghezza_attesa()))
         altro = [t for t in TAG_ESPOSIZIONE if t != voluto and t in note]
         if altro:
             raise ScannerError(
                 "la calibrazione di oggi e' stata fatta con l'esposizione %s: "
                 "dopo aver cambiato l'impostazione va rifatta (Calibra)"
                 % ("automatica" if altro[0] == TAG_ESPOSIZIONE[0] else "di fabbrica"))
+
+    # --- area del sensore (sensore intero, collaudo senza pellicola) -----
+
+    FILE_SENSORE = "sensore.json"
+
+    def sensore_misurato(self) -> Dict[str, object]:
+        """Il rettangolo illuminato del sensore misurato dal collaudo senza
+        pellicola (collaudo_auto.py, software/sensore.json), o {}."""
+        try:
+            with open(os.path.join(registri.SOFTWARE, self.FILE_SENSORE), encoding="utf-8") as f:
+                d = json.load(f)
+            r = [int(v) for v in d.get("rettangolo") or []]
+            return dict(d, rettangolo=r) if len(r) == 4 and r[2] > 0 and r[3] > 0 else {}
+        except (IOError, OSError, ValueError, TypeError):
+            return {}
+
+    def _finestra_voluta(self) -> Optional[Tuple[int, int, int, int]]:
+        r = list(self.cfg.sensore_intero or [])
+        if self.cfg.area_sensore == "intero" and len(r) == 4:
+            return tuple(int(v) for v in r)
+        return None
+
+    def _applica_area(self) -> None:
+        if self.backend is not None and hasattr(self.backend, "finestra"):
+            self.backend.finestra = self._finestra_voluta()
+
+    def _larghezza_attesa(self) -> int:
+        f = self._finestra_voluta()
+        return int(f[2]) if f else int(self.cfg.sensor_pixels)
 
     def _tag_esposizione(self) -> str:
         return TAG_ESPOSIZIONE[0 if self.cfg.esposizione_auto else 1]
@@ -1463,6 +1502,9 @@ class ScanService:
                 "acquisizione": self.cfg.acquisizione,
                 "digital_ice": self.cfg.digital_ice,
                 "digital_ice_kodak": ice_kodak.disponibile(),
+                "area_sensore": self.cfg.area_sensore,
+                "sensore_intero": list(self.cfg.sensore_intero or []),
+                "sensore_misurato": self.sensore_misurato(),
                 "leggi_dx": bool(self.cfg.leggi_dx),
                 "pin_fisso": bool(self.cfg.pin_fisso)}
 
@@ -1483,6 +1525,22 @@ class ScanService:
             if scelto not in MOTORI_ICE:
                 raise ValueError("digital_ice: uno di %s" % ", ".join(MOTORI_ICE))
             self.cfg.digital_ice = str(scelto)
+        if "area_sensore" in valori:
+            area = str(valori["area_sensore"])
+            if area not in ("fotogramma", "intero"):
+                raise ValueError("area_sensore: 'fotogramma' o 'intero'")
+            if area == "intero":
+                misura = self.sensore_misurato()
+                if not misura:
+                    raise ValueError("il sensore intero non e' ancora misurato: fare prima "
+                                     "il collaudo automatico SENZA pellicola (MASTERFLEX.bat, 4)")
+                self.cfg.sensore_intero = list(misura["rettangolo"])
+            if area != self.cfg.area_sensore:
+                self.log("Area del sensore: %s%s. Rifare Calibra prima di scansionare." % (
+                    "intera " + "x".join(str(v) for v in self.cfg.sensore_intero[2:])
+                    if area == "intero" else "come il programma originale (2100x1400)", ""))
+            self.cfg.area_sensore = area
+            self._applica_area()
         if "acquisizione" in valori:
             if valori["acquisizione"] not in ("canali", "originale"):
                 raise ValueError("acquisizione: 'canali' o 'originale'")

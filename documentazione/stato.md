@@ -538,6 +538,11 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
   Nelle impostazioni della riserva il Digital ICE è salvato come "kodak":
   per usare filmscan va scelto in Macchina (la Kodak, se non riesce,
   passa comunque a filmscan).
+- **Sensore intero**: oggi si leggono 34,0 × 22,7 mm del 135 (la finestra del
+  programma originale). I collaudi automatici misurano il sensore intero
+  (`software/sensore.json`); poi Macchina → Area del sensore → sensore
+  intero, e Calibra. Da fare sulla riserva: collaudo senza pellicola, poi
+  con pellicola, e guardare le immagini `sensore_*`.
 
 ## Problemi aperti, in ordine di priorità
 

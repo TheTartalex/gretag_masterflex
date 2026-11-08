@@ -1761,6 +1761,12 @@ details.sez>div{padding-bottom:10px}
     <option value="spento">spento</option>
    </select>
    <div class="nota-imp">Sul primo fotogramma di ogni striscia, e col tasto Fuoco. Se il fuoco non si trova, la lente torna alla posizione nominale.</div>
+   <label>Area del sensore</label>
+   <select id="imp_area_sensore" onchange="impostaMacchina()">
+    <option value="fotogramma">Come il programma originale (2100×1400, taglia ~1 mm per lato)</option>
+    <option value="intero">Sensore intero (misurato dal collaudo)</option>
+   </select>
+   <div class="nota-imp" id="nota_area">Il sensore intero si misura con il collaudo automatico senza pellicola. Dopo il cambio va rifatta la calibrazione.</div>
    <label>Acquisizione</label>
    <select id="imp_acquisizione" onchange="impostaMacchina()">
     <option value="canali">Un canale per volta, Digital ICE nostro dall'infrarosso</option>
@@ -2653,7 +2659,8 @@ function riavviaTutto(){
 }
 function impostaMacchina(){
   var d={autofocus:val('imp_autofocus'), negativo_lineare:val('imp_negativo_lineare'),
-         acquisizione:val('imp_acquisizione'), digital_ice:val('imp_digital_ice')};
+         acquisizione:val('imp_acquisizione'), digital_ice:val('imp_digital_ice'),
+         area_sensore:val('imp_area_sensore')};
   IMP.forEach(function(k){ d[k]=el('imp_'+k).checked; });
   post('/api/macchina/impostazioni',d).then(function(r){
     if(r && r.errore){ alert(r.errore); }
@@ -2868,6 +2875,14 @@ function mostraStato(s){
     if(di && document.activeElement!==di) di.value=s.impostazioni_macchina.digital_ice||'kodak';
     var aq=el('imp_acquisizione');
     if(aq && document.activeElement!==aq) aq.value=s.impostazioni_macchina.acquisizione||'canali';
+    var ar=el('imp_area_sensore'), im=s.impostazioni_macchina, ms=im.sensore_misurato||{};
+    if(ar && document.activeElement!==ar) ar.value=im.area_sensore||'fotogramma';
+    var na=el('nota_area');
+    if(na) na.textContent = ms.rettangolo
+      ? ('Misurato dal collaudo del '+(ms.data||'?')+': '+ms.rettangolo[2]+'×'+ms.rettangolo[3]+
+         ' pixel (da colonna '+ms.rettangolo[0]+', riga '+ms.rettangolo[1]+'), contro 2100×1400. '+
+         'Dopo il cambio va rifatta la calibrazione.')
+      : 'Il sensore intero non è ancora misurato: collaudo automatico senza pellicola (MASTERFLEX.bat, 4).';
     var af=el('imp_autofocus');
     if(af && document.activeElement!==af) af.value=s.impostazioni_macchina.autofocus;
     if(s.elaboratori) mostraElaboratori(s.elaboratori);

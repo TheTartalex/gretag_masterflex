@@ -49,6 +49,11 @@ COMANDI
     grabm_<ris>_<eR>_<eG>_<eB>[_<eIR>]
                                 R, G, B (e IR) in una lettura sola, un tempo
                                 per LED
+        ..._f<x0>.<y0>.<larg>.<alt> in fondo a grab e grabm: legge quel
+                                rettangolo del sensore (pixel a piena
+                                risoluzione) invece della finestra del
+                                formato (2100x1400 dall'offset XY, come il
+                                programma originale). Solo a risoluzione 0.
     cattura_<ris>_<0|1>         R, G, B con la capture del programma originale
                                 (codice DX subito prima), 1 = Digital ICE
     flash_backup                salva il Parameter Flash in raw/
@@ -813,15 +818,23 @@ class Agente(object):
             # originale (DX se serve, capture), 1 = con il Digital ICE
             return self.cattura(int(parti[1]), len(parti) > 2 and parti[2] == "1")
 
+        if testa in ("grab", "grabm"):
+            # il rettangolo del sensore, se c'e' (ultimo pezzo "f...")
+            finestra = None
+            if parti[-1].startswith("f") and parti[-1][1:2].isdigit():
+                finestra = tuple(int(v) for v in parti[-1][1:].split("."))
+                if len(finestra) != 4 or min(finestra) < 0 or finestra[2] < 16 or finestra[3] < 16:
+                    raise ValueError("finestra non valida: %s" % parti[-1])
+                parti = parti[:-1]
         if testa == "grabm":
-            # grabm_<risoluzione>_<eR>_<eG>_<eB>[_<eIR>]
+            # grabm_<risoluzione>_<eR>_<eG>_<eB>[_<eIR>][_f...]
             return self.acquisisci_insieme(int(parti[1]),
-                                           [float(x) for x in parti[2:6]])
+                                           [float(x) for x in parti[2:6]], finestra)
 
         if testa == "grab":
-            # grab_<canale>_<risoluzione>_<esposizione>[_buio]
+            # grab_<canale>_<risoluzione>_<esposizione>[_buio][_f...]
             buio = len(parti) > 4 and parti[4] == "buio"
-            return self.acquisisci(parti[1], int(parti[2]), float(parti[3]), buio)
+            return self.acquisisci(parti[1], int(parti[2]), float(parti[3]), buio, finestra)
 
         raise ValueError("comando sconosciuto: %s" % comando)
 
@@ -846,14 +859,24 @@ class Agente(object):
                                                 info.get("secondi"), info.get("buffer")))
         return nome
 
-    def acquisisci_insieme(self, risoluzione, esposizioni):
+    @staticmethod
+    def _rettangolo(finestra, risoluzione):
+        """Gli argomenti di scansiona_canale per un rettangolo del sensore
+        (solo a piena risoluzione: alle altre resta la finestra del formato)."""
+        if not finestra or risoluzione != 0:
+            return {}
+        x0, y0, w, h = finestra
+        return {"x0": x0, "y0": y0, "larghezza": w, "altezza": h}
+
+    def acquisisci_insieme(self, risoluzione, esposizioni, finestra=None):
         """R, G, B (e IR se c'e' il quarto tempo) in una lettura sola, ogni
         LED col suo tempo: tre chiamate a scan_raw diventano una."""
         canale = 5 if len(esposizioni) >= 4 else 4
         piani = 4 if canale == 5 else 3
         t0 = time.time()
         dati, w, h = self.s.scansiona_canale(canale, 1.0, risoluzione,
-                                             per_led=list(esposizioni)[:piani])
+                                             per_led=list(esposizioni)[:piani],
+                                             **self._rettangolo(finestra, risoluzione))
         t1 = time.time()
         nome = "%d_RGB%s_%dx%d.raw" % (int(t0 * 1000), "I" if piani == 4 else "",
                                        w, h)
@@ -873,16 +896,17 @@ class Agente(object):
                  % (piani, t1 - t0, time.time() - t1))
         return nome
 
-    def acquisisci(self, canale, risoluzione, esposizione, buio=False):
+    def acquisisci(self, canale, risoluzione, esposizione, buio=False, finestra=None):
         if canale not in CANALI:
             raise ValueError("canale sconosciuto: %s" % canale)
         t0 = time.time()
+        r = self._rettangolo(finestra, risoluzione)
         if buio:
             dati, w, h = self.s.scansiona_canale(CANALI[canale], esposizione,
-                                                 risoluzione, buio=True)
+                                                 risoluzione, buio=True, **r)
         else:
             dati, w, h = self.s.scansiona_canale(CANALI[canale], esposizione,
-                                                 risoluzione)
+                                                 risoluzione, **r)
         nome = "%d_%s_%dx%d.raw" % (int(t0 * 1000), canale, w, h)
         percorso = os.path.join(self.condivisa, "raw", nome)
         with open(percorso, "wb") as f:
@@ -890,7 +914,7 @@ class Agente(object):
         with open(percorso[:-4] + ".json", "w") as f:
             json.dump({"canale": canale, "larghezza": w, "altezza": h,
                        "esposizione": esposizione, "risoluzione": risoluzione,
-                       "buio": buio,
+                       "buio": buio, "finestra": list(finestra) if r else None,
                        "dtype": "uint16", "ordine": "little",
                        "secondi": round(time.time() - t0, 2)}, f)
         return nome

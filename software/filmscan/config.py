@@ -327,6 +327,15 @@ class AppConfig:
     # Se il motore non riesce (IR saturo, troppa immagine cambiata) resta la
     # pulizia semplice.
     digital_ice: str = "filmscan"
+    # L'area del sensore letta a piena risoluzione:
+    #   "fotogramma" 2100x1400 dall'offset XY del formato, come il programma
+    #                originale: sul 135 restano fuori ~1 mm per lato in
+    #                larghezza e ~0,65 mm in altezza (8/11/2026)
+    #   "intero"     il rettangolo illuminato del sensore misurato dal
+    #                collaudo senza pellicola (software/sensore.json), qui
+    #                copiato quando lo si sceglie. Va rifatta la calibrazione.
+    area_sensore: str = "fotogramma"
+    sensore_intero: List[int] = field(default_factory=list)
 
     # --- preferenze dell'elaborazione (pannello Preferenze) ---
     # Valgono per tutti i rulli e per le rielaborazioni, finche' non si

@@ -52,6 +52,22 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-11-08 — sensore intero
+
+- La finestra letta finora (2100x1400 dall'offset XY 47, 76, come il
+  programma originale) copre 34,0 x 22,7 mm di un 135: restano fuori ~1 mm
+  per lato in larghezza e ~0,65 mm in altezza.
+- Agente: `grab` e `grabm` accettano in fondo `_f<x0>.<y0>.<larg>.<alt>`, un
+  rettangolo qualsiasi del sensore a piena risoluzione. `PonteSdkBackend.finestra`.
+- Collaudi automatici: "Sensore intero". Senza pellicola legge rettangoli
+  crescenti da (0, 0), annota quali accetta il firmware, misura dove finisce
+  la luce e scrive `software/sensore.json`; con la pellicola legge lo stesso
+  rettangolo su un fotogramma (immagini `sensore_*` nel collaudo).
+- Macchina → Area del sensore: "come il programma originale" (di serie) o
+  "sensore intero" (il rettangolo misurato). Con un'area diversa da quella
+  della calibrazione il programma chiede di rifare Calibra. La capture
+  dell'SDK (2100x1400 fissa) col sensore intero non si usa.
+
 ### 2026-11-08 — Digital ICE: openICE, nkscan e la versione nostra
 
 - openICE (C, GPL-3.0) in `software/terzi/openice/`, compilato per Windows a

@@ -555,6 +555,12 @@ class PonteSdkBackend(ScannerBackend):
         # esempio, una volta scoperti: {"ingresso": 3, "uscita": 5}
         self.ingressi = ingressi or {}
         self.canali_disponibili = CHANNELS if ir else ("R", "G", "B")
+        # Il rettangolo del sensore da leggere a piena risoluzione (x0, y0,
+        # larghezza, altezza), o None: la finestra del formato, 2100x1400
+        # dall'offset XY tarato, come il programma originale, che taglia
+        # ~1 mm per lato del 135. Lo imposta il servizio (Macchina, "Area
+        # del sensore"); le misure le prende il collaudo senza pellicola.
+        self.finestra: Optional[Tuple[int, int, int, int]] = None
         for sub in ("cmd", "ack", "raw"):
             os.makedirs(os.path.join(root, sub), exist_ok=True)
         self._pos = 0.0
@@ -958,8 +964,8 @@ class PonteSdkBackend(ScannerBackend):
         ripristinata = False
         while True:
             try:
-                nome = self._send("grab_%s_%d_%.3f"
-                                  % (channel, self.risoluzione, exposure),
+                nome = self._send("grab_%s_%d_%.3f%s"
+                                  % (channel, self.risoluzione, exposure, self._suffisso_finestra()),
                                   attesa=self.ATTESA_ACQUISIZIONE)
                 break
             except ScannerError as exc:
@@ -979,6 +985,11 @@ class PonteSdkBackend(ScannerBackend):
         # righe (il bordo del fotogramma) erano un pessimo campione per dire
         # se c'e' ancora pellicola.
         return self._leggi(nome)
+
+    def _suffisso_finestra(self) -> str:
+        if not self.finestra or self.risoluzione != 0:
+            return ""
+        return "_f%d.%d.%d.%d" % tuple(int(v) for v in self.finestra)
 
     def _testa_bloccata(self, exc) -> bool:
         """ERR_GENERAL_FW con dettaglio 6: l'SDK ha perso il suo buffer
@@ -1047,8 +1058,9 @@ class PonteSdkBackend(ScannerBackend):
             fattori = [min(f, tetto) for f in fattori]
         while True:
             try:
-                nome = self._send("grabm_%d_%s" % (self.risoluzione, "_".join(
-                    "%.3f" % f for f in fattori)), attesa=self.ATTESA_ACQUISIZIONE)
+                nome = self._send("grabm_%d_%s%s" % (self.risoluzione, "_".join(
+                    "%.3f" % f for f in fattori), self._suffisso_finestra()),
+                    attesa=self.ATTESA_ACQUISIZIONE)
                 break
             except ScannerError as exc:
                 testo = str(exc)

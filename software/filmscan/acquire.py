@@ -512,8 +512,10 @@ def scan_frame(backend: ScannerBackend, cfg: AppConfig, preset: ScanPreset,
     # legge anche il codice DX, che puo' cambiare lo stato dell'SDK.
     originale = getattr(backend, "cattura_originale", None)
     fallite = int(getattr(backend, "capture_fallite", 0) or 0)
+    # la capture dell'SDK legge solo la finestra del formato (2100x1400):
+    # con il sensore intero non si usa
     if (originale is not None and getattr(cfg, "acquisizione", "") == "originale"
-            and fallite < 2
+            and fallite < 2 and not getattr(backend, "finestra", None)
             and [c for c in channels if c != "IR"] == ["R", "G", "B"]):
         _controlla(annulla)
         asf = "IR" in channels
