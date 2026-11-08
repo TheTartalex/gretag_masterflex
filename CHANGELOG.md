@@ -52,6 +52,17 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-11-08 — collaudo del codice DX
+
+- La lettura del DX riesce (stato SDK 1), ma il numero non si trova: dove
+  lo legge il programma originale (MediaInfo +0x10) sulla riserva c'è 0xffff.
+- `collaudo_auto.py dx` (MASTERFLEX.bat → 4 → 4): chiede che pellicola è,
+  legge il DX all'ingresso e dopo tre avanzamenti, ogni volta seguito da una
+  capture senza ICE (la sequenza prevista per il rullo), e cerca i numeri DX
+  attesi dall'elenco I3A in tutta la risposta dell'SDK.
+- `sdk.codice_dx` salva anche i dati agli indirizzi contenuti nella
+  MediaInfo (un livello, 64 byte).
+
 ### 2026-11-08 — sensore intero
 
 - La finestra letta finora (2100x1400 dall'offset XY 47, 76, come il

@@ -1118,6 +1118,19 @@ class Scanner(object):
         blocco = ctypes.c_uint32.from_address(p.value + 0x10).value
         fuori["tipo"] = tipo
         fuori["blocco"] = self._esadecimale(blocco, 32)
+        # Per il collaudo DX (8/11/2026): sulla riserva a +0x10 c'e' 0xffff,
+        # non un indirizzo, quindi il DX sta altrove. Si salva anche cosa c'e'
+        # agli indirizzi leggibili dentro la MediaInfo (un livello, 64 byte
+        # l'uno): il collaudo ci cerca i numeri DX della pellicola nota.
+        puntatori = {}
+        for off in range(0, 0x80, 4):
+            if not self._leggibile(p.value + off, 4):
+                break
+            v = ctypes.c_uint32.from_address(p.value + off).value
+            if v >= 0x10000 and v != p.value and self._leggibile(v, 64):
+                puntatori["%02x" % off] = {"indirizzo": "%08x" % v,
+                                           "dati": self._esadecimale(v, 64)}
+        fuori["puntatori"] = puntatori
         if self._leggibile(blocco, 8):
             dx1 = ctypes.c_uint8.from_address(blocco + 4).value
             dx2 = ctypes.c_uint8.from_address(blocco + 5).value

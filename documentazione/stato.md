@@ -543,6 +543,9 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
   (`software/sensore.json`); poi Macchina → Area del sensore → sensore
   intero, e Calibra. Da fare sulla riserva: collaudo senza pellicola, poi
   con pellicola, e guardare le immagini `sensore_*`.
+- **Codice DX**: si legge ma non si trova il numero nella risposta
+  dell'SDK. Collaudo dedicato (`MASTERFLEX.bat` → 4 → 4) con una pellicola
+  nota; poi nel rullo: DX a inizio striscia seguito da una capture senza ICE.
 
 ## Problemi aperti, in ordine di priorità
 

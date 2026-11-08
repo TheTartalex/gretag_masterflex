@@ -39,6 +39,14 @@ Alessandro: "l'operatore deve essere meno presente possibile"):
         tempi dell'SDK; poi lo stesso fotogramma con tutti i motori Digital
         ICE affiancati (confronto_ice.png). Niente cambia nelle impostazioni.
 
+    python collaudo_auto.py dx         [--ponte ...] [--scanner ...]
+        Il CODICE DX: chiede che pellicola e' la striscia (marca, nome,
+        sensibilita'), legge il DX all'ingresso e dopo tre avanzamenti (ogni
+        volta seguito da una capture senza ICE, che rimette l'SDK nello
+        stato 0), salva tutta la risposta dell'SDK e ci cerca i numeri DX
+        attesi dall'elenco I3A. Serve a sapere dove sta il DX su questa
+        macchina (dal programma originale si aspettava a MediaInfo +0x10).
+
 I rapporti vanno in software/log/collaudi/, con quelli manuali.
 """
 
@@ -1031,9 +1039,178 @@ def prova_ir(a) -> int:
     return 0 if not k.falliti else 2
 
 
+# ---------------------------------------------------------------------------
+# codice DX (8/11/2026)
+# ---------------------------------------------------------------------------
+# La lettura del DX riesce (get_media_info, stato SDK 1), ma il numero non lo
+# troviamo: dove lo legge il programma originale (MediaInfo +0x10 -> byte 4 e
+# 5) sulla riserva c'e' 0xffff. Qui si legge il DX di una pellicola NOTA piu'
+# volte, si salva tutto e si cercano i suoi numeri DX (elenco I3A,
+# pellicole_dx.py). Dopo ogni DX una capture senza ICE, che rimette l'SDK in
+# grado di leggere i canali: e' la sequenza che userebbe il rullo.
+
+def _byte(h: str) -> bytes:
+    try:
+        return bytes.fromhex(h or "")
+    except ValueError:
+        return b""
+
+
+def candidati_dx(testo: str):
+    """Le voci dell'elenco DX che corrispondono a quello che l'operatore ha
+    scritto (tutte le parole nel nome; un numero e' la sensibilita')."""
+    from filmscan import pellicole_dx
+    parole = [w for w in testo.upper().replace(",", " ").split() if w]
+    iso = [int(w) for w in parole if w.isdigit()]
+    nomi = [w for w in parole if not w.isdigit()]
+    trovati = []
+    for (d1, d2), voce in pellicole_dx.TABELLA.items():
+        nome, tipo, sens = voce[0].upper(), voce[1], voce[2]
+        if nomi and not all(w in nome for w in nomi):
+            continue
+        if iso and sens not in iso:
+            continue
+        trovati.append(((d1, d2), voce[0], sens))
+    return trovati
+
+
+def cerca_dx(letture, attesi):
+    """Dove compaiono i numeri DX attesi nelle letture salvate: come due
+    byte di fila (dx1, dx2), come numero a 16 bit (dx1*16 + dx2, il valore
+    del programma originale) e, a parte, quali coppie di byte vicine sono
+    voci dell'elenco DX in tutte le letture dopo che la pellicola si e'
+    mossa (per quando la pellicola non e' nota)."""
+    from filmscan import pellicole_dx
+    risultati = []
+    for (d1, d2), nome, _ in attesi:
+        aghi = {"byte": bytes([d1 & 0xff, d2 & 0xff]),
+                "u16": int((d1 << 4) + d2).to_bytes(2, "little")}
+        for k, l in enumerate(letture):
+            for dove, h in [("media_info", l.get("media_info"))] + [
+                    ("puntatore +%s" % off, v.get("dati")) for off, v in (l.get("puntatori") or {}).items()]:
+                b = _byte(h)
+                for tipo, ago in aghi.items():
+                    i = b.find(ago)
+                    while i >= 0:
+                        risultati.append({"pellicola": nome, "dx": [d1, d2], "lettura": k,
+                                          "dove": dove, "offset": "%02x" % i, "come": tipo})
+                        i = b.find(ago, i + 1)
+    # senza pellicola nota: coppie (b[i], b[i+1]) che sono voci dell'elenco,
+    # stabili in tutte le letture dalla seconda in poi
+    stabili = None
+    for l in letture[1:]:
+        b = _byte(l.get("media_info"))
+        qui = set()
+        for i in range(len(b) - 1):
+            if (b[i], b[i + 1]) in pellicole_dx.TABELLA:
+                qui.add((i, b[i], b[i + 1]))
+        stabili = qui if stabili is None else (stabili & qui)
+    ipotesi = [{"offset": "%02x" % i, "dx": [d1, d2], "pellicola": pellicole_dx.TABELLA[(d1, d2)][0]}
+               for i, d1, d2 in sorted(stabili or [])]
+    return risultati, ipotesi
+
+
+def prova_dx(a) -> int:
+    k = Banco(a, "auto-dx")
+    r = k.r
+    r("COLLAUDO DEL CODICE DX - %s" % datetime.datetime.now())
+    print("")
+    print("  Che pellicola e' la striscia di prova? Marca, nome e sensibilita',")
+    print("  come sul rullino (es. Kodak Gold 200, Fujicolor Superia 400).")
+    try:
+        testo = input("  Pellicola (Invio se non la sai): ").strip()
+    except EOFError:
+        testo = ""
+    attesi = candidati_dx(testo) if testo else []
+    r("Pellicola dichiarata: %s" % (testo or "(non detta)"))
+    for (d1, d2), nome, sens in attesi[:12]:
+        r("  nell'elenco DX: %d-%d  %s (%d ISO)" % (d1, d2, nome, sens))
+    if testo and not attesi:
+        r("  nessuna voce dell'elenco DX corrisponde: si salvano comunque le letture")
+    dati = {"pellicola": testo, "attesi": [[list(c[0]), c[1]] for c in attesi[:40]]}
+    r.dati["dx"] = dati
+    if not k.collega():
+        r.avviso("l'agente non e' pronto: collaudo non fatto")
+        k.chiudi()
+        return 1
+    k.passo("pressore su (partenza)", k.pressore_su, tentativi=1)
+    k.passo("formato 135", lambda: k.cmd("formato_0", 60))
+    if not k.b.pellicola_sdk():
+        k.passo("carrello in attesa della pellicola", lambda: k.cmd("carica_1", 60))
+        print("")
+        print("  >>> Inserire la striscia (non di un cliente). Parte da solo. <<<")
+        fine = time.time() + 600
+        while time.time() < fine and not k.b.pellicola_sdk():
+            time.sleep(0.5)
+    if not k.b.pellicola_sdk():
+        r.avviso("nessuna pellicola in 10 minuti: collaudo non fatto")
+        k.chiudi()
+        return 1
+
+    def mezzo_indietro():
+        k.pressore_su()
+        k.cmd("regola_-50", 60)
+
+    letture = []
+
+    def leggi_dx(etichetta):
+        d = k.cmd("dx", 60)
+        if isinstance(d, dict):
+            d = dict(d, momento=etichetta, stato_dopo=k.stato_sdk())
+            letture.append(d)
+            return {"tipo": d.get("tipo"), "dx": d.get("dx"), "stato_dopo": d.get("stato_dopo"),
+                    "puntatori": len(d.get("puntatori") or {})}
+        return d
+
+    k.titolo("DX all'ingresso della striscia")
+    k.passo("codice DX (subito)", lambda: leggi_dx("ingresso"), tentativi=1, informativo=True)
+    k.passo("capture senza ICE (rimette l'SDK nello stato 0)",
+            lambda: sorted(k.b.cattura_originale(False)), tentativi=1, informativo=True)
+    k.passo("stato SDK", lambda: k.stato_sdk(), tentativi=1)
+    k.passo("G con scan_raw dopo DX e capture", lambda: round(float(k.leggi("G", 1.0).mean()), 1),
+            tentativi=1, informativo=True)
+
+    k.titolo("DX dopo che la pellicola si e' mossa")
+    for n in range(1, 4):
+        k.passo("fotogramma successivo (%d)" % n, lambda: k.cmd("prossimo", 90),
+                recupero=mezzo_indietro)
+        k.passo("codice DX (%d)" % n, lambda n=n: leggi_dx("dopo %d fotogrammi" % n),
+                tentativi=1, informativo=True)
+        k.passo("capture senza ICE (%d)" % n, lambda: sorted(k.b.cattura_originale(False)),
+                tentativi=1, informativo=True)
+
+    k.titolo("Dove sta il DX")
+    dati["letture"] = letture
+    trovati, ipotesi = cerca_dx(letture, attesi)
+    dati["trovati"], dati["ipotesi"] = trovati, ipotesi
+    if trovati:
+        posti = {}
+        for t in trovati:
+            chiave = (t["dove"], t["offset"], t["come"], tuple(t["dx"]))
+            posti.setdefault(chiave, set()).add(t["lettura"])
+        for (dove, off, come, dx), quali in sorted(posti.items(), key=lambda kv: -len(kv[1])):
+            r("  DX %d-%d trovato in %s, offset 0x%s (%s), in %d letture su %d"
+              % (dx[0], dx[1], dove, off, come, len(quali), len(letture)))
+    elif attesi:
+        r("  i numeri DX della pellicola dichiarata non compaiono nelle letture")
+    if ipotesi:
+        r("  coppie di byte stabili che sono voci dell'elenco DX (pellicola non nota):")
+        for h in ipotesi[:10]:
+            r("    offset 0x%s: %d-%d %s" % (h["offset"], h["dx"][0], h["dx"][1], h["pellicola"]))
+    for l in letture:
+        r("  %-20s tipo %s, media_info %s..." % (l.get("momento"), l.get("tipo"),
+                                               (l.get("media_info") or "")[:64]))
+
+    k.titolo("Fine")
+    k.passo("pressore su", k.pressore_su, tentativi=1)
+    k.passo("espulsione dal davanti", lambda: k.cmd("espelli", 120), recupero=k.pressore_su)
+    k.chiudi()
+    return 0 if not k.falliti else 2
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Collaudi automatici dello scanner")
-    ap.add_argument("prova", choices=("senza", "pellicola", "ir"))
+    ap.add_argument("prova", choices=("senza", "pellicola", "ir", "dx"))
     ap.add_argument("--ponte", default=cs.PONTE)
     ap.add_argument("--scanner", default=r"C:\MasterflexD\Scanner")
     ap.add_argument("--simula", action="store_true",
@@ -1041,7 +1218,7 @@ def main(argv=None):
     a = ap.parse_args(argv)
     try:
         return {"senza": senza_pellicola, "pellicola": con_pellicola,
-                "ir": prova_ir}[a.prova](a)
+                "ir": prova_ir, "dx": prova_dx}[a.prova](a)
     except KeyboardInterrupt:
         print("\nfermato dall'operatore")
         if cs.Rapporto.aperto is not None:

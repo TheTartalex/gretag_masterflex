@@ -240,17 +240,20 @@ echo    2  AUTOMATICO con pellicola: chiede solo di inserire una striscia
 echo       ^(non di un cliente^), poi fa tutto da solo e la espelle.
 echo    3  Canale INFRAROSSO ^(Digital ICE^): finestra vuota, poi chiede una
 echo       striscia. Misura l'IR a piu' tempi e prova il Digital ICE Kodak.
-echo    4  Strumenti originali del carrello ^(COM5^): selftest, SensorTest, Compad
+echo    4  Codice DX: chiede che pellicola e', poi legge il DX e cerca dove
+echo       sta il numero nella risposta dell'SDK.
+echo    5  Strumenti originali del carrello ^(COM5^): selftest, SensorTest, Compad
 echo    0  Indietro
 echo.
 set "C="
 set /p "C=  Scelta: "
 if "%C%"=="0" exit /b 0
-if "%C%"=="4" goto :strumenti_carrello
+if "%C%"=="5" goto :strumenti_carrello
 set "CS="
 if "%C%"=="1" set "CS=auto"
 if "%C%"=="2" set "CS=auto-pellicola"
 if "%C%"=="3" set "CS=auto-ir"
+if "%C%"=="4" set "CS=auto-dx"
 if not defined CS exit /b 0
 set "DOVE=%PONTE%"
 set "AG="
@@ -269,6 +272,10 @@ if "%CS%"=="auto-pellicola" (
 )
 if "%CS%"=="auto-ir" (
     "%PY%" collaudo_auto.py ir --ponte "%DOVE%" --scanner "%SCANNER%" %SIM%
+    exit /b !errorlevel!
+)
+if "%CS%"=="auto-dx" (
+    "%PY%" collaudo_auto.py dx --ponte "%DOVE%" --scanner "%SCANNER%" %SIM%
     exit /b !errorlevel!
 )
 exit /b 0
