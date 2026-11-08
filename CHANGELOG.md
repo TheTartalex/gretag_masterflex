@@ -52,6 +52,24 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-11-08 — Digital ICE: openICE, nkscan e la versione nostra
+
+- openICE (C, GPL-3.0) in `software/terzi/openice/`, compilato per Windows a
+  32 bit e Linux; motore "openice" (`ice_openice.py`).
+- nkscan (`dust.rs`, MIT) tradotto in numpy: motore "aperto"
+  (`ice_aperto.py`); sul banco rende come openICE.
+- Motore "filmscan", di serie: la stessa base con l'IR allineato al rosso e
+  i difetti densi ricostruiti dai vicini con la grana; sul banco di prova
+  con difetti noti errore 0,0487 D contro 0,0516 di openICE, errori grossi
+  1,70% contro 2,36%. Decisione 0012.
+- I motori girano nella pipeline dopo l'allineamento dei canali
+  (`ProcessOptions.ice_motore`), quindi anche sugli elaboratori (binari
+  di openICE nel codice che scaricano). La Kodak resta sulla macchina e se
+  non riesce passa a "filmscan". Scelta in Macchina → Digital ICE.
+- `python -m filmscan.confronto_ice <grezzo.npz>`: tutti i motori affiancati
+  sullo stesso fotogramma; il collaudo IR lo fa da solo e salva il grezzo
+  della striscia di prova.
+
 ### 2026-11-08 — elaboratori: Threadripper, Unraid, lavori in blocco in parallelo
 
 - Elaboratore: processi contati da core e memoria (metà dei processori, 2 GB

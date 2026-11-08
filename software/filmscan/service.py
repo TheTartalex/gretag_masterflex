@@ -229,6 +229,12 @@ class _ElaborazioneInFondo(object):
 # Nella nota della calibrazione: con quale base d'esposizione e' stata fatta
 TAG_ESPOSIZIONE = ("[esposizione automatica]", "[esposizione di fabbrica]")
 
+# I motori del Digital ICE (config.digital_ice). "filmscan", "openice" e
+# "aperto" girano nella pipeline (ProcessOptions.ice_motore), anche sugli
+# elaboratori; "kodak" solo qui, sul grezzo, prima di tutto.
+MOTORI_ICE = ("filmscan", "openice", "aperto", "kodak", "semplice")
+MOTORI_PIPELINE = ("filmscan", "openice", "aperto")
+
 
 class _FotogrammaVuoto(Exception):
     """Esce dal blocco del fotogramma senza esportare: non e' un errore."""
@@ -253,6 +259,9 @@ class ScanService:
         # sulla macchina, fra le LUT da scegliere
         try:
             from . import lut as _lut
+            if cfg.digital_ice not in MOTORI_ICE:
+                # "nostro" (fino all'8/11/2026) e' la pulizia semplice
+                cfg.digital_ice = "semplice"
             for n in _lut.porta_profili_gretag(cfg.path("lut")):
                 logging.getLogger("filmscan.servizio").info(
                     "profilo di stampa Gretag disponibile fra le LUT: %s", n)
@@ -1470,9 +1479,10 @@ class ScanService:
                 raise ValueError("autofocus sconosciuto: %s" % valori["autofocus"])
             self.cfg.autofocus = str(valori["autofocus"])
         if "digital_ice" in valori:
-            if valori["digital_ice"] not in ("kodak", "nostro"):
-                raise ValueError("digital_ice: 'kodak' o 'nostro'")
-            self.cfg.digital_ice = str(valori["digital_ice"])
+            scelto = "semplice" if valori["digital_ice"] == "nostro" else valori["digital_ice"]
+            if scelto not in MOTORI_ICE:
+                raise ValueError("digital_ice: uno di %s" % ", ".join(MOTORI_ICE))
+            self.cfg.digital_ice = str(scelto)
         if "acquisizione" in valori:
             if valori["acquisizione"] not in ("canali", "originale"):
                 raise ValueError("acquisizione: 'canali' o 'originale'")
@@ -1961,19 +1971,29 @@ class ScanService:
         return res
 
     def _ice_kodak(self, raw, opts, numero: int):
-        """Il Digital ICE della Kodak sul grezzo (ice_kodak.py), se il rullo
-        lo chiede e la libreria c'e'. Ritorna (grezzo, opzioni): pulito e
-        senza la pulizia nostra, oppure com'era se non si e' potuto."""
-        if (self.cfg.digital_ice != "kodak" or opts.ir_strength <= 0
-                or "IR" not in raw.planes or not ice_kodak.disponibile()):
+        """Il Digital ICE scelto (config.digital_ice). Quelli della pipeline
+        si chiedono nelle opzioni (ice_motore) e li fa chi elabora, macchina
+        o elaboratore; quello della Kodak lo fa qui, sul grezzo, e se non
+        riesce si ripiega su "filmscan". Ritorna (grezzo, opzioni).
+        raw.planes non si tocca se non serve: i grezzi pigri non si
+        caricano (RawScan.load(pigro=True))."""
+        motore = self.cfg.digital_ice
+        if motore in MOTORI_PIPELINE:
+            if opts.ir_strength > 0 and opts.ice_motore != motore:
+                return raw, dataclasses.replace(opts, ice_motore=motore)
             return raw, opts
+        if motore != "kodak" or opts.ir_strength <= 0:
+            return raw, opts
+        if "IR" not in raw.planes or not ice_kodak.disponibile():
+            return raw, (dataclasses.replace(opts, ice_motore="filmscan")
+                         if "IR" in raw.planes else opts)
         try:
             with self._lock_ice:
                 nuovo, esito = ice_kodak.pulisci(raw)
         except Exception as exc:                        # noqa: BLE001
             _registro.warning("fotogramma %d: Digital ICE Kodak non usato (%s): "
-                              "Digital ICE nostro", numero, exc)
-            return raw, opts
+                              "Digital ICE filmscan", numero, exc)
+            return raw, dataclasses.replace(opts, ice_motore="filmscan")
         _registro.info("fotogramma %d: Digital ICE Kodak, %s pixel difettosi, %s s, "
                        "cambiati %s%%", numero, esito.get("difettosi"),
                        esito.get("secondi"), esito.get("cambiati_pct"))

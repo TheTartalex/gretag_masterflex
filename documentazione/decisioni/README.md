@@ -47,3 +47,4 @@ Cosa diventa più facile, cosa più difficile, cosa resta da verificare.
 | [0009](0009-pellicola-dal-dx.md) | La pellicola dal codice DX corregge il rullo da sola | 2026-10-31 | Proposta |
 | [0010](0010-collegamento-remoto.md) | Collegamento remoto attraverso GitHub | 2026-10-31 | Proposta |
 | [0011](0011-elaboratori-in-rete.md) | L'elaborazione anche sugli altri PC della rete | 2026-11-07 | Proposta |
+| [0012](0012-digital-ice-aperto.md) | Digital ICE: openICE, nkscan e la versione nostra | 2026-11-08 | Proposta |

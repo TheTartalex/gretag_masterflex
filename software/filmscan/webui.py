@@ -1769,10 +1769,13 @@ details.sez>div{padding-bottom:10px}
    <div class="nota-imp">Come il programma originale: codice DX e capture, R G B in una volta con i tempi dell'SDK; sui rulli con ICE la pulizia la fa l'SDK. Se la capture non riesce, quel fotogramma si legge un canale per volta.</div>
    <label>Digital ICE (rulli con ICE)</label>
    <select id="imp_digital_ice" onchange="impostaMacchina()">
-    <option value="kodak">della Kodak (libreria dell'SDK)</option>
-    <option value="nostro">nostro, dal canale infrarosso</option>
+    <option value="filmscan">filmscan: Digital ICE di Nikon con le nostre migliorie (consigliato)</option>
+    <option value="openice">openICE: come Nikon Scan, bit per bit</option>
+    <option value="aperto">aperto: Digital ICE di Nikon senza aggiunte</option>
+    <option value="kodak">della Kodak (libreria dell'SDK, solo su questo PC)</option>
+    <option value="semplice">semplice: soglia sull'infrarosso</option>
    </select>
-   <div class="nota-imp" id="nota_dice">Quello della Kodak lavora nell'elaborazione sul PC della macchina (circa 5 s a fotogramma, la lettura non aspetta). Se la libreria non c'è o il risultato non convince, si usa il nostro.</div>
+   <div class="nota-imp" id="nota_dice">filmscan, openICE e aperto lavorano anche sugli elaboratori della rete. Quello della Kodak solo su questo PC. Se il motore scelto non riesce (infrarosso saturo, troppa immagine cambiata) resta la pulizia semplice.</div>
    <label>Negativo lineare per altri programmi</label>
    <select id="imp_negativo_lineare" onchange="impostaMacchina()">
     <option value="">no</option>

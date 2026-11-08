@@ -73,6 +73,11 @@ class ProcessOptions:
 
     ir_strength: float = 1.0
     ir_threshold: float = 0.82
+    # Digital ICE sui piani gia' allineati, prima della maschera semplice:
+    # "aperto" e "filmscan" (ice_aperto.py), "openice" (ice_openice.py).
+    # Vuoto: solo la pulizia semplice di irclean. Gira dove gira la
+    # pipeline, quindi anche sugli elaboratori della rete.
+    ice_motore: str = ""
     auto_crop: bool = True
     auto_straighten: bool = True
     crop_margin_px: int = 0
@@ -361,6 +366,29 @@ def finiture(base: np.ndarray, opts: ProcessOptions):
     return img, extra_mask
 
 
+def _digital_ice(planes: Dict[str, np.ndarray], motore: str, dpi: int) -> Dict[str, np.ndarray]:
+    """R, G, B puliti dal motore scelto, senza IR."""
+    from .irclean import ir_senza_immagine
+    if ir_senza_immagine(planes["IR"]):
+        raise RuntimeError("canale IR saturo, senza immagine")
+    piani = [planes[c] for c in ("R", "G", "B", "IR")]
+    if motore == "openice":
+        from . import ice_openice
+        (r, g, b), _ = ice_openice.pulisci_piani(*piani, dpi=dpi)
+    elif motore in ("aperto", "filmscan"):
+        from . import ice_aperto
+        (r, g, b), esito = ice_aperto.pulisci_piani(*piani, dpi=dpi,
+                                                     migliorie=(motore == "filmscan"))
+        if float(esito.get("cambiati_pct") or 0) > 15.0:
+            raise RuntimeError("ha cambiato il %.0f%% dell'immagine" % esito["cambiati_pct"])
+    else:
+        raise RuntimeError("motore sconosciuto: %s" % motore)
+    nuovi = dict(planes)
+    nuovi.update(R=r, G=g, B=b)
+    del nuovi["IR"]
+    return nuovi
+
+
 def process(raw: RawScan, opts: ProcessOptions,
             progress: Progress = None) -> ProcessResult:
     warnings: List[str] = []
@@ -413,6 +441,20 @@ def process(raw: RawScan, opts: ProcessOptions,
         warnings.append(
             "Disallineamento oltre 2 px sui canali %s: probabile gioco meccanico "
             "nel trascinamento, da verificare sulla macchina." % ", ".join(big))
+
+    # --- 3b. Digital ICE (ice_aperto / ice_openice) ---
+    # Dopo l'allineamento: i canali si leggono uno per volta e possono
+    # essere spostati di un pixel, e il Digital ICE ricostruisce R, G e B con
+    # la stessa maschera. Riuscito, l'IR non serve piu' e la pulizia
+    # semplice (passi 4 e 7) non si fa; non riuscito, resta lei.
+    if (opts.ice_motore and opts.ir_strength > 0 and "IR" in planes
+            and all(c in planes for c in ("R", "G", "B"))):
+        _t("Digital ICE", 0.25)
+        try:
+            planes = _digital_ice(planes, opts.ice_motore, int(raw.meta.dpi or 1569))
+        except Exception as exc:                        # noqa: BLE001
+            warnings.append("Digital ICE %s non applicato (%s): pulizia semplice."
+                            % (opts.ice_motore, exc))
 
     ir = planes.get("IR")
 

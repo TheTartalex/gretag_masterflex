@@ -36,7 +36,8 @@ Alessandro: "l'operatore deve essere meno presente possibile"):
         poi una striscia: IR a x1, x0,5, x0,25, x0,125 (saturazione, se
         porta immagine), la maschera nostra, il Digital ICE della Kodak, e
         l'ipotesi da verificare: il codice DX (get_media_info) cambia i
-        tempi dell'SDK. Niente cambia nelle impostazioni.
+        tempi dell'SDK; poi lo stesso fotogramma con tutti i motori Digital
+        ICE affiancati (confronto_ice.png). Niente cambia nelle impostazioni.
 
 I rapporti vanno in software/log/collaudi/, con quelli manuali.
 """
@@ -821,6 +822,31 @@ def prova_ir(a) -> int:
             k.salva("dice_%s_dopo_%s" % (etichetta, c), dopo[y0:y0 + 600, x0:x0 + 600], fondo)
             k.salva("dice_%s_differenza_%s" % (etichetta, c), np.abs(dopo - prima), 200)
         return esito
+
+    def confronto_motori():
+        """Lo stesso fotogramma con tutti i motori Digital ICE (8/11/2026):
+        il grezzo resta nella cartella del collaudo (fotogramma_rgbi.npz,
+        striscia di prova, non di un cliente) e le immagini affiancate in
+        confronto_ice.png."""
+        from filmscan import confronto_ice, registration
+        if migliore is None:
+            raise RuntimeError("nessuna lettura IR usabile")
+        if not guadagni:
+            misura_esp()
+        piani = dict((c, np.asarray(k.leggi(c, guadagni.get(c, 1.0)), dtype=np.float32))
+                     for c in ("R", "G", "B"))
+        piani["IR"] = letti[migliore].astype(np.float32)
+        fondo = max(fondo_di(p) for p in piani.values())
+        np.savez_compressed(os.path.join(r.cartella, "fotogramma_rgbi.npz"),
+                            dpi=1569, **dict((c, p.astype(np.uint16)) for c, p in piani.items()))
+        norm = dict((c, p / fondo) for c, p in piani.items())
+        allineati, sp = registration.register_channels(norm)
+        esiti = confronto_ice.confronta(*[allineati[c] for c in ("R", "G", "B", "IR")],
+                                        dpi=1569, cartella=r.cartella)
+        esiti["spostamenti"] = dict((c, [round(v[0], 2), round(v[1], 2)]) for c, v in sp.items())
+        return esiti
+    ir_dati["confronto_motori"] = k.passo("confronto dei motori Digital ICE", confronto_motori,
+                                          tentativi=1, recupero=k.aspetta_pronto)
 
     if migliore is not None:
         ir_dati["dice_ir_buono"] = k.passo(

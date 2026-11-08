@@ -531,6 +531,13 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
   acceso, Completa e Applica in parallelo. Da provare con i PC veri: nelle
   impostazioni della riserva gli elaboratori risultano spenti
   (`elaboratori_rete: false`), vanno accesi dal pannello Macchina.
+- **Digital ICE aperto** ([decisione 0012](decisioni/0012-digital-ice-aperto.md)):
+  openICE integrato, nkscan tradotto, motore "filmscan" di serie (il
+  migliore sul banco). Manca il confronto su un negativo vero: il collaudo
+  IR ora salva il fotogramma e `confronto_ice.png` con tutti i motori.
+  Nelle impostazioni della riserva il Digital ICE è salvato come "kodak":
+  per usare filmscan va scelto in Macchina (la Kodak, se non riesce,
+  passa comunque a filmscan).
 
 ## Problemi aperti, in ordine di priorità
 

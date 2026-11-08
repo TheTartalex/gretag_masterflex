@@ -320,6 +320,14 @@ def codice_zip(software: str) -> Tuple[bytes, str]:
             if n.endswith(".py"):
                 file.append(os.path.join(base, n))
     file.append(os.path.join(software, "elaboratore.py"))
+    # openICE (Digital ICE "openice"): i binari per Windows e Linux, e la
+    # sua licenza (GPL: si danno insieme ai sorgenti, che stanno nel
+    # repository accanto)
+    terzi = os.path.join(software, "terzi", "openice")
+    for n in ("bin/openice-win32.exe", "bin/openice-linux-x86_64", "LICENSE", "LEGGIMI.md"):
+        p = os.path.join(terzi, *n.split("/"))
+        if os.path.exists(p):
+            file.append(p)
     impronta = hashlib.sha256()
     for p in file:
         impronta.update(os.path.relpath(p, software).encode())

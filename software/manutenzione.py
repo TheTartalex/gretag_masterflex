@@ -69,7 +69,8 @@ CODICE = ["filmscan", "ponte", "run.py", "selftest.py", "manutenzione.py",
           "processi.py", "collaudo_scanner.py", "collaudo_auto.py", "remoto.py",
           "riavvia.py", "certificati", "grezzo_in_tiff.py", "elaboratore.py",
           "requirements.txt", "CLAUDE.md", "README.md", "MASTERFLEX.bat",
-          "AVVIA AGENTE.bat", "GREZZO IN TIFF.bat", "ELABORATORE.bat", "ektest.exe"]
+          "AVVIA AGENTE.bat", "GREZZO IN TIFF.bat", "ELABORATORE.bat", "ektest.exe",
+          "terzi"]
 
 AVVIO_NOME = "Masterflex D1008.bat"
 # I modi di lavoro. "osservatore" e' il man in the middle: lavora il

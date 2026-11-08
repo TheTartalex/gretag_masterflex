@@ -315,12 +315,18 @@ class AppConfig:
     # Se la capture non riesce, quel fotogramma si legge un canale per volta.
     acquisizione: str = "canali"
     # Digital ICE sui rulli che lo chiedono (con "canali"):
-    #   "kodak"  la libreria della Kodak dell'SDK (DMLDICELib.dll) sui piani
-    #            R G B IR, nell'elaborazione sul PC della macchina (~5 s a
-    #            fotogramma, la lettura non aspetta); se non c'e', cade o
-    #            cambia troppo l'immagine, il nostro (ice_kodak.py)
-    #   "nostro" la pulizia dal canale IR (irclean), anche sugli elaboratori
-    digital_ice: str = "kodak"
+    #   "filmscan" il Digital ICE di Nikon ricostruito (openICE/nkscan) con
+    #              le nostre migliorie (ice_aperto.py): il migliore sul banco
+    #              di prova dell'8/11/2026; anche sugli elaboratori
+    #   "openice"  il programma openICE, bit per bit come Nikon Scan
+    #   "aperto"   la traduzione di nkscan senza aggiunte
+    #   "kodak"    la libreria della Kodak dell'SDK (DMLDICELib.dll), solo
+    #              sul PC della macchina (ice_kodak.py)
+    #   "semplice" la soglia sull'IR e la diffusione di irclean (il "nostro"
+    #              di prima)
+    # Se il motore non riesce (IR saturo, troppa immagine cambiata) resta la
+    # pulizia semplice.
+    digital_ice: str = "filmscan"
 
     # --- preferenze dell'elaborazione (pannello Preferenze) ---
     # Valgono per tutti i rulli e per le rielaborazioni, finche' non si
