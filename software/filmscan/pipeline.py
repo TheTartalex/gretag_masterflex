@@ -195,8 +195,13 @@ def _abbassa_luci(img: np.ndarray, quanto: float = 0.3) -> np.ndarray:
     return np.clip(img * (y / np.maximum(lum, 1e-6)), 0.0, 1.0).astype(np.float32)
 
 
-# rosso, verde, blu: il caldo della stampa dopo il bilanciamento automatico
-CALDO_STAMPA = np.array([1.02, 1.0, 0.97], dtype=np.float32).reshape(1, 1, 3)
+# rosso, verde, blu: il caldo della stampa dopo il bilanciamento automatico.
+# Fino al 10/11/2026 era [1,02, 1, 0,97]: il bianco automatico porta la scena
+# a grigio e toglieva anche il caldo del sole (piazza al sole, rullo 8: il
+# selciato a b -2,4, ciano). Scelto da Alessandro su cinque campioni
+# affiancati: grigi a b +1,5 (un filo di caldo) e a +0,5 (un filo di
+# magenta, contro la punta di verde), misurati sul selciato della piazza.
+CALDO_STAMPA = np.array([1.070, 0.981, 0.8815], dtype=np.float32).reshape(1, 1, 3)
 
 
 def _negativo_rgb(planes: Dict[str, np.ndarray]) -> Optional[np.ndarray]:

@@ -52,6 +52,17 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-11-10 — un filo di caldo e di magenta nella stampa
+
+- Il bianco automatico porta la scena a grigio e toglieva anche il caldo
+  del sole: la piazza al sole del rullo 8 usciva ciano (selciato a b −2,4).
+- `pipeline.CALDO_STAMPA` da [1,02, 1, 0,97] a [1,070, 0,981, 0,8815]: grigi
+  a b +1,5 e a +0,5, scelti da Alessandro su cinque campioni affiancati
+  (prima b +3 e b +6, poi b +2 con magenta +1/+2/+3).
+- Confrontati e non adottati: la conversione di Lightcraft/Film Lab, la sua
+  gamma per canale e la sua esposizione automatica (la nostra resa resta
+  migliore: più profondità, luce del sole conservata).
+
 ### 2026-11-08 — collaudo del codice DX
 
 - La lettura del DX riesce (stato SDK 1), ma il numero non si trova: dove

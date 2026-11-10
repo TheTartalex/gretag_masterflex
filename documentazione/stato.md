@@ -546,6 +546,9 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
 - **Codice DX**: si legge ma non si trova il numero nella risposta
   dell'SDK. Collaudo dedicato (`MASTERFLEX.bat` → 4 → 4) con una pellicola
   nota; poi nel rullo: DX a inizio striscia seguito da una capture senza ICE.
+- **Caldo da stampa** (10/11): grigi a b +1,5 e a +0,5 (prima −2,4 sulla piazza
+  al sole). Confrontato Lightcraft/Film Lab (conversione, gamma per canale,
+  esposizione automatica): non adottato, la nostra resa resta migliore.
 
 ## Problemi aperti, in ordine di priorità
 
