@@ -52,6 +52,15 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-11-14 — pagina che cadeva alla seconda apertura (STATUS_BREAKPOINT)
+
+- `desktop._avvia_explorer` non usa piu' `runas /trustlevel:0x20000`: quel
+  gettone ("utente di base") passa a tutto cio' che si apre dal desktop, e
+  il sandbox di Chrome non lo regge. La pagina si apriva al primo avvio
+  (aperta dall'avvio automatico) e cadeva chiusa e riaperta dal desktop.
+  Explorer ora parte da un'operazione pianificata a livello limitato
+  (`schtasks /RL LIMITED /IT`), poi cancellata; se non va, diretto.
+
 ### 2026-11-10 — un filo di caldo e di magenta nella stampa
 
 - Il bianco automatico porta la scena a grigio e toglieva anche il caldo

@@ -86,15 +86,30 @@ def collegamenti_originale() -> List[str]:
 def _avvia_explorer() -> None:
     """Explorer con i diritti normali dell'utente. Il nostro avvio
     automatico gira da amministratore: un explorer lanciato da li' sarebbe
-    amministratore anche lui (e su Windows 7 una shell cosi' da' noie con le
-    finestre degli altri programmi). runas /trustlevel lo abbassa; se non
-    c'e', lo si lancia diretto."""
+    amministratore anche lui, e tutto cio' che si apre dal desktop lo
+    sarebbe a sua volta.
+
+    Fino al 14/11/2026 lo si abbassava con runas /trustlevel:0x20000. Ma
+    quel livello ("utente di base" di SAFER) e' un gettone che il
+    sandbox di Chrome non regge: la nostra pagina, aperta da un programma
+    lanciato da quell'explorer, cadeva subito con STATUS_BREAKPOINT. Al
+    primo avvio funzionava (lo apre l'avvio automatico), chiuso e
+    riaperto dal desktop no. Ora lo si lancia con un'operazione pianificata
+    al livello limitato, che da' lo stesso gettone di un accesso normale;
+    se schtasks non c'e', lo si lancia diretto."""
     exe = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "explorer.exe")
+    nome = "Masterflex explorer"
+    zitto = dict(stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                 stdin=subprocess.DEVNULL, timeout=20)
     try:
-        subprocess.Popen(["runas", "/trustlevel:0x20000", exe],
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                         stdin=subprocess.DEVNULL)
-        time.sleep(3)
+        subprocess.call(["schtasks", "/Create", "/TN", nome, "/TR", exe, "/SC", "ONCE",
+                         "/ST", "00:00", "/RL", "LIMITED", "/IT", "/F"], **zitto)
+        subprocess.call(["schtasks", "/Run", "/TN", nome], **zitto)
+        for _ in range(10):
+            time.sleep(0.5)
+            if "explorer.exe" in _processi():
+                break
+        subprocess.call(["schtasks", "/Delete", "/TN", nome, "/F"], **zitto)
         if "explorer.exe" in _processi():
             return
     except Exception:                                   # noqa: BLE001

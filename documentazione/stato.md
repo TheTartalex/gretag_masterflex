@@ -550,6 +550,17 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
   al sole). Confrontato Lightcraft/Film Lab (conversione, gamma per canale,
   esposizione automatica): non adottato, la nostra resa resta migliore.
 
+## 14 novembre
+
+- Mattina: scanner rosso, SDK fermo nello stato 10 (niente taratura LED
+  dopo l'evento 1600); dopo spegnimento e riaccensione alle 12:13 stato 0
+  e collaudo senza pellicola eseguito.
+- La pagina cadeva con STATUS_BREAKPOINT quando il programma si riapriva dal
+  desktop: l'explorer riavviato dal ripristino del desktop girava con
+  `runas /trustlevel:0x20000`, che Chrome non regge. Corretto: explorer da
+  un'operazione pianificata a livello limitato. Da confermare: dopo
+  l'aggiornamento e un riavvio del PC, chiudere e riaprire il programma.
+
 ## Problemi aperti, in ordine di priorità
 
 1. **Motori delle guide all'avvio: RISOLTO per il 135** (28/10/2026, dalla
