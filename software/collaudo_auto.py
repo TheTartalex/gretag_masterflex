@@ -560,8 +560,10 @@ def senza_pellicola(a) -> int:
             tentativi=1, informativo=True)
     k.passo("stato dopo il DX", lambda: k.stato_sdk())
     k.passo("G dopo il DX", lambda: round(cs.misura(k.leggi("G", 0.25))["media"], 1), tentativi=1)
-    k.passo("fotogramma successivo senza pellicola (atteso: errore)",
-            lambda: k.cmd("prossimo", 60), tentativi=1, informativo=True)
+    # Niente piu' "fotogramma successivo senza pellicola" (14/11/2026): il
+    # trasporto gira a vuoto 15 s, risponde ERR_MOVE, e alla riapertura
+    # successiva dell'SDK lo scanner non finiva piu' l'inizializzazione
+    # (stato 10, evento 37509) fino a spegnere e riaccendere la Masterflex.
     k.passo("carrello in attesa della pellicola", lambda: k.cmd("carica_1", 60))
     k.passo("pellicola secondo l'SDK", lambda: k.b.pellicola_sdk())
     k.passo("video del programma originale", lambda: k.cmd("video", 60), tentativi=1)

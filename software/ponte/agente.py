@@ -109,6 +109,7 @@ MOVIMENTI = ("formato", "carica", "alimenta", "avanza", "prossimo", "precedente"
 MAX_PASSI = 300               # 3 mm: oltre non e' piu' una regolazione fine
 MAX_ALIMENTAZIONE = 15.0      # secondi di trascinamento acceso senza comandi
 COMANDO_LENTO = 30.0          # oltre, il comando finisce nel registro come lento
+ERR_MOVE = 31                 # codice SDK: il carrello non ha mosso la pellicola (sdk.py)
 
 
 # I registri stanno nella cartella del software (software/log), con quelli
@@ -475,9 +476,11 @@ class Agente(object):
             if self.esci:
                 # "esci" (riavvio dalla interfaccia): si chiude da solo, e
                 # il finally di principale() toglie il pid
+                self.azzera_prima_di_uscire()
                 self.log("chiuso su richiesta (riavvio con la versione nuova)")
                 break
             self.controlla_alimentazione()
+            self.sorveglia_avvio()
             self.pubblica_stato()
             if self.pronto_annunciato is not True and time.time() >= self._prossimo_controllo:
                 self._prossimo_controllo = time.time() + 2.0
@@ -487,6 +490,8 @@ class Agente(object):
 
     pronto_annunciato = None
     esci = False
+    avviso = ""
+    _azzerato_in_attesa = False
     _prossimo_controllo = 0.0
     _stato_pubblicato = None
 
@@ -497,7 +502,8 @@ class Agente(object):
         stato = {"pronto": self.pronto_annunciato,
                  "stato_sdk": getattr(self.s, "stato_sdk", None),
                  "pellicola_inserita": getattr(self.s, "pellicola_inserita", None),
-                 "caricato": self.caricato_alle}
+                 "caricato": self.caricato_alle,
+                 "avviso": self.avviso}
         if stato == self._stato_pubblicato:
             return
         percorso = os.path.join(self.condivisa, "stato.json")
@@ -525,11 +531,99 @@ class Agente(object):
             self.log("scanner pronto %s" % attesa)
             self.caricato_alle = time.time()
             self._inizio_attesa = None
+            # un caricamento completo vuol dire che il GateControl ha
+            # reinizializzato il carrello: l'errore di trasporto e' passato
+            self.segna_errore_carrello(None)
+            self.avviso = ""
+            self._azzerato_in_attesa = False
         else:
             self._inizio_attesa = self._inizio_attesa or time.time()
             self.log("attendo che l'SDK colleghi lo scanner (stato %s): sulla "
                      "riserva servono circa 40 s" % getattr(self.s, "stato_sdk", "?"))
         self.pronto_annunciato = pronto
+
+    # -- carrello in errore (14/11/2026) -----------------------------------
+    #
+    # Sulla riserva, ogni volta che il carrello non e' riuscito a muovere la
+    # pellicola (ERR_MOVE: fine striscia, inceppamento, trasporto a vuoto),
+    # il programma andava avanti finche' restava aperto; ma all'apertura
+    # successiva dell'SDK lo scanner non finiva l'inizializzazione: niente
+    # taratura dei LED dopo l'evento 1600, stato 10 per sempre, spia rossa,
+    # e nel programma originale l'evento 37509 (il tamburo non cambia
+    # formato). Si sbloccava solo spegnendo e riaccendendo la Masterflex
+    # (registri dell'SDK del 7/11 e del 14/11). Due difese: prima di uscire
+    # si chiede al carrello di reinizializzarsi (Gretag Reset), e all'avvio,
+    # se lo stato 10 dura troppo, lo si chiede una volta e lo si dice chiaro.
+
+    FILE_ERRORE_CARRELLO = "carrello_errore.json"
+    ATTESA_AVVIO = 180.0        # all'avvio l'SDK ci mette anche 100-150 s
+
+    def segna_errore_carrello(self, comando):
+        """Annota (comando) o toglie (None) l'errore di trasporto, in un
+        file: deve sopravvivere a una chiusura brusca e al riavvio del PC."""
+        percorso = os.path.join(self.condivisa, self.FILE_ERRORE_CARRELLO)
+        try:
+            if comando is None:
+                if os.path.exists(percorso):
+                    os.remove(percorso)
+                return
+            with open(percorso + ".tmp", "w") as f:
+                json.dump({"comando": comando, "ora": time.time()}, f)
+            os.replace(percorso + ".tmp", percorso)
+            self.log("errore di trasporto dopo '%s': prima di chiudere il carrello "
+                     "va reinizializzato" % comando)
+        except (IOError, OSError):
+            pass
+
+    def errore_carrello(self):
+        try:
+            with open(os.path.join(self.condivisa, self.FILE_ERRORE_CARRELLO)) as f:
+                return json.load(f)
+        except (IOError, OSError, ValueError):
+            return None
+
+    def _azzera(self, perche):
+        self.log("Gretag Reset: %s" % perche)
+        try:
+            self.s.reset()
+            self.log("Gretag Reset mandato: il carrello si reinizializza")
+            return True
+        except Exception as e:
+            self.log("Gretag Reset rifiutato: %s" % e)
+            return False
+
+    def azzera_prima_di_uscire(self):
+        if not self.motori or not self.errore_carrello():
+            return
+        if self.s.pronto():
+            self._azzera("c'e' stato un errore di trasporto, lo si toglie prima di chiudere")
+
+    def sorveglia_avvio(self):
+        """Lo stato 10 che non finisce: un tentativo di Gretag Reset dopo
+        ATTESA_AVVIO, poi l'avviso di spegnere e riaccendere."""
+        if self.pronto_annunciato is not False or not self._inizio_attesa:
+            return
+        attesa = time.time() - self._inizio_attesa
+        if attesa < self.ATTESA_AVVIO:
+            return
+        errore = self.errore_carrello()
+        dopo = (" (l'ultima volta il trasporto aveva dato errore alle %s)"
+                % time.strftime("%d/%m %H:%M", time.localtime(errore.get("ora", 0)))
+                if errore else "")
+        if not self._azzerato_in_attesa:
+            self._azzerato_in_attesa = True
+            self.avviso = ("lo scanner non finisce l'inizializzazione da %.0f s%s: "
+                           "provo a reinizializzare il carrello" % (attesa, dopo))
+            self.log(self.avviso)
+            if self.motori:
+                self._azzera("stato %s da %.0f s" % (getattr(self.s, "stato_sdk", "?"), attesa))
+            self._inizio_attesa = time.time()
+            return
+        if not self.avviso.startswith("lo scanner resta"):
+            self.avviso = ("lo scanner resta fermo (stato 10, carrello in errore)%s: "
+                           "controllare che non ci sia pellicola nel carrello, poi "
+                           "spegnere e riaccendere la Masterflex (scanner e carrello)" % dopo)
+            self.log(self.avviso)
 
     def giro(self):
         """Esegue i comandi in attesa.
@@ -564,6 +658,8 @@ class Agente(object):
                 esito = "errore %s" % e
             except Exception as e:
                 esito = "errore %s" % e
+                if any(c[0] == ERR_MOVE for c in getattr(e, "codici", None) or ()):
+                    self.segna_errore_carrello(comando)
                 # Gli errori dell'SDK (ErroreScanner, con i codici) sono gia'
                 # completi nella riga di esito: il traceback serve solo per
                 # gli errori nostri.

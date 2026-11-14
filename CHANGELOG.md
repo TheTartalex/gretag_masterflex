@@ -52,6 +52,22 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-11-14 — carrello in errore dopo un errore di trasporto
+
+- Registri dell'SDK del 7/11 e del 14/11: dopo ogni ERR_MOVE (il carrello
+  non muove la pellicola) l'apertura successiva dell'SDK restava nello stato
+  10, senza taratura dei LED, fino a spegnere e riaccendere la Masterflex;
+  il programma originale lo chiama evento 37509 (il tamburo non cambia
+  formato). Sulla riserva si e' trovato staccato C8, il tantalio da 10 µF
+  35 V accanto al pilota motori L293DD della scheda del carrello.
+- Agente: l'ERR_MOVE si annota in `ponte/carrello_errore.json`; prima di
+  uscire, se c'e', manda il Gretag Reset; all'avvio, dopo 180 s nello stato
+  10, un Gretag Reset e poi l'avviso di spegnere e riaccendere, che
+  l'interfaccia mostra accanto allo stato (`avviso` in `stato.json`).
+- Collaudo senza pellicola: tolto il "fotogramma successivo senza
+  pellicola", che faceva girare il trasporto a vuoto e lasciava il carrello
+  in errore.
+
 ### 2026-11-14 — pagina che cadeva alla seconda apertura (STATUS_BREAKPOINT)
 
 - `desktop._avvia_explorer` non usa piu' `runas /trustlevel:0x20000`: quel

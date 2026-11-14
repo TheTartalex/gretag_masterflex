@@ -365,6 +365,18 @@ class ScanService:
         self.job.message = msg
         self.job.progress = float(max(0.0, min(1.0, frac)))
 
+    def avviso_agente(self) -> str:
+        """L'avviso dell'agente (stato.json), come lo scanner che non finisce
+        l'inizializzazione: si legge anche prima della connessione, che e'
+        proprio quando serve. Solo col ponte dell'SDK."""
+        if self.cfg.driver != "sdk":
+            return ""
+        try:
+            with open(os.path.join(self.cfg.bridge_path, "stato.json")) as f:
+                return str(json.load(f).get("avviso") or "")
+        except (IOError, OSError, ValueError, AttributeError):
+            return ""
+
     def stato(self) -> Dict[str, object]:
         st = None
         if self.backend is None and self.attesa_connessione:
@@ -376,6 +388,9 @@ class ScanService:
                       "fuoco_mm": round(s.focus_mm, 4), "messaggio": s.message}
             except Exception as exc:                    # noqa: BLE001
                 st = {"connesso": False, "messaggio": str(exc)}
+        avviso = self.avviso_agente()
+        if avviso:
+            st = dict(st or {"connesso": False, "messaggio": "non connesso"}, avviso=avviso)
 
         calib = None
         if self.calib is not None:

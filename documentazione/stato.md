@@ -560,6 +560,22 @@ qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.
   `runas /trustlevel:0x20000`, che Chrome non regge. Corretto: explorer da
   un'operazione pianificata a livello limitato. Da confermare: dopo
   l'aggiornamento e un riavvio del PC, chiudere e riaprire il programma.
+- **Scanner rosso dopo un errore di trasporto.** Ogni ERR_MOVE (7/11
+  17:12, 18:13, 19:03; 14/11 12:17 nel collaudo, trasporto a vuoto) e'
+  seguito da aperture dell'SDK ferme nello stato 10 finche' non si spegne la
+  Masterflex; il programma originale dice 37509 (tamburo che non cambia
+  formato). Trovato staccato **C8** (tantalio 10 µF 35 V, accanto all'L293DD
+  e al connettore d'alimentazione P4) sulla scheda del carrello: da
+  risaldare o sostituire, polarita' "+" a destra. Nel software: Gretag Reset
+  prima di uscire dopo un ERR_MOVE, Gretag Reset e avviso dopo 180 s nello
+  stato 10, passo tolto dal collaudo. Da provare: dopo la riparazione, un
+  rullo fino a fine striscia, chiudere e riaprire; nei registri dell'agente
+  cercare "Gretag Reset".
+- Etichetta del carrello (SN 60210, imager 1488): "Defective Column Data"
+  scritte a mano, da trascrivere con una foto nitida e usare per le colonne
+  difettose.
+- Sensore intero: l'SDK rifiuta ogni rettangolo oltre 2100x1400 (46/47/42):
+  si resta sulla finestra del formato.
 
 ## Problemi aperti, in ordine di priorità
 

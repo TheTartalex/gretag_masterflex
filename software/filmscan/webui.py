@@ -2852,7 +2852,11 @@ function mostraStato(s){
     /* Se i fotogrammi sono finti bisogna che si veda sempre, non solo la
        prima volta: e' l'unica differenza che conta fra una prova e un rullo
        del cliente. */
-    (finto ? ' <b style="color:var(--avviso)">· SIMULAZIONE</b>' : '');
+    (finto ? ' <b style="color:var(--avviso)">· SIMULAZIONE</b>' : '') +
+    /* lo scanner che non finisce di avviarsi (carrello in errore): l'agente
+       lo dice dopo 3 minuti, e va letto da chi guarda lo schermo */
+    (m && m.avviso ? ' <b style="color:var(--avviso)">· '+
+        String(m.avviso).replace(/[<>&]/g,'')+'</b>' : '');
   /* Il menu del collegamento deve dire come stanno le cose, non ripartire
      ogni volta dalla prima voce: e' il modo migliore per far scegliere a
      qualcuno un backend diverso da quello con cui il server e' partito. */
