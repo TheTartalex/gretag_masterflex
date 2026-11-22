@@ -52,6 +52,26 @@ Le versioni del driver sono quelle scritte nell'`.inf` (`DriverVer`).
 
 ## filmscan
 
+### 2026-11-22 — documentazione per la distribuzione
+
+- `README.md` riscritto per chi arriva da fuori: cosa fa, schermate
+  (`documentazione/immagini/`, fatte con lo scanner simulato), stato, cosa
+  serve, installazione, prova senza macchina, licenze, marchi.
+- Tolti i documenti superati: `documentazione/filmscan/installazione.md`
+  (settembre) e `documentazione/piano-lavori.md` (piano di settembre, fatto o
+  superato). La regola 3 dei documenti ora dice di correggere o togliere: la
+  storia resta in git e qui.
+- `stato.md` ridotto allo stato di oggi (problemi aperti, prossimi passi,
+  avvertenze); la cronaca giorno per giorno resta in questo registro.
+- Numeri delle voci del menu aggiornati ovunque (guida per l'operatore,
+  decisioni, carrello, strumenti, LEGGIMI dell'installer); guida, ponte,
+  archivio e `software/README.md` allineati al programma di oggi;
+  `software/CLAUDE.md` senza le sezioni superate.
+- `software/terzi/nkscan/`: la licenza MIT di nkscan, di cui
+  `ice_aperto.py` è la traduzione.
+- Controllo prima della pubblicazione: nessuna chiave, token, password o
+  dato personale nel codice né nella storia.
+
 ### 2026-11-14 — carrello in errore dopo un errore di trasporto
 
 - Registri dell'SDK del 7/11 e del 14/11: dopo ogni ERR_MOVE (il carrello

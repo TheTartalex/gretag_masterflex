@@ -1,11 +1,10 @@
 # Il ponte: la macchina originale, la nostra interfaccia
 
-> Scritto il 3 settembre 2026, decisione in
-> [0001](../decisioni/0001-ponte-sdk-originale.md). **Aggiornamento di
-> ottobre:** dove qui si dice che `EKframe.sys` del 2001 si carica su Windows 7
-> a 32 bit, vale per la produzione ma non per la riserva. Lì serve il driver
-> nuovo [EKframePnP](../../driver/EKframePnP/), con la stessa interfaccia.
-> L'agente e l'SDK non cambiano.
+> Decisione in [0001](../decisioni/0001-ponte-sdk-originale.md). Sulla
+> macchina di produzione resta il driver Kodak `EKframe.sys`; sulla riserva,
+> dove quello non funziona, c'e' [EKframePnP](../../driver/EKframePnP/), con
+> la stessa interfaccia. L'agente e l'SDK non cambiano. Aggiornato il
+> 22/11/2026.
 
 ## Il problema, detto senza giri
 
@@ -131,9 +130,10 @@ monitor del PC e' scomodo e a volte lontano; il tablet no.
 
 stampa l'indirizzo vero da aprire, non "localhost":
 
-    http://192.168.1.42:8080/?t=Xk3p9wQ
+    http://192.168.1.42:8080/?t=90780016
 
-Il token nell'indirizzo e' la sola chiave, e cambia a ogni avvio. `MASTERFLEX.bat`
+Le otto cifre sono il PIN, e cambiano a ogni avvio (le postazioni fisse
+possono avere un PIN fisso: vedi la guida per l'operatore). `MASTERFLEX.bat`
 prova anche ad aprire la porta 8080 sul firewall di Windows, che e' la ragione
 per cui nove volte su dieci il tablet non si collega; per riuscirci vuole
 "Esegui come amministratore" la prima volta.
@@ -166,55 +166,32 @@ modo migliore per la primissima prova**: se risponde, la catena
 PC-driver-scheda-macchina e' viva, e lo si sa in cinque minuti senza scrivere
 niente.
 
-## Cosa e' gia' pronto e cosa no
+## Com'e' oggi (novembre 2026)
 
-Pronto e collaudato in simulazione, dall'inizio alla fine:
+L'agente gira sulla macchina di riserva e comanda la macchina vera: rulli
+interi a strisce, calibrazione, autofocus del carrello, esposizione per
+canale, pressore, codice DX, video per il posizionamento a mano.
 
-- `ponte/sdk.py` — collegamento all'SDK: 40+ metodi, `scan_raw` con esposizione,
-  backup del Parameter Flash, lettura degli ingressi digitali
-- `ponte/agente.py` — l'agente per il PC originale, senza dipendenze, con
-  modalita' `--simula` per provare tutto senza la macchina
-- `filmscan/hal.py` — `PonteSdkBackend`: il lato nostro
-- `config.py` — geometria ottica corretta sui valori veri
+- **Canali**: R, G e B si leggono con `scan_raw`; anche l'infrarosso si
+  legge, e serve al Digital ICE. Il suo livello d'esposizione si tara col
+  collaudo dell'infrarosso (`MASTERFLEX.bat`, voce 4 → 3).
+- **Fotogrammi e fine striscia** li gestisce il carrello Gretag
+  (`gretag_NextFrame`, `ERR_MOVE` a fine striscia): non servono i sensori
+  digitali mappati a mano.
+- **Movimenti fini**: `regola_<passi>` passa da `frame_detect_fine_adjust`,
+  al massimo 300 passi.
+- **Simulazione**: `agente.py --simula` risponde come la macchina, per
+  provare tutto senza.
 
-La catena e' stata provata per intero con l'agente simulato: comando, risposta,
-fotogramma 2100x1400 a 16 bit consegnato alla pipeline, blocchi ridotti per la
-calibrazione. Quello che manca e' la macchina.
+Problemi aperti e prove da fare stanno in [stato.md](../stato.md).
 
-Da scoprire sulla macchina, e sono tutte cose che si vedono guardandola:
+## Prima di collegare una macchina nuova
 
-- i valori numerici di `ColorChannel` (R, G, B, e se l'IR sia il 3)
-- quale numero di `diag_input` e' il sensore d'ingresso e quale quello d'uscita
-- segno e scala di `regola_<passi>`: che +100 passi siano davvero +1 mm nel verso
-  giusto si controlla in un minuto, guardando la pellicola
-
-Finche' i sensori non sono mappati, il backend **dichiara che non sono
-disponibili** invece di restituire due booleani inventati, e l'espulsione
-automatica resta disattivata. E' voluto: meglio una funzione che manca di una
-che mente.
-
-## Una nota sull'infrarosso
-
-`N_CHANNELS` nell'SDK vale 3: il percorso dati principale e' R, G, B. L'IR sulla
-macchina c'e' — in `Scanner\Bin` siedono `DMLDICELib.dll` e `AIDToolkit.dll`,
-cioe' Digital ICE, che dell'infrarosso vive. Quindi il canale esiste ma passa da
-un'altra parte.
-
-Prima cosa da provare: `ColorChannel = 3` su `scan_raw`. Se risponde, abbiamo
-l'IR grezzo e la nostra pulizia difetti funziona come progettata. Se non
-risponde, l'IR va cercato dentro `DMLDICELib.dll`, ed e' un capitolo a parte.
-
-## Prima di collegare tutto
-
-L'ordine giusto per la prima volta, senza scorciatoie:
-
-1. **Percorso pellicola vuoto.** Il manuale di servizio lo ripete in maiuscolo:
-   i test muovono i motori e una pellicola dentro viene distrutta.
-2. **`DMLCmdTransfer 1`** (timer tick test): la catena e' viva?
-3. **`python agente.py --condivisa C:\ponte --simula`**: il protocollo gira?
-4. Solo allora l'agente vero, e come primo comando `flash_backup`.
-
-Il backup del Parameter Flash prima di ogni altra cosa. Dentro ci sono la length
-calibration, gli offset XY e le posizioni di fuoco dei tre formati: tarature
-fatte una volta sola da un tecnico, con pellicole di prova che oggi non si
-comprano piu'. Se si perdono, non si rifanno.
+1. **Percorso pellicola vuoto.** Il manuale di servizio lo ripete in
+   maiuscolo: i test muovono i motori e una pellicola dentro si rovina.
+2. **Backup del Parameter Flash**, dal programma di servizio del carrello.
+   Dentro ci sono la length calibration, gli offset XY e le posizioni di
+   fuoco dei tre formati: tarature fatte una volta sola da un tecnico, con
+   pellicole di prova che oggi non si comprano piu'. Se si perdono, non si
+   rifanno.
+3. Firmware del carrello alla 1.15 (voce 5), poi i collaudi (voce 4).

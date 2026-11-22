@@ -14,8 +14,14 @@ richiesta del PIN.
 e giorni trascorsi. Ricerca per cliente. Aprendone uno si vedono i rulli, i
 provini di ogni fotogramma, e quanto occupa.
 
-**Consegnare.** Un solo file zip con le foto esportate, o con i grezzi, o con
-tutto. Lo zip non e' compresso di proposito: i TIFF a 16 bit di un rullo pesano
+**Consegnare.** Si tocca un rullo e si apre la sua consegna: formato
+(JPEG, JPEG per WhatsApp, TIFF, negativi lineari), positivi, provino. Si
+consegna il rullo da solo o l'ordine intero. Le impostazioni dell'archivio
+(cartella di rete, conservazione) stanno nel cassetto della chiave inglese, in
+alto; cliente, telefono ed eliminazione dell'ordine in fondo alla pagina.
+
+Lo zip della consegna e' un solo file con le foto esportate, o con i grezzi, o
+con tutto. Lo zip non e' compresso di proposito: i TIFF a 16 bit di un rullo pesano
 centinaia di megabyte e comprimerli su un PC del 2009 vuol dire lasciare
 l'operatore ad aspettare per guadagnare poco. Serve a fare **un** file da
 copiare, non a risparmiare spazio.

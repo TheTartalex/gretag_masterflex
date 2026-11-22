@@ -18,7 +18,7 @@ Il problema delle guide all'avvio è comparso dopo.
 ## Decisione
 
 La versione richiesta è la **1.15**, per master e slave. `manutenzione.py
-firmware` (voce 13 del menu) la controlla e segnala sia la versione attuale
+firmware` (voce 5 del menu) la controlla e segnala sia la versione attuale
 sia quella che il programma originale imporrebbe al prossimo avvio. Con i
 file della 1.15 li mette in `AutomaticUpdate\` e porta l'ini a
 `UpdateToVersion=00000073`.
@@ -60,7 +60,7 @@ Conseguenze, da qui in poi:
 - `Capri1FirmwareVersion.ini` deve restare a `UpdateToVersion=00000073`
   con i file della 1.15 in `AutomaticUpdate\`: se torna a chiedere la 1.13,
   il programma originale la riscarica da solo al primo avvio (come il
-  2/8/2025 e l'8/4/2003) e il problema torna. Il controllo è la voce 13 di
+  2/8/2025 e l'8/4/2003) e il problema torna. Il controllo è la voce 5 di
   `MASTERFLEX.bat`.
 - Sulla produzione, quando sarà il momento: controllare versione e ini del
   carrello prima di tutto il resto.

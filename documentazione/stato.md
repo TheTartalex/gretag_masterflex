@@ -1,676 +1,106 @@
 # Stato del progetto
 
-**Aggiornato al 7 novembre 2026.** Questo è il documento da aggiornare a fine
-di ogni sessione di lavoro: stato, problemi aperti e prossimi passi stanno
-qui, e solo qui. Il piano a lungo termine sta in [piano-lavori.md](piano-lavori.md).
+**Aggiornato al 22 novembre 2026.** Questo è il documento da aggiornare a
+fine di ogni sessione di lavoro: stato, problemi aperti e prossimi passi
+stanno qui, e solo qui. Cosa è cambiato e quando sta nel
+[CHANGELOG](../CHANGELOG.md); il perché delle scelte in
+[decisioni/](decisioni/).
 
 ## Macchine
 
 | Macchina | Ruolo | Note |
 |---|---|---|
-| Server di produzione | **non si tocca** finché non c'è un pacchetto completo provato | Win7 x86, driver originale `EKframe.sys` |
-| Macchina di riserva | **banco di prova** | fisicamente identica alla produzione: server IBM del 2007, Win7 SP1 x86 (build 7601), 4 GB, CPU **senza AVX**, con la sua scheda IAQ e il suo scanner (matricola 60210). Python 3.8 a 32 bit. Si comanda da AnyDesk. |
-| PC di sviluppo | sviluppo | Windows a 64 bit, nessun WDK 7.1: il driver si compila su Linux (vedi [decisione 0004](decisioni/0004-compilazione-mingw-linux.md)) |
+| Server di produzione | **non si tocca** finché la riserva non ha provato tutto, immagini comprese | Win7 x86, driver originale `EKframe.sys` |
+| Macchina di riserva | **banco di prova** | fisicamente identica alla produzione: server IBM del 2007, Win7 SP1 x86, 4 GB, CPU **senza AVX**, scheda IAQ e scanner (matricola 60210). Si comanda da AnyDesk; si aggiorna da sola dal ramo `main` |
+| PC di sviluppo | sviluppo | Windows a 64 bit, senza WDK 7.1: il driver si compila su Linux ([decisione 0004](decisioni/0004-compilazione-mingw-linux.md)) |
 
 ## Componenti
 
 | Componente | Dove | Stato |
 |---|---|---|
-| Driver **EKframePnP 2.1** | [`driver/EKframePnP/`](../driver/EKframePnP/) | **funziona sulla riserva**: la scheda si avvia e il software la riconosce |
-| Software **filmscan** | [`software/`](../software/) | provato con l'agente simulato; installer unico `INSTALLA.bat`; **da provare sulla riserva** |
-| Carrello **Capri** (COM5) | [carrello-capri.md](hardware/carrello-capri.md) | firmware **1.15** dal 26/10/2026 sulla riserva ([decisione 0006](decisioni/0006-firmware-carrello-1.15.md)) |
-
-## Fatto il 26 ottobre
-
-- **filmscan nel repository**, ripulito: niente compilati, database di
-  prova, wheel, doppioni di documentazione, interfaccia tkinter e backend
-  inutilizzati.
-- **Errori corretti** (provati con l'agente simulato, Python 3.8.20 e numpy
-  1.22.4):
-  - il passaggio al fotogramma successivo usava la regolazione fine per 38 mm
-    (`regola_3800`): ora usa il comando dell'SDK *advance_one_frame*;
-  - nessun limite ai movimenti: ora al massimo 3 mm per comando e 300 passi
-    nell'agente, e i tasti di movimento sono bloccati durante un lavoro;
-  - **dopo ogni calibrazione tutte le scansioni fallivano**: la
-    calibrazione era a 524 pixel, le scansioni a 2100;
-  - dark e flat erano lo stesso fotogramma, perché l'SDK non spegne la
-    lampada, e flat − dark veniva quasi zero: **immagini rovinate**;
-  - i metadati portavano 2000–4000 dpi invece di 1569, e il ritaglio
-    automatico sbagliava;
-  - comandi e risposte del ponte si potevano leggere a metà;
-  - l'errore dell'SDK stampava un indirizzo invece dei codici;
-  - il formato del carrello non veniva mai selezionato;
-  - numpy 1.24.4 in `requirements.txt` (ora 1.22.4 con impronte).
-- **MASTERFLEX.bat**: un solo file con menu. Scarica e installa da solo
-  Python 3.8.10 a 32 bit e le librerie giuste, e fa aggiornamento, avvio
-  automatico, collaudi, diagnosi, pacchetto offline e controllo del firmware
-  ([decisione 0005](decisioni/0005-masterflex-bat-unico.md)).
-- **Collaudi dello scanner** (`collaudo_scanner.py`): colori e intensità,
-  trascinamento a mano con lettura dei sensori, trascinamento comandato con
-  verso e scala misurati sull'immagine.
-- **Pacchetto CapriFirmware analizzato**: protocollo COM5, errori, selftest,
-  firmware, backup del flash. Vedi [carrello-capri.md](hardware/carrello-capri.md).
-- **Firmware del carrello disassemblato e backup del flash decodificati**
-  (sera):
-  - trovati l'algoritmo dello zero, i limiti di passi e le fotocellule;
-  - trovato il formato del flash e il vero significato dei flag;
-  - `SelfTestInterface` nel pacchetto è sulla COM1: il menu ora lo porta
-    sulla COM5 da solo;
-  - la voce 13 mostra flag, matricola e posizioni salvate.
-
-- **Prima diagnosi dalla riserva** (16:52), con questi risultati:
-  - i due collaudi si sono fermati alla connessione, perché l'agente era
-    chiuso dalle 16:49;
-  - il rapporto non lo diceva, e l'agente non aveva lasciato registri in
-    `ponte\log`;
-  - `AGGIORNA.bat` non aggiornava `collaudo_scanner.py` (mancava nella lista
-    `CODICE`).
-
-  Corretto: l'errore va nel rapporto; la diagnosi mostra lo stato della
-  cartella del ponte e gli ultimi collaudi; lo zip porta `ektest.exe`;
-  `prepara.sh` controlla la lista.
-
-- **Prima prova dell'agente sulla riserva** (17:11), con i codici decifrati
-  in `scn_dll.dll` ([api-sdk.md §7](software-originale/api-sdk.md#7-errori-e-stati-dellsdk)):
-  - `get_gate_type` ha dato `ERR_NO_SCANNER` e `ERR_ILLEGAL_IN_THIS_STATE`
-    con lo stato 10;
-  - `scan_raw` ha dato `ERR_CANCEL_DETECTED`;
-  - alle 17:11:28 è arrivato `EV_STATE_CHANGE` da 10 a 0.
-
-  **Causa**: dopo l'apertura l'SDK collega lo scanner in sottofondo, per
-  circa 40 s, e in quel tempo (stato 10) rifiuta i comandi. Il collaudo era
-  partito prima. Ora l'agente segue lo stato, rifiuta i comandi con un
-  messaggio chiaro finché non è pronto e scrive "scanner pronto dopo N s";
-  il ponte aspetta fino a 120 s.
-
-  Che anche `ERR_CANCEL_DETECTED` venga dallo stato 10 è da confermare
-  rifacendo il collaudo a scanner pronto.
-
-- **Diagnosi completa delle 17:35** sulla riserva:
-  - **il programma originale acquisisce immagini con EKframePnP**: alle
-    17:03 il log dell'SDK mostra decine di `xfer: image complete ... ok=1`
-    in RGB 2100x1400. Driver, DMA e testa di scansione funzionano;
-  - **il carrello è tornato alla 1.15** (backup delle 16:59), con l'ini che
-    ora la chiede;
-  - l'agente aspetta lo scanner pronto (39 s);
-  - `scan_raw` falliva per colpa nostra: passavamo `x, y, larghezza,
-    altezza`, mentre l'SDK vuole colonne inizio–fine e righe inizio–fine,
-    a partire dall'offset XY del formato. L'originale usa `[47,76] to
-    [2146,1475]`, noi mandavamo `[0,2100] to [0,1400]`, e il firmware
-    rispondeva "set resolution failed, ErrNo = 1". Corretto
-    ([api-sdk.md §7](software-originale/api-sdk.md#7-errori-e-stati-dellsdk));
-  - `regola` (`frame_detect_fine_adjust`) a percorso vuoto risponde
-    `ERR_ILLEGAL_IN_THIS_STATE`. È normale: tutti i `frame_detect_*` sono
-    vietati nello stato 0 e servono con la pellicola caricata.
-
-- **Prime immagini grezze dallo scanner vero** (17:45–17:52): `scan_raw`
-  con la finestra corretta dà R, G e B a 2100x1400 in circa 1,2 s a
-  canale. La calibrazione è passata.
-- **Il carrello non accettava la pellicola**: `select_film_format` sceglie
-  il formato nell'SDK ma non arma il carrello. Il programma originale
-  chiama anche `set_scanner_input_mode`, con modo 1 o 2 (`PhxScanner.exe`
-  `0x447860`), che per il Gretag diventa il ChangeFilmFormat del
-  GateControl: guide al formato e carrello in attesa (`scn_dll`
-  `0x18037FA0`).
-
-  Nuovo tasto **Carica** nella barra (agente: `carica_1`). L'agente annota
-  anche l'evento `EV_FILM_INSERTED`. Quale dei modi 1 e 2 sia il rullo
-  intero va visto sulla macchina.
-
-- **Collaudo colori sullo scanner vero (18:08)**: le immagini erano al
-  livello del buio (media 19 su R, G e B) e non cambiavano con
-  l'esposizione. Ci sono due cause possibili, e vanno provate tutte e due:
-  1. `scan_raw` veniva chiamato con il booleano a `True`, cioè il bit
-     `0x80` del comando, che con ogni probabilità vuol dire lettura al buio
-     (tutte le acquisizioni d'immagine dell'SDK lo passano `False`).
-     Corretto;
-  2. il **tamburo dei formati** fermo fra due posizioni davanti alla luce
-     (segnalato da Alessandro). Prima del collaudo si preme **Carica**, che
-     porta tamburo e guide al formato.
-
-  Il salvataggio delle PNG del collaudo era tanto lento da sembrare
-  bloccato: ora a metà lato e con compressione minima, meno di 5 s.
-
-- **Collegamento "programma originale"**: voce 14 di `MASTERFLEX.bat` e
-  `ponte/osservatore.py`. Il programma originale scansiona, l'osservatore
-  copia le immagini grezze e filmscan le elabora nel rullo
-  ([decisione 0007](decisioni/0007-osservatore-programma-originale.md)).
-  - Provato qui: indirizzi sulla `scn_dll.dll` della macchina; immagini
-    finte che diventano fotogrammi del rullo.
-  - **Non provato** su Windows: l'aggancio al processo.
-  - Da verificare con le prime immagini: l'ordine dei piani R, G, B.
-
-- **Lettura vuota dopo il carico (sera)**: la pellicola entrava, ma la
-  finestra era sulla coda iniziale, non su un fotogramma. Nuovi comandi:
-  - **Fotogramma ›** nella barra e **‹ / ›** nella scheda Macchina:
-    `gretag_NextFrame` / `gretag_PreviousFrame`, il carrello cerca il
-    fotogramma. Procedura: Carica → inserire → Fotogramma › finché c'è un
-    fotogramma in finestra → Anteprima;
-  - **Espelli** (barra) e **Espelli davanti / Espelli retro** (scheda
-    Macchina). Davanti è il comando di espulsione del carrello, che esce
-    dal davanti perché il flag 5 è a 0. Retro è "fotogramma successivo"
-    ripetuto finché il carrello rifiuta, al massimo 45 fotogrammi o 180 s
-    ([api-sdk.md §7](software-originale/api-sdk.md#7-errori-e-stati-dellsdk)).
-    A rullo finito filmscan espelle dal retro
-    (`verso_espulsione_fine_rullo`);
-  - l'**anteprima** non fa più ritaglio e raddrizzamento automatici, la
-    parte più lenta. Si fanno nella scansione del rullo.
-
-  Da vedere sulla macchina: che errore dà l'SDK quando la pellicola è
-  uscita dal retro (lo scrive il registro dell'agente).
-
-- **Primo rullo vero, 20 fotogrammi (19:00)**: il trasporto va, G a x1 si
-  legge (2100x1400 in 1,4–2,3 s), ma **ogni R a x12 è rifiutato** dal
-  firmware della testa (46/47/42, come per la finestra sbagliata), quindi
-  nessun fotogramma completo. Il x12 veniva dalla misura dell'esposizione
-  fatta sulla coda iniziale annerita, non su un'immagine. Dopo il
-  ventesimo, `prossimo` risponde **`ERR_MOVE` (31)**: è la fine della
-  striscia. Correzioni:
-  - il ponte impara il limite dell'esposizione: al rifiuto dimezza e
-    riprova, poi non chiede più di così. Nei metadati va l'esposizione
-    usata davvero. L'SDK da solo taglia a 30000 unità per R, G e B
-    (`0x1807C710`); il limite del firmware va misurato, si sa solo che x1
-    va e x12 no;
-  - una misura sotto il 3% della luce non vale: si resta a x1 e lo si dice;
-  - `ERR_MOVE` sul fotogramma successivo chiude il rullo come fine striscia;
-  - con l'SDK la fine striscia la dice il carrello: niente più lettura di
-    prova in G a ogni fotogramma;
-  - **fotogrammi vuoti** (non esposti o tutti opachi, anche 3–4 in mezzo
-    alla striscia): sotto 0,10 D di escursione il fotogramma si salta, si
-    segna "vuoto" nella striscia e il grezzo si conserva comunque.
-
-  Le immagini di quel rullo non si recuperano: il solo G letto stava in
-  memoria, e un fotogramma si salva solo a canali completi.
-
-  Da vedere: dove finisce la pellicola dopo `ERR_MOVE` (l'espulsione dal
-  retro a quel punto risponde subito `ERR_MOVE` anche lei), e come si
-  comporta il carrello sui fotogrammi non esposti.
-
-- **Avvio e modi di lavoro** ([decisione 0008](decisioni/0008-avvio-automatico-e-modi.md)):
-  - avvio automatico dall'Utilità di pianificazione, da amministratore e
-    senza richieste; parte con l'ultimo modo usato;
-  - modo **completo**: chiude tutto ciò che parte da `C:\MasterflexD`
-    (solo prima di avviare l'agente), poi agente e interfaccia, che si
-    connette da sola a scanner pronto;
-  - modo **man in the middle**: non chiude niente, niente agente, aspetta
-    `PhxScanner.exe` e apre osservatore e interfaccia già connessa;
-  - **calibrazione obbligatoria ogni giorno**: senza una calibrazione di
-    oggi anteprima e scansione si rifiutano;
-  - **azzeramento dei motori** come primo passo della calibrazione:
-    `ResetScanner` dell'SDK, che manda al GateControl la richiesta 14,
-    "Gretag Reset" (`0x18038100`, da `call_gretag_reset` `0x18079510`).
-    Il programma originale non la chiama: la fa il GateControl quando
-    parte. Con l'agente a motori bloccati si salta. Lo zero lo fa il
-    firmware del carrello, con i suoi limiti (750 passi in avanti, 200
-    indietro per le guide).
-
-  Da provare sulla riserva, nell'ordine:
-  1. `python processi.py`, per vedere cosa verrebbe chiuso;
-  2. voce 9, poi "prova adesso";
-  3. Calibra a motori attivi, guardando le guide.
-
-- **Esposizione, pressore, Digital ICE, video** (sera):
-  - scheda Macchina, *Impostazioni macchina*:
-    - **esposizione automatica**: tempi calibrati dell'SDK (`calibrate_all`
-      dentro Calibra, poi `get_exp_time`) più la misura per canale; spenta,
-      tempi di fabbrica e x1. La calibrazione ricorda con quale base è stata
-      fatta: cambiandola va rifatta;
-    - **pressore automatico** (acceso di serie): giù per ogni lettura, su
-      prima di muovere. Se non si rialza, il rullo si ferma
-      (`PressoreBloccato`);
-    - **avanzamento automatico**: spento, ogni fotogramma si mette in
-      finestra a mano;
-    - temperatura della testa a richiesta;
-  - **Digital ICE** si sceglie alla creazione del rullo: ASF dell'SDK più la
-    nostra pulizia IR, che però resta spenta finché l'IR dell'SDK non è
-    verificato;
-  - **posizionamento a mano con video** (verde a 262x175, ~1 immagine al
-    secondo), passi da 1 e 20 mm. Si apre da solo se il carrello non trova
-    il fotogramma, o ad avanzamento automatico spento;
-  - **numeri dal bordo**: campo e riordino a fine rullo pronti; la lettura
-    no (vedi api-sdk.md §8).
-
-  Da provare sulla macchina, nell'ordine:
-  1. Calibra con l'esposizione automatica: deve comparire "Calibrazione
-     della macchina fatta". Poi il collaudo colori: i livelli cambiano?
-  2. Il pressore durante l'anteprima: si sente scendere e salire?
-  3. Il verso e la scala dei passi da 1 e 20 mm nel video.
-  4. Un rullo con Digital ICE: cosa cambia con l'ASF acceso.
-
-- **Autofocus, video della macchina, finestre Gretag, LUT** (notte):
-  - **autofocus a scelta** in *Impostazioni macchina*: `gi_focus` con
-    ricerca completa (di serie), ricerca breve, lente alla posizione
-    nominale, spento. Si fa sul primo fotogramma di ogni striscia, col
-    pressore giù, e col tasto Fuoco; se fallisce, lente alla nominale e si
-    prosegue. Il nostro "jog" non serve: per il fuoco `gi_focus` è quello
-    del carrello, per il posizionamento i nostri passi da 1 e 20 mm sono
-    già verificati, mentre `preview_jog_*` PhxScanner non lo usa;
-  - il **video del posizionamento a mano** ora viene dal video dell'SDK
-    (`get_video_mode_size` + `perform_video_mode_scan`, come PhxScanner);
-    se non risponde, si torna alla lettura veloce di prima;
-  - **finestre del carrello** (scheda Macchina, per il tecnico):
-    `show_gretag_ui` con i numeri 1, 3, 4, 5, centrate sul monitor della
-    macchina;
-  - **LUT** in fondo alla scheda Colore: `.cube`, `.lut` Discreet 1D,
-    `.3dl`; si applica dopo tutte le altre correzioni, a tutti gli ordini,
-    con l'intensità regolabile. La scelta resta in `impostazioni.json`, i
-    file in `software/lut/` (fuori da git). Lettori provati con file
-    sintetici (1D a una e tre colonne, 10 e 12 bit, 3D 17 punti);
-  - interfaccia sistemata su telefono e tablet verticale (pagina più larga
-    dello schermo, barra sovrapposta); schermate di tutti i formati, 4:3
-    anche col tema chiaro;
-  - README della radice riscritto: era fermo alla prima pubblicazione.
-
-  Da provare sulla macchina: quale finestra è ogni numero; se il video
-  dell'SDK parte a scanner fermo; l'autofocus a motori attivi.
-
-## Fatto il 27 ottobre
-
-- **Prova a campo del rullo** (foto del registro dell'agente, 09:23):
-  - la misura dell'esposizione era fatta a inizio rullo, con in finestra
-    la **coda annerita**: R chiedeva x12 (rifiutato, poi x6) e G e B x6.
-    Il controllo del 3% non scattava, perche' la coda passava fra il 3 e
-    il 7% della luce. Ora la misura si fa sul primo fotogramma con luce:
-    se nemmeno il canale piu' chiaro passa il 15%
-    (`soglia_misura_esposizione`) la misura non vale, il fotogramma si
-    legge a x1 (se e' coda si scarta, se e' un fotogramma denso resta) e
-    si riprova sul successivo; alla terza zona opaca, x1 su tutto con
-    avviso. Una coda annerita lunga piu' posizioni non prende numeri;
-  - `gi_focus` sulla coda: `ERR_FOCUS_FAILED` (15) in 3 s, gestito (la
-    lente torna alla nominale da sola). Ora l'autofocus si salta sulle zone
-    opache e si fa sul primo fotogramma vero;
-  - **l'agente si chiude con l'autofocus `gi`**: la causa non si vede dal
-    registro. L'agente ora scrive `ponte\log\crash-*.txt` con lo stack di
-    tutti i thread quando muore dentro l'SDK. Servono quel file e le
-    ultime righe di `agente-*.log`; intanto si puo' usare "posizione
-    nominale" o "spento".
-
-## Fatto il 28 ottobre
-
-- **Scansiona rullo fa anche Carica**: se l'agente dice che la pellicola
-  non c'è (`pellicola_inserita` falso), guide al formato e carrello
-  pronto, poi attesa della pellicola (`attesa_striscia_s`, 10 minuti) e
-  partenza da sola. Già inserita: si parte subito; agente che non lo sa
-  (None): come prima. Da vedere sulla macchina: se un agente riavviato con
-  la pellicola dentro la crede assente e riarma il carrello.
-- **Anteprime subito, elaborazione in sottofondo**: dopo la lettura
-  ogni fotogramma va nel visore e nella striscia in versione ridotta
-  (`anteprima_rapida`: decimata a ~700 px, inversione e colore, senza
-  allineamento, IR, ritaglio e orientamento) e l'elaborazione completa la
-  fa un thread suo (`_ElaborazioneInFondo`, coda di 2 grezzi) mentre la
-  macchina legge il successivo. Prima la pagina aggiornava immagine e
-  striscia solo a lavoro finito. Da vedere sulla macchina: tempi e memoria
-  con la lettura e l'elaborazione insieme.
-- **Anteprima in diretta** (tasto *Diretta* sopra l'immagine): il video
-  dell'SDK a richiesta della pagina, una lettura alla volta, solo senza
-  lavori in corso.
-
-- **Velocità del rullo** (obiettivo: il programma originale faceva 36
-  fotogrammi in 60 s). Il 27/10 un fotogramma costava R 2,3 s + G 2,6 s +
-  B 2,9 s di letture, più il trasporto, più l'elaborazione e il
-  salvataggio del grezzo compresso nello stesso ciclo. Cambiato:
-  - **lettura unica**: `scan_raw` col canale 4 legge R, G e B insieme
-    (maschera 7, tre piani: `0x18078A67`), e
-    `ExposureTime::operator*=(const double*)` (`0x18030310`) dà a ogni LED
-    il suo fattore. Comando `grabm` dell'agente. La disposizione dei piani
-    nel buffer si riconosce dalla ruvidezza delle immagini e va nel
-    registro; sul primo fotogramma i livelli si confrontano con la misura
-    per canale e, se non tornano (ordine dei LED diverso da R, G, B), si
-    torna da soli a un canale per volta. **Da vedere sulla macchina:** che
-    il canale 4 sia accettato, la disposizione, il tempo dell'SDK (nel
-    registro dell'agente: "lettura unica 3 piani: SDK x s, file y s");
-  - grezzo compresso salvato dal thread di elaborazione, non dal ciclo di
-    lettura;
-  - coda dell'elaborazione a tetto di memoria (`memoria_elaborazione_mb`,
-    700 MB, una ventina di fotogrammi) invece di 2 posti: la lettura non
-    aspetta l'elaborazione;
-  - a fine rullo prima si espelle, poi si aspetta l'elaborazione;
-  - attese del protocollo col ponte da 50 a 10 ms (agente e filmscan);
-  - nel registro, per ogni fotogramma, i secondi di lettura e trasporto, e
-    a fine rullo il totale.
-
-  Se non basta ancora, il prossimo passo è la risoluzione 1 (1052x700,
-  2x2 sul CCD, un quarto dei dati) come modo "veloce", con la sua
-  calibrazione.
-
-- **Dal confronto con toneScan Studio** (Tone Photographic):
-  - **riaprire un fotogramma** dalla striscia (dal grezzo, `apri_fotogramma`),
-    **Salva** (`salva_fotogramma`) e **Applica al rullo** (`applica_rullo`),
-    con la barra sopra l'immagine;
-  - **Stampa / Scarta** per fotogramma (`fotogrammi.voto`), zip delle sole
-    foto da stampare in archivio;
-  - **metadati nei file** TIFF e JPEG (`pipeline.export(meta=...)`): ordine,
-    rullo, fotogramma, bordo, pellicola, data, dpi, Make/Model;
-  - **negativo lineare** in DNG (LinearRaw, `export_negativo`) o TIFF 16 bit,
-    colonna `fotogrammi.file_negativo`, zip "negativi". Il DNG dichiara
-    sRGB lineare come colorimetria (ColorMatrix1): da vedere in Lightroom con
-    Negative Lab Pro se lo prende come RAW.
-  Lasciati fuori, su indicazione di Alessandro: correzioni CMY da minilab
-  (si stampa con la drylab Epson) e scorciatoie da tastiera (monitor
-  touch).
-
-- **PIN fisso delle postazioni**: oltre al PIN dell'avvio, un PIN scelto da
-  noi (impostato da Macchina, salvato come impronta PBKDF2 in
-  `impostazioni.json`, mai nel repository). Apre la sessione con un
-  reindirizzamento al PIN dell'avvio; "Ricorda" lo tiene nel browser del
-  dispositivo, che rientra da solo dopo i riavvii.
-
-## Fatto il 29 ottobre
-
-- **Analisi dell'elaborazione del programma originale**
-  ([elaborazione-originale.md](software-originale/elaborazione-originale.md)):
-  EyeTech (KLT, statistiche per striscia e per DX, esclusioni, classi di
-  scena, LDC), Dens2Paper, correzioni distinte per negativi sotto e
-  sovraesposti, profili CMM, dati APS (`AIDToolkit`), codici d'errore.
-  Fatto subito:
-  - `lut.py` legge i profili CMM Gretag (formato decifrato, Lab D50
-    verificato): `Negative2Lab_P8_neg.lut` diventa una LUT "stampa Gretag";
-  - i codici 29, 30, 35, 37 (`ERR_FILM_ORIENTATION`, pellicola girata), 38
-    hanno nome e spiegazione in italiano nei messaggi e nel registro.
-  Da decidere con Alessandro (§4 del documento): bilanciamento di rullo,
-  memoria per pellicola col DX, classi di esposizione, tungsteno e velo,
-  densità locale.
-
-- **Tutte le migliorie di EyeTech** (§4 del documento sull'originale):
-  equilibrio di rullo, memoria per pellicola col DX, classi di esposizione,
-  tungsteno e velo, densità locale. E **un errore di fondo corretto**:
-  l'inversione non invertiva (il simulatore era sbagliato allo stesso modo,
-  per questo non si vedeva).
-- **Sonde dell'SDK** (collaudo dello scanner, voce 6): codice DX, percorso
-  `capture` con e senza Digital ICE, Digital ICE diretto. Da far girare una
-  volta sulla riserva con una striscia di negativo e mandare la cartella
-  del rapporto: con quei file si integra l'ICE e, se conviene, la
-  scansione a striscia intera dell'SDK (quella dei 36 fotogrammi in 60 s).
-
-## Fatto il 31 ottobre
-
-- **Pellicola dal codice DX** ([decisione 0009](decisioni/0009-pellicola-dal-dx.md)):
-  il DX letto dalla macchina si traduce con l'elenco ufficiale I3A (2009)
-  in nome, tipo, ISO e grana attesa. Se il tipo non è quello scelto a mano,
-  il rullo si corregge da solo e l'ordine lo annota; le strisce di una
-  pellicola diversa danno un avviso e si elaborano a parte. Pellicola e ISO
-  finiscono nei metadati dei file (EXIF, parole chiave, XMP).
-- **Sviluppo del rullo** (normale, forzato, tirato) e **bianco e nero**:
-  toni (alto e basso contrasto, gamma estesa, duro) e viraggi in Ritocco;
-  profili per le B/N cromogeniche e per la Scala.
-- **WhatsApp**: chat aperta sul dispositivo da cui si preme (PC, tablet,
-  telefono collegati allo stesso account), allegato negli appunti del PC
-  della macchina, Condividi dal tablet, avviso proposto o aperto da solo a
-  ordine finito.
-- **Dalla riserva (31/10)**: Calibra si fermava dopo l'azzeramento, perché
-  l'SDK ricollega lo scanner per ~40 s e il comando seguente veniva
-  rifiutato: ora si aspetta. Il collaudo colori si è fermato su un file del
-  ponte bloccato per un istante (errno 13): ora si riprova. Misure a
-  finestra vuota: dati a 12 bit, già saturi a 0,5x (p50 4095): l'SDK porta
-  il bianco oltre il fondo scala. Le sonde dell'SDK erano partite senza
-  pellicola (DX: errore 12): ora il collaudo arma il carrello e aspetta.
-- Con il pacchetto `4c92e8a` Calibra aspetta lo scanner (84 s) e arriva a
-  `calibrasdk`; durante la calibrazione della macchina l'SDK va in **stato
-  4** e manda di continuo l'**evento 85**: non sono nella tabella dei nomi,
-  probabilmente calibrazione in corso. Da annotare come finisce. Calibra
-  non rifà più l'azzeramento se lo scanner si è caricato oggi.
-- **7/11, sera**: la capture dell'originale dà un fotogramma giusto (tre
-  piani R, G, B, 2100×1400, 12 bit). Rullo con `scan_raw` da 19 fotogrammi
-  letti in 146 s (3,6 s di lettura + 0,5 s di trasporto), ma
-  l'elaborazione ha impiegato ~7 minuti dopo (~23 s a fotogramma sul PC
-  della riserva): ora il registro scrive i tempi di ogni passo, per capire
-  dove andare a stringere. Espulsione dal retro corretta (ripiega sul
-  davanti).
-- **7/11, prima scansione con la versione nuova**: immagini "leggermente
-  sovraesposte" (chiare, poco contrastate) secondo Alessandro. Da capire
-  sui campioni ("Invia per l'analisi"): ipotesi da verificare, non ancora
-  provata, la mancanza di una curva di stampa (oggi si esce in luce di
-  scena lineare, una stampa ha più contrasto nei toni medi).
-- **7/11, secondo invio** (collaudi automatici): a finestra vuota, dopo
-  `calibrate_all`, il bianco a 1x sta a ~3600 su 4095, satura a 2x, ed è
-  lineare (buio a 60); il canale **IR (3) risponde** con dati suoi;
-  pressore giù/su senza pellicola senza errori; 12x accettato senza
-  pellicola. Con la pellicola: il DX porta lo stato a 1 e da lì ogni
-  `scan_raw` è rifiutata; la **capture dell'originale funziona** (RGB
-  intero in 4,4 s, stato di nuovo a 0): è la strada da integrare (compito
-  20). Il Digital ICE (capture con ASF) è rimasto appeso. DX ancora da
-  decifrare: i dati stanno in `media_info`, non a +0x10.
-- **7/11: primi registri arrivati da soli** (collegamento remoto attivo,
-  `gretag_masterflex_registri/riserva/2026-11/`). Trovati: la lettura
-  unica blocca la testa (ora spenta, con ripristino automatico); `sensori`
-  fa cadere l'agente (disattivato); `espelli` e a volte `carica` fanno
-  ricaricare lo scanner all'SDK (stato 0 → 7 → 10 → 0, fino a 2,5 min);
-  temperature della testa 70-87 °C. Da rifare il collaudo senza pellicola.
-- **Collegamento remoto** ([decisione 0010](decisioni/0010-collegamento-remoto.md)):
-  da configurare sulla riserva (MASTERFLEX.bat voce 15) dopo aver creato
-  il repository privato `gretag_masterflex_registri` e il token. Da lì in
-  poi registri e aggiornamenti senza chiavetta.
-- **Collaudi automatici** (voce 4 → 1 senza pellicola, 4 → 2 con
-  pellicola): da fare sulla riserva, e mandare lo zip che preparano da
-  soli. Rispondono al pressore (si rialza da solo?), al DX (dove sta,
-  prima e dopo il movimento: la pellicola era una Kodak colore 200 o 400),
-  al tetto d'esposizione, all'autofocus. `AVVIA AGENTE.bat` per riaprire
-  l'agente se si chiude.
-- **31/10, pomeriggio**: senza DX la macchina scansiona; col DX acceso dà
-  errore; col pressore automatico il pressore scende e il "su" fallisce
-  (l'SDK va in errore). DX e pressore spenti di serie. Da fare: registri
-  di quelle due prove e la prova del pressore (collaudo, voce 7), per
-  sapere se la lettura lo rialza da sola.
-- **Letture bloccate dopo il DX**: `get_media_info` porta l'SDK nello
-  stato 1, e l'agente rifiutava tutto quello che non era stato 0. Ora
-  blocca solo 7 e 10. Il DX letto non si è ancora decodificato (la
-  struttura al +0x10 non è un puntatore: vale 0x30): serve la riga intera
-  `media_info` dal registro dell'agente. Se le letture nello stato 1 non
-  vanno, si spegne "Leggi il codice DX" in Macchina.
-- **Registri in una cartella sola**, `software\log`: programma, agente,
-  SDK, collaudi, diagnosi; lo zip da mandare si fa con la voce 6 o con
-  Macchina → Scarica i registri. Il ponte resta in `C:\MasterflexD\ponte`
-  (lo scambio comandi con l'agente), ma i registri non ci vanno più.
-- Da provare sulla riserva: che `get_media_info` dia davvero il DX ai byte
-  +4/+5 (sonda già nel collaudo, voce 6); l'incolla negli appunti con il
-  browser che c'è su Win7 (WhatsApp Web potrebbe non accettare Chrome 109:
-  in quel caso Supermium o il tablet).
-
-## Fatto il 7 novembre (sera)
-
-- **Collaudo con pellicola delle 16:08 "incantato"**: la capture parte
-  solo con il codice DX letto subito prima (stato 1). Dopo "precedente" il
-  DX dava ERR_MOVE, l'SDK restava nello stato 0 e la capture aspettava 60 s
-  a vuoto, tre volte. Comando `cattura` nuovo: legge il DX da sé e alla
-  prima risposta "stato non valido" si ferma. Nel collaudo un fotogramma
-  avanti prima di ogni capture. Il collaudo delle 16:34 era ancora con la
-  versione vecchia.
-- **Digital ICE della Kodak**: la libreria dell'SDK chiamata direttamente
-  (16:34) ha trovato 17679 pixel difettosi su 2,94 milioni con i pixel
-  intercalati RGBI. Integrata nell'elaborazione sulla macchina, di serie;
-  il risultato va visto sul collaudo con pellicola nuovo (immagini
-  `dice_*` nella cartella del collaudo).
-- **Acquisizione "come il programma originale"** (DX + capture, Digital ICE
-  dell'SDK): impostazione in Macchina, non di serie finché un collaudo con
-  la versione nuova non la conferma.
-- **Elaboratori in rete** ([decisione 0011](decisioni/0011-elaboratori-in-rete.md)),
-  **geometria salvata** (riapertura senza rifare le stime, rotazione e
-  canali a mano), **raddrizzamento** stimato su una copia ridotta (da 10 a
-  3 s nella prova), **anteprima dal vivo** per i fotogrammi non elaborati,
-  **negativi DNG/TIFF** dall'archivio.
-- **Motori attivi di serie**, IR attivo; tolti l'avviso delle guide e la
-  conferma "SI".
-- **Collaudo senza pellicola delle 16:16**: nessun passo fallito. Un
-  orologio di Windows tornato indietro di un minuto durante la prova
-  (durata negativa): il collaudo ora misura con un orologio monotono.
-- **Desktop nascosto dal programma originale**: pannello Macchina →
-  Desktop di Windows. Il resoconto arriva con i registri (`desktop.txt`):
-  da leggere al prossimo invio per sapere se è la shell sostituita, le
-  policy o explorer chiuso.
-
-- **Sera, dai registri delle 16:56 e 17:25**: fuoco sulla coda che fa
-  fallire l'avanzamento (strisce da 0 fotogrammi), rullo 9 sfocato con
-  "Autofocus (nominale) fatto", immagini slavate, Ferma elaborazione che
-  aspettava il salvataggio compresso dei grezzi: corretti (vedi CHANGELOG).
-  Da vedere nel prossimo invio: le righe "nitidezza" del registro, per
-  capire quale metodo di fuoco tiene meglio su questa macchina.
-
-## Fatto il 7 notte e l'8 novembre
-
-- **Resa delle foto**: tornati alla versione delle 19:13 del 7/11 ("quelli
-  a sinistra sono molto più belli"); da allora colore, luminosità e
-  contrasto non si toccano. Grana colorata dimezzata, flat a immagine
-  intera (va rifatta Calibra a percorso vuoto per togliere le macchioline
-  di polvere dell'ottica).
-- **Digital ICE**: nel rullo delle 19:01 nessun fotogramma è stato pulito
-  davvero. La libreria Kodak non partiva (processo figlio senza stdin,
-  corretto), l'IR era saturo su tutto il fotogramma (ora riconosciuto e non
-  usato), la capture con ICE dell'SDK rifiutata (codice 5). Come esporre
-  l'IR nel rullo si decide dopo il **collaudo IR** (`MASTERFLEX.bat` → 4 →
-  3): da fare sulla riserva e mandare i registri.
-- **Desktop**: con l'avvio automatico tornano desktop e barra (blocchi
-  tolti, collegamento dell'originale fuori dall'Esecuzione automatica, con
-  copia in `software/backup/windows`).
-- **Archivio di rete** per cliente e rullo, **grezzi su disco** quando la
-  memoria è piena (la lettura non si ferma più sui rulli lunghi),
-  **positivi** dall'archivio.
-- **Menu** del .bat ridotto a 10 voci; **pagina Archivio** con le
-  impostazioni a scomparsa e la consegna per rullo.
-- **Elaboratori** ([decisione 0011](decisioni/0011-elaboratori-in-rete.md),
-  aggiornata): Threadripper fino a 16 processi, Unraid in Docker sempre
-  acceso, Completa e Applica in parallelo. Da provare con i PC veri: nelle
-  impostazioni della riserva gli elaboratori risultano spenti
-  (`elaboratori_rete: false`), vanno accesi dal pannello Macchina.
-- **Digital ICE aperto** ([decisione 0012](decisioni/0012-digital-ice-aperto.md)):
-  openICE integrato, nkscan tradotto, motore "filmscan" di serie (il
-  migliore sul banco). Manca il confronto su un negativo vero: il collaudo
-  IR ora salva il fotogramma e `confronto_ice.png` con tutti i motori.
-  Nelle impostazioni della riserva il Digital ICE è salvato come "kodak":
-  per usare filmscan va scelto in Macchina (la Kodak, se non riesce,
-  passa comunque a filmscan).
-- **Sensore intero**: oggi si leggono 34,0 × 22,7 mm del 135 (la finestra del
-  programma originale). I collaudi automatici misurano il sensore intero
-  (`software/sensore.json`); poi Macchina → Area del sensore → sensore
-  intero, e Calibra. Da fare sulla riserva: collaudo senza pellicola, poi
-  con pellicola, e guardare le immagini `sensore_*`.
-- **Codice DX**: si legge ma non si trova il numero nella risposta
-  dell'SDK. Collaudo dedicato (`MASTERFLEX.bat` → 4 → 4) con una pellicola
-  nota; poi nel rullo: DX a inizio striscia seguito da una capture senza ICE.
-- **Caldo da stampa** (10/11): grigi a b +1,5 e a +0,5 (prima −2,4 sulla piazza
-  al sole). Confrontato Lightcraft/Film Lab (conversione, gamma per canale,
-  esposizione automatica): non adottato, la nostra resa resta migliore.
-
-## 14 novembre
-
-- Mattina: scanner rosso, SDK fermo nello stato 10 (niente taratura LED
-  dopo l'evento 1600); dopo spegnimento e riaccensione alle 12:13 stato 0
-  e collaudo senza pellicola eseguito.
-- La pagina cadeva con STATUS_BREAKPOINT quando il programma si riapriva dal
-  desktop: l'explorer riavviato dal ripristino del desktop girava con
-  `runas /trustlevel:0x20000`, che Chrome non regge. Corretto: explorer da
-  un'operazione pianificata a livello limitato. Da confermare: dopo
-  l'aggiornamento e un riavvio del PC, chiudere e riaprire il programma.
-- **Scanner rosso dopo un errore di trasporto.** Ogni ERR_MOVE (7/11
-  17:12, 18:13, 19:03; 14/11 12:17 nel collaudo, trasporto a vuoto) e'
-  seguito da aperture dell'SDK ferme nello stato 10 finche' non si spegne la
-  Masterflex; il programma originale dice 37509 (tamburo che non cambia
-  formato). Trovato staccato **C8** (tantalio 10 µF 35 V, accanto all'L293DD
-  e al connettore d'alimentazione P4) sulla scheda del carrello: da
-  risaldare o sostituire, polarita' "+" a destra. Nel software: Gretag Reset
-  prima di uscire dopo un ERR_MOVE, Gretag Reset e avviso dopo 180 s nello
-  stato 10, passo tolto dal collaudo. Da provare: dopo la riparazione, un
-  rullo fino a fine striscia, chiudere e riaprire; nei registri dell'agente
-  cercare "Gretag Reset".
-- Etichetta del carrello (SN 60210, imager 1488): "Defective Column Data"
-  scritte a mano, da trascrivere con una foto nitida e usare per le colonne
-  difettose.
-- Sensore intero: l'SDK rifiuta ogni rettangolo oltre 2100x1400 (46/47/42):
-  si resta sulla finestra del formato.
+| Driver **EKframePnP 2.1** | [`driver/EKframePnP/`](../driver/EKframePnP/) | funziona sulla riserva: scheda avviata, immagini buone nei rulli veri; manca la verifica di equivalenza col banco di prova C ([verifica/](../driver/EKframePnP/verifica/README.md)) |
+| Software **filmscan** | [`software/`](../software/) | **in uso sulla riserva** con la macchina vera: rulli interi a strisce, calibrazione, autofocus, colore di rullo, Digital ICE, archivio, elaboratori in rete, collegamento remoto |
+| Carrello **Capri** (COM5) | [carrello-capri.md](hardware/carrello-capri.md) | firmware **1.15** ([decisione 0006](decisioni/0006-firmware-carrello-1.15.md)): guide a posto col 135. Condensatore C8 da risaldare (vedi sotto) |
 
 ## Problemi aperti, in ordine di priorità
 
-1. **Motori delle guide all'avvio: RISOLTO per il 135** (28/10/2026, dalla
-   riserva) **con il firmware 1.15** del carrello. Era la terza ipotesi
-   della lista qui sotto, quella data per "improbabile": vedi
-   [decisione 0006, esito](decisioni/0006-firmware-carrello-1.15.md#esito-del-28102026).
-   L'ini del carrello deve restare a `UpdateToVersion=00000073`, altrimenti
-   il programma originale riscarica la 1.13. Per APS e 110 non è ancora
-   provato: la prima volta, mano sull'interruttore. Resta sotto, per
-   riferimento, l'analisi fatta prima.
+1. **Scanner rosso dopo un errore di trasporto.** Dopo ogni `ERR_MOVE`
+   (il carrello non muove la pellicola) l'apertura successiva dell'SDK
+   restava nello stato 10, senza taratura dei LED, finché non si spegneva
+   la Masterflex; il programma originale lo chiama evento 37509 (il tamburo
+   non cambia formato). Visto il 7/11 e il 14/11.
+   - Sulla scheda del carrello si è trovato staccato **C8**, il tantalio
+     da 10 µF 35 V accanto al pilota motori L293DD e al connettore
+     d'alimentazione P4: da risaldare o sostituire (SMD, misura D 7343),
+     striscia "+" verso il "+" della scheda.
+   - Nel software (14/11): l'agente annota l'errore, manda il Gretag Reset
+     prima di uscire, e all'avvio, dopo 180 s nello stato 10, prova un
+     Gretag Reset e poi avvisa di spegnere e riaccendere.
+   - **Da provare** dopo la riparazione: un rullo fino a fine striscia,
+     chiudere e riaprire il programma; nei registri dell'agente le righe
+     "Gretag Reset". Se si blocca ancora, il sospettato è l'alimentatore
+     del carrello (tensione su P4 mentre i motori si azzerano).
+2. **Digital ICE sul rullo vero.** Il livello d'esposizione dell'IR si
+   decide col collaudo dell'infrarosso (`MASTERFLEX.bat` → 4 → 3), che
+   salva anche `confronto_ice.png` con tutti i motori: da fare sulla
+   riserva con una pellicola di prova. Nelle impostazioni della riserva il
+   motore è ancora "kodak": per usare quello di serie va scelto
+   **filmscan** in Macchina.
+3. **Codice DX**: si legge, ma il numero nella risposta dell'SDK non è
+   ancora trovato. Collaudo dedicato `MASTERFLEX.bat` → 4 → 4 con una
+   pellicola nota.
+4. **Pagina che cadeva alla riapertura** (`STATUS_BREAKPOINT`, 14/11):
+   corretto l'avvio di explorer; da confermare chiudendo e riaprendo il
+   programma dopo un riavvio del PC.
+5. **Colonne difettose del sensore**: sull'etichetta del carrello sono
+   scritte a mano (357, 1356, 1829, 1338, 1747 e una o due illeggibili).
+   Da trascrivere da una foto nitida e confrontare con
+   `get_image_column_defects` dell'SDK.
+6. **Elaboratori in rete**: pronti, ma sulla riserva sono spenti
+   (`elaboratori_rete: false`); da accendere dal pannello Macchina e provare
+   con i PC veri.
+7. **APS e 110** con i motori veri: mai provati. La prima volta, mano
+   sull'interruttore.
 
-   Le guide sono i motori 3 e 4 del
-   carrello Capri. Lo zero lo fa il firmware: ogni guida va verso la sua
-   fotocellula di riferimento per al massimo 750 passi, poi si ferma con
-   l'errore 37507 o 37508 e resta in spinta. Il sintomo, fine corsa e
-   continua a spingere, è quello di una fotocellula che non si copre mai
-   ([carrello-capri.md §1](hardware/carrello-capri.md#1-i-motori-e-come-trovano-lo-zero)).
-   Con il flag "No Reset" acceso, all'accensione i motori non si muovono:
-   lo zero lo chiede il PC. Il codice di filmscan non comanda le guide.
-   Ipotesi, in ordine:
-   1. la **fotocellula** di una guida, sporca, spostata o guasta; per tutte
-      e due le guide insieme, alimentazione, connettore o cavo comuni;
-   2. il PC che ripete l'inizializzazione, se la spinta riparte più volte;
-   3. il **firmware 1.13** al posto della 1.15: improbabile, perché il
-      flash ha lo stesso formato e la 1.13 ha già lavorato dal 2002 al 2004.
+## Da sapere
 
-   Esclusa l'ipotesi del flag Crash Detect spento: nel backup del 2/8/2025 è
-   acceso, come tutti i flag consigliati da Gretag.
-
-   Le prove sono in [carrello-capri.md §6](hardware/carrello-capri.md#6-procedura-consigliata-per-il-problema-delle-guide):
-   accensione senza programmi, selftest di servizio (HOME e PRECISION delle
-   guide), SensorTest, flag. Prima della soluzione si usavano **"motori
-   bloccati"** o la simulazione. Attenzione: anche con i motori bloccati l'apertura
-   dell'SDK può far partire lo zero. `APERTURA=leggera` in `MASTERFLEX.bat`
-   serve a capire se è così.
-2. **Le immagini non arrivano correttamente.** Due cause in filmscan sono
-   corrette (calibrazione e dark/flat, vedi sopra). Il sintomo va
-   ricontrollato con la versione nuova: `MASTERFLEX.bat` → 4 → 1 (colori e
-   intensità, finestra vuota). Se le immagini sono ancora sbagliate, la
-   prova che distingue resta ScanDiag/GretagEMEval: sbagliate anche lì vuol
-   dire driver (DMA o ISR).
-3. **IR**: il canale 3 risponde (collaudi del 7/11): attivo di serie.
-4. **Sensori e verso del trasporto** (piano 3.12 e 3.13): si misurano con
-   il collaudo dello scanner, voci 2 e 3.
-
-## Materiale chiesto e non ancora arrivato
-
-- [x] `scn_dll.dll`, `PhxScanner.exe`, i proxy COM e `PhxTextDB.mdb`
-      (arrivati il 26/10, fuori dal repository): codici decifrati
-
-- [x] i file del firmware 1.15 del carrello: installati sulla riserva il
-      26/10. Mancano le impronte in `manutenzione.py`: lo slave risulta
-      "non riconosciuto" (servono i due `.a37`, che restano fuori dal
-      repository)
-- [ ] l'esito del selftest di servizio, del collaudo colori e della diagnosi
-      (`MASTERFLEX.bat` voci 4, 6, 13) sulla riserva
-- [ ] una foto delle immagini difettose, se lo sono ancora
-- [ ] i log di `C:\MasterflexD\ponte\log` e `C:\MasterflexD\Scanner\SDKCacheDir`
-      (non vanno nel repository: possono contenere dati dei clienti)
-- [ ] dalla cartella di lavoro locale: `verifica-equivalenza/esegui.sh` con il
-      banco di prova C ([dettagli](../driver/EKframePnP/verifica/README.md)) e
-      le analisi di agosto (`storico-agosto/`)
+- **Sensore**: l'SDK rifiuta ogni rettangolo più grande della finestra del
+  formato (2100×1400 per il 135, errori 46/47/42, collaudo del 14/11):
+  l'impostazione "sensore intero" non porta niente in più.
+- **Resa del colore**: decisa con Alessandro il 7/11, più il caldo da
+  stampa del 10/11 (grigi b +1,5, a +0,5). Non si cambia senza una sua
+  scelta. Confrontati e non adottati: la catena di Lightcraft/Film Lab e le
+  matrici KLT del programma originale.
+- **Firmware del carrello**: l'ini deve restare a
+  `UpdateToVersion=00000073` (1.15), altrimenti il programma originale
+  riscarica la 1.13 e tornano i problemi delle guide. Lo controlla la voce
+  5 del menu.
 
 ## Prossimi passi
 
-1. Copiare sulla riserva la cartella `software/` e lanciare
-   `MASTERFLEX.bat` → 7 (installa/ripara). Sistema numpy se serve, e
-   all'aggiornamento toglie i vecchi `.bat`.
-2. Copiare `CapriFirmware` in `C:\MasterflexD\CapriFirmware`, poi voce 13
-   (firmware) e voce 4 → 5 → 1 (selftest di servizio).
-3. Sulla produzione, quando sarà il momento: versione del carrello e ini
-   prima di tutto (voce 13), perché con la 1.13 tornano le guide.
-4. Voce 2 (motori bloccati) e collaudo colori: le immagini sono giuste?
+1. Risaldare C8, riaccendere, fare la prova del problema 1.
+2. Collaudo dell'infrarosso e scelta del motore di Digital ICE.
+3. Collaudo del DX con una pellicola nota.
+4. Sulla produzione, solo dopo che la riserva ha provato tutto: versione e
+   ini del carrello prima di ogni altra cosa (voce 5), poi installer.
 
 ## Avvertenze operative
 
-- Nel log dell'SDK della riserva compaiono tre messaggi da tenere presenti:
+- Nel registro dell'SDK della riserva compaiono messaggi da tenere
+  presenti:
   - `CalibDataDir … last err= 2` e `CheckForFirmwareMismatch … 135anm.wrp`
-    c'erano anche nella sessione precedente, prima dei nostri cambi;
-  - `ioctl failed (2): 87` / `unable to unregister buffer #1, #2` compare
-    alla chiusura. Lo dà EKframePnP quando si sgancia un buffer che non
-    risulta agganciato (`EkDmaRelease`, ricostruito da `0x121BE`).
-
-  Va confrontato con il driver originale nel banco di prova. Se i buffer
-  vengono sganciati prima del tempo, le immagini ne risentono.
-
+    c'erano già prima dei nostri cambi;
+  - `ioctl failed (2): 87` / `unable to unregister buffer #1, #2` alla
+    chiusura: lo dà EKframePnP quando si sgancia un buffer che non risulta
+    agganciato (`EkDmaRelease`, ricostruito da `0x121BE`). Da confrontare
+    con il driver originale nel banco di prova.
 - Non lanciare `ektest` mentre filmscan o l'agente sono aperti: alla
   chiusura dell'handle il driver spegne la parte logica della scheda, come
-  faceva l'originale. La diagnosi del menu lo salta da sola se l'agente è
-  attivo.
+  faceva l'originale.
 - La COM5 la può aprire un solo programma: prima degli strumenti Gretag
   chiudere l'agente e il programma originale.
 - Sulla produzione, il giorno in cui si installerà EKframePnP, `INSTALLA.bat`
   si fermerà finché il vecchio `ekframe.sys` non è tolto. Serve un riavvio.
 - Su quella CPU: numpy non oltre la 1.22.4, scipy fermo alla 1.9.1.
-- Il programma originale, all'avvio, impone al carrello il firmware del suo
-  ini: con l'ini attuale, la 1.13.
+- "Invia per l'analisi" (i campioni) solo con pellicola di prova, mai con
+  quella di un cliente.

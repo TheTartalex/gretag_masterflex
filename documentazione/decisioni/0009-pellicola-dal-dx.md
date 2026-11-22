@@ -39,6 +39,6 @@ rullo.
 
 - Se il DX letto è sbagliato (posizione nella struttura non confermata),
   il rullo prenderebbe un profilo sbagliato: per questo `PonteSdkBackend`
-  accetta solo risposte sensate e la sonda del collaudo (voce 6) va fatta
+  accetta solo risposte sensate e il collaudo del DX (voce 4 → 4) va fatto
   prima di fidarsi.
 - I rulli vecchi senza DX restano come sono.

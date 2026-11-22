@@ -184,7 +184,7 @@ legata alla macchina". Non è così.*
   percorso `capture`: con `scan_raw`, che usiamo noi, quasi certamente non
   parte.
 
-Dal 29/10/2026 ci sono le **sonde** (collaudo dello scanner, voce 6):
+Dal 29/10/2026 ci sono le **sonde** (collaudo dello scanner, voce 4):
 `dx`, `sonda_capture_<ris>_<0|1>` (percorso capture con e senza ASF,
 salva FrameInfo e buffer), `sonda_ice_<ris>` (DMLDICELib diretto su R, G,
 B, IR letti da noi, con piani separati e pixel intercalati). Con i loro

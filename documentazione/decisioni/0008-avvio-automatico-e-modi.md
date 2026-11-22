@@ -52,7 +52,7 @@ Poi ha aggiunto due cose:
 - Il browser, all'accensione, parte con i diritti di amministratore come
   il resto. Chrome 109 e Firefox ESR lo accettano.
 - Se l'attività viene tolta dall'Utilità di pianificazione a mano, il menu
-  (voce 9) la dà come non attiva.
+  (voce 8) la dà come non attiva.
 - Da provare sulla riserva: l'elenco di cosa viene chiuso (`python
   processi.py` lo mostra senza chiudere), e se il programma originale si
   riapre dopo la chiusura (lo dice il registro `avvio-AAAAMMGG.log`).

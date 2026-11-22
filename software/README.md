@@ -12,41 +12,45 @@ per chi sta alla macchina è
 ## Struttura
 
 ```
-MASTERFLEX.bat        il menu: installa, aggiorna, avvia, collaudi, diagnosi...
+MASTERFLEX.bat        il menu: avvio, collaudi, collegamento remoto, installa, avvio automatico
 manutenzione.py       il lavoro dietro al menu (solo libreria standard)
 processi.py           chiude i programmi originali (C:\MasterflexD) prima dell'agente
-collaudo_scanner.py   collaudi dello scanner vero: colori, intensita', trascinamento
 run.py                interfaccia web (python run.py --controllo = diagnosi ambiente)
 selftest.py           collaudo della catena di elaborazione su scanner simulato
+collaudo_auto.py      collaudi automatici: senza pellicola, con pellicola, IR, DX
+collaudo_scanner.py   misure usate dai collaudi, e prove manuali da riga di comando
+remoto.py             collegamento remoto: registri senza dati dei clienti, aggiornamenti da main
+riavvia.py            riavvio di interfaccia e agente con la versione installata
+elaboratore.py        elaboratore di rete (altri PC, Docker su Unraid)
+grezzo_in_tiff.py     un grezzo in TIFF, per guardarlo fuori dal programma
 requirements.txt      versioni bloccate con impronta, per cp38-win32
 CLAUDE.md             regole del codice: leggere prima di modificare
+certificati/          certificati radice di Mozilla per GitHub (Windows 7 non si aggiorna piu')
+terzi/                openICE (GPL-3.0) e la licenza di nkscan
 filmscan/
   hal.py              l'unico modulo che sa dell'hardware (MockBackend, PonteSdkBackend)
   acquire.py          calibrazione e acquisizione grezza
   pipeline.py         dal grezzo al file finale
-  lut.py              LUT .cube, .lut (Discreet 1D), .3dl: lettura e applicazione
   service.py          tutta la logica di scansione (un lavoro alla volta)
   webui.py            interfaccia web: traduce HTTP <-> service
   config.py           geometria, formati, preset, impostazioni
-  orders.py, consegne.py   archivio ordini, registro, consegne
+  rullo.py            equilibrio di rullo, classi di esposizione, memoria per pellicola
+  pellicole_dx.py     dal codice DX alla pellicola (elenco I3A 2009)
+  registration.py, invert.py, colore.py, enhance.py, framing.py, orient.py,
+  geometria.py, bianconero.py, lut.py      elaborazione
+  irclean.py, ice_aperto.py, ice_openice.py, ice_kodak.py, confronto_ice.py
+                      Digital ICE: i cinque motori e il loro confronto
+  orders.py, consegne.py, archivio_rete.py   archivio ordini, consegne, cartella di rete
+  remoti.py           elaboratori in rete: coda, codice, risultati
   appunti.py          appunti di Windows e WhatsApp sul PC della macchina
   registri.py         la cartella log: programma, agente, SDK, collaudi, zip da mandare
-collaudo_auto.py      collaudi automatici: senza pellicola, e con pellicola (una domanda sola)
-collaudo_scanner.py   prove manuali (solo riga di comando) e misure usate dagli automatici
-AVVIA AGENTE.bat      avvia solo l'agente dello scanner, se si e' chiuso
-remoto.py             collegamento remoto: registri anonimizzati a GitHub, aggiornamenti dal ramo main
-riavvia.py            riavvio di interfaccia e agente con la versione installata (tasto in Macchina)
-certificati/          certificati radice di Mozilla per GitHub (Windows 7 non si aggiorna piu')
-  rullo.py            equilibrio di rullo, classi di esposizione, memoria per pellicola
-  pellicole_dx.py     dal codice DX alla pellicola (elenco I3A 2009) e cosa aspettarsi
-  bianconero.py       toni e viraggi del bianco e nero
-  registration.py, invert.py, irclean.py, colore.py, enhance.py,
-  framing.py, orient.py    elaborazione
+  desktop.py          desktop di Windows nascosto dal programma originale
   originale.py        convivenza con il programma originale
   compat.py           controlli dell'ambiente (memoria, versioni)
 ponte/
   agente.py           l'agente sul PC della macchina (solo libreria standard)
   sdk.py              collegamento a scn_dll.dll via ctypes
+  dice.py             la libreria Digital ICE della Kodak, in un processo a parte
   osservatore.py      copia le immagini grezze del programma originale (voce 3)
 ```
 

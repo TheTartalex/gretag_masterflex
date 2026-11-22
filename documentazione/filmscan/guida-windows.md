@@ -1,9 +1,8 @@
 # Masterflex D1008 — la macchina che fa tutto
 
-> Guida per chi usa la macchina tutti i giorni. Era `LEGGIMI-WINDOWS.txt`
-> del pacchetto filmscan (settembre 2026). Aggiornata il 26/10/2026: i dodici
-> `.bat` della cartella `windows\` sono diventati un solo file,
-> **`MASTERFLEX.bat`**, nella cartella [`software/`](../../software/).
+> Guida per chi usa la macchina tutti i giorni. Tutto passa da un solo
+> file, **`MASTERFLEX.bat`**, nella cartella [`software/`](../../software/).
+> Aggiornata il 22/11/2026.
 
 Una macchina sola: il PC con Windows 7 a 32 bit. Dentro c'è la scheda
 originale dello scanner, e sopra gira tutto: l'agente che parla alla macchina
@@ -39,19 +38,17 @@ come amministratore*, per il firewall):
 ```
  AVVIO      Invio  l'ultimo modo usato
                 1  completo, macchina vera (chiude il programma originale)
-                2  completo, motori BLOCCATI (idem)
-                3  simulazione (nessuna macchina)
-               14  man in the middle: programma originale + osservatore
- COLLAUDI       4  scanner: colori, intensita', trascinamento, strumenti Gretag
-                5  programma (senza macchina)
-                6  diagnosi: un file da inviare
-               13  firmware del carrello (richiesta 1.15)
+                2  completo, motori fermi, solo letture (per prove)
+                3  man in the middle: programma originale + osservatore
+ COLLAUDI       4  collaudo dello scanner:
+                     1 senza pellicola  2 con pellicola  3 infrarosso
+                     4 codice DX        5 strumenti originali del carrello
+                5  firmware del carrello (richiesta 1.15)
+                6  collegamento remoto: registri e aggiornamenti
  MANUTENZIONE   7  installa / ripara
-                8  aggiorna
-                9  avvio automatico
-               10  programma originale: stampa e densitometro
-               11  pacchetto per installare senza internet
-               12  disinstalla
+                8  avvio automatico all'accensione
+                9  programma originale: stampa e densitometro
+               10  disinstalla
 ```
 
 ## Installazione
@@ -71,6 +68,12 @@ Si chiede da solo i diritti di amministratore (una richiesta di Windows),
 poi fa la voce **7**, *Installa / ripara*, e chiede se attivare l'avvio
 automatico. Le istruzioni sono anche nel `LEGGIMI.txt` dello zip.
 
+**Gli aggiornamenti** arrivano da soli: con il collegamento remoto
+configurato (voce **6**) la macchina, a ogni avvio, prende la versione nuova
+dal ramo `main` del repository e manda i suoi registri, senza i dati dei
+clienti, a un repository privato. Senza collegamento si aggiorna con un
+installer nuovo.
+
 La voce **7** si può rifare quando si vuole: installa Python se manca, le
 librerie alle versioni giuste (numpy 1.22.4: la 1.24.4 fa cadere Python su
 questa CPU), crea le cartelle, apre la porta 8080 sul firewall, controlla
@@ -81,8 +84,7 @@ driver, scheda, SDK e firmware del carrello, e dice cosa manca.
 Si lavora in uno di due modi, e il programma ricorda l'ultimo usato:
 **Invio** nel menu riparte con quello, ed è quello dell'avvio automatico.
 
-- **Completo** (voce **1**, o **2** finché il problema delle guide non è
-  risolto). Chiude tutti i programmi che partono da `C:\MasterflexD`
+- **Completo** (voce **1**; la **2** tiene fermi i motori, per le prove). Chiude tutti i programmi che partono da `C:\MasterflexD`
   (il programma originale si apre da solo e terrebbe scheda e carrello),
   poi fa partire:
   1. l'agente, che parla allo scanner con l'SDK originale;
@@ -93,7 +95,7 @@ Si lavora in uno di due modi, e il programma ricorda l'ultimo usato:
   programmi di quella cartella (il GateControl del carrello) li usa l'SDK
   dell'agente. TeamViewer, AnyDesk, Chrome e Windows non stanno lì e non si
   toccano.
-- **Man in the middle** (voce **14**): il programma originale resta, e
+- **Man in the middle** (voce **3**): il programma originale resta, e
   l'agente non parte. Vedi più sotto.
 
 **La calibrazione di ogni giorno.** Finché oggi non è stata fatta, anteprima
@@ -138,17 +140,16 @@ giudicare colore e densità.
 
 ## La prima volta, in quest'ordine
 
-1. Voce **5** — collaudo del programma: ambiente ed elaborazione. Non tocca
-   la macchina.
-2. Voce **3** — tutto con uno scanner finto. Serve a collegare il tablet e
-   prendere confidenza **senza muovere un motore**. Farlo davvero.
-3. Voce **13** e voce **4 → 5** (selftest di servizio del carrello), con il
-   percorso pellicola **vuoto**.
-4. Voce **2** (motori bloccati) e voce **4 → 1** (collaudo colori e
-   intensità): le immagini arrivano giuste?
-5. Solo dopo, voce **1**. Primo comando dall'interfaccia: il backup del
-   Parameter Flash. Dentro ci sono le tarature fatte una volta sola da un
-   tecnico, con pellicole di prova che oggi non si comprano più.
+1. Voce **5** (firmware del carrello) e voce **4 → 5** (selftest di
+   servizio del carrello), con il percorso pellicola **vuoto**.
+2. Voce **2** (motori fermi) e voce **4 → 1** (collaudo senza pellicola):
+   luce, colori e sensore arrivano giusti?
+3. Voce **1**, poi voce **4 → 2** con una **pellicola di prova**, mai quella
+   di un cliente.
+4. Prima di tutto questo, se non c'è ancora: il backup del Parameter Flash
+   dal programma di servizio del carrello. Dentro ci sono le tarature fatte
+   una volta sola da un tecnico, con pellicole di prova che oggi non si
+   comprano più.
 
 > **28 ottobre 2026:** il problema delle guide (all'avvio andavano a fine
 > corsa continuando a spingere) è risolto per il 135. Con APS e 110 la prima
@@ -198,8 +199,12 @@ possono usare. Si spegne da sola quando parte un lavoro (anteprima,
 calibrazione, rullo): la macchina serve a lui.
 
 **Digital ICE** si sceglie quando si crea il rullo. Acceso, si legge anche
-l'infrarosso e si puliscono polvere e graffi; è più lento. Finché l'IR non è
-verificato sulla macchina resta attivo solo l'ASF della macchina.
+l'infrarosso e si puliscono polvere e graffi; è più lento. Il motore si
+sceglie in *Impostazioni macchina*: **filmscan** (il nostro, di serie),
+**openICE**, **aperto**, la libreria **Kodak** della macchina o la pulizia
+**semplice** ([decisione 0012](../decisioni/0012-digital-ice-aperto.md)).
+I motori aperti girano anche sugli elaboratori della rete; quello Kodak solo
+sulla macchina.
 
 **Posizionamento a mano.** Se il carrello non trova il fotogramma (negativo
 sbiadito, interfotogramma che non si vede) o se l'avanzamento automatico è
@@ -389,7 +394,7 @@ che lo ricorda entra.
 
 ## Avvio automatico
 
-Voce **9** (oppure alla fine dell'installazione). Si sceglie il modo di
+Voce **8** (oppure alla fine dell'installazione). Si sceglie il modo di
 partenza: completo con motori bloccati, completo con motori attivi, man in
 the middle o simulazione. All'accensione parte poi sempre **l'ultimo modo
 usato**.
@@ -418,7 +423,7 @@ A ogni avvio l'interfaccia scrive una pagina di collegamento dentro l'aiuto
 del programma originale (`C:\MasterflexD\PhxHelp\Data`), con l'indirizzo e
 il PIN del momento. Dal programma originale si apre con il pulsante Aiuto.
 
-Per spegnere stampa e densitometro nel programma originale: voce **10**.
+Per spegnere stampa e densitometro nel programma originale: voce **9**.
 Non toglie componenti e non tocca eseguibili: cambia due voci di
 configurazione. Di ogni file tiene una copia intatta con il suffisso
 `.prima-di-noi`. Dallo stesso menu si riaccende tutto.
@@ -441,7 +446,7 @@ riceve. Filmscan le elabora e le mette nel rullo
    collegherebbe allo scanner.
 2. Avviare il programma originale, **senza** aprire ancora un ordine
    (all'accensione si apre da solo).
-3. Voce **14**. Si aprono la finestra "Osservatore programma originale" e
+3. Voce **3**. Si aprono la finestra "Osservatore programma originale" e
    l'interfaccia, già connessa con il collegamento "programma originale".
 4. Nell'interfaccia: ordine e rullo, poi **Scansiona rullo**. L'interfaccia
    resta in ascolto.
@@ -504,11 +509,10 @@ la rete.
 
 ## Senza internet
 
-Su **qualsiasi** PC con Python e internet, anche moderno e a 64 bit: copiare
-la cartella `software`, lanciare `MASTERFLEX.bat` e scegliere la voce **11**.
-Scarica in `pacchetti\` l'installer di Python 3.8.10 e le wheel per Windows a
-32 bit, tutti con l'impronta controllata. Poi si copia l'intera cartella sulla
-macchina e si sceglie la voce **7**: non servirà la rete.
+Lo zip dell'installer porta con sé Python 3.8.10 e tutte le librerie, nella
+cartella `pacchetti`: sulla macchina non serve la rete per installare. La
+rete serve solo al collegamento remoto (voce **6**), che manda i registri e
+prende gli aggiornamenti.
 
 ## Avvertenze
 
@@ -516,5 +520,5 @@ macchina e si sceglie la voce **7**: non servirà la rete.
   Solo su una rete locale fidata, mai su internet.
 - Durante i test il percorso pellicola va **vuoto**: il manuale di servizio
   lo ripete in maiuscolo, e ha ragione.
-- Prima di toccare l'hardware: immagine bit a bit del disco. Se si perde,
-  non si rifà.
+- Prima di toccare l'hardware: immagine bit a bit del disco del PC
+  originale. Se si perde, non si rifà.

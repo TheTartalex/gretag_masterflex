@@ -207,8 +207,8 @@ def cmd_librerie(argv):
             return 0
     print("")
     print("  ERRORE: installazione non riuscita. Cause tipiche:")
-    print("   - niente internet: preparare pacchetti\\ su un altro PC con la")
-    print("     voce \"prepara pacchetto offline\" del menu, poi riprovare;")
+    print("   - niente internet: usare lo zip dell'installer (INSTALLA.bat),")
+    print("     che porta Python e le librerie nella cartella pacchetti\\;")
     print("   - \"mesonpy requires at least Python 3.10\": qualcuno ha cambiato")
     print("     una versione in requirements.txt oltre l'ultima wheel a 32 bit;")
     print("   - \"hashes do not match\": un file scaricato e' rovinato o non e'")

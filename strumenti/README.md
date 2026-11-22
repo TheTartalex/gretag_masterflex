@@ -18,18 +18,14 @@ sh strumenti/aggiornamento/prepara.sh dist --leggero   # solo il programma
 Python e librerie si tengono in `dist/cache-pacchetti` e si scaricano solo
 la prima volta.
 
-I due strumenti previsti a settembre sono entrati in
-`software/MASTERFLEX.bat` il 26/10/2026
-([decisione 0005](../documentazione/decisioni/0005-masterflex-bat-unico.md)):
-
-| Era | Ora |
-|---|---|
-| `diagnostica/raccogli-diagnosi.bat` | voce 6, *Diagnosi* (`manutenzione.py diagnosi`) |
-| `numpy/correggi-numpy/` | voce 7, *Installa / ripara*: sostituisce numpy 1.24.4 con la 1.22.4 |
+Dopo l'installazione la macchina si aggiorna da sola dal ramo `main` di
+questo repository, se il collegamento remoto è configurato (voce 6 di
+`MASTERFLEX.bat`, [decisione 0010](../documentazione/decisioni/0010-collegamento-remoto.md)).
 
 Gli strumenti originali Gretag del carrello (Compad, SensorTest,
 SelfTestInterface) restano nel pacchetto proprietario `CapriFirmware`, fuori
 dal repository: `MASTERFLEX.bat` li lancia dalla voce 4 → 5.
 
-L'output delle diagnosi non va nel repository: contiene percorsi e nomi
-delle macchine. Va allegato alla sessione o al problema su GitHub.
+I registri delle macchine non vanno in questo repository: contengono
+percorsi e nomi delle macchine. Il collegamento remoto li manda a un
+repository privato a parte.

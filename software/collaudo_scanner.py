@@ -26,7 +26,7 @@ le immagini in collaudi/<tipo>-<data>/, da allegare alla segnalazione.
         Dice verso, scala (mm per passo) e gioco al ritorno (piano 3.13).
         Muove il trasporto: serve una striscia di prova nella finestra.
 
-L'agente deve essere in esecuzione (MASTERFLEX.bat, voce 1, 2 o 3).
+L'agente deve essere in esecuzione (MASTERFLEX.bat, voce 1 o 2).
 
 Dal 31/10/2026 il menu ha solo i collaudi automatici (collaudo_auto.py),
 che usano da qui Rapporto, misura e salva_png. Queste prove manuali restano

@@ -5,13 +5,10 @@ cartella. Leggere prima di modificare qualsiasi cosa. Il contesto generale
 del progetto (macchine, driver, stato) sta nel [CLAUDE.md](../CLAUDE.md) alla
 radice del repository.
 
-> Scritto a settembre 2026. **Aggiornato a ottobre 2026**: numpy va tenuto
-> alla **1.22.4** (vedi *Trappole*); la scheda di acquisizione è documentata
-> in [scheda-iaq.md](../documentazione/hardware/scheda-iaq.md) e il carrello in
-> [carrello-capri.md](../documentazione/hardware/carrello-capri.md); i `.bat`
-> sono diventati `MASTERFLEX.bat` e `ui.py` non c'è più (vedi *Trappole della
-> macchina vera*). Struttura dei file e prove senza macchina:
-> [README.md](README.md).
+> Aggiornato al 22/11/2026. La scheda di acquisizione è documentata in
+> [scheda-iaq.md](../documentazione/hardware/scheda-iaq.md) e il carrello in
+> [carrello-capri.md](../documentazione/hardware/carrello-capri.md).
+> Struttura dei file e prove senza macchina: [README.md](README.md).
 
 ---
 
@@ -53,8 +50,9 @@ reintrodurle.
   del preset: finiscono nei metadati e li usa il ritaglio.
 - **Scambio file con l'agente in due tempi**: scrivere su `.tmp`, poi
   `os.replace`. Senza, l'altro processo legge file vuoti.
-- **Canali**: l'IR sull'SDK non e' verificato; si salta finche'
-  `sdk_ir_verificato` e' False (`canali_disponibili`).
+- **Canali**: l'IR dell'SDK e' il `ColorChannel` 3, visto nei collaudi
+  del 7/11/2026 (`ir_sdk`, vero di serie). Se il fotogramma IR e' saturo
+  (`irclean.ir_senza_immagine`) non si usa: la pulizia salterebbe tutto.
 - **Lo stato non interroga la macchina.** L'interfaccia lo chiede ogni
   secondo: `status()` risponde con lo stato locale.
 - **L'esposizione ha un tetto che non conosciamo.** A x12 il firmware
@@ -148,7 +146,7 @@ tirare fuori dal sensore tutto quello che il sensore vede.**
 
 | Elemento | Stato |
 |---|---|
-| Scanner Masterflex D1008 | presente, da rimettere in funzione |
+| Scanner Masterflex D1008 | in funzione sulla riserva |
 | PC originale, cablaggi, manuale cartaceo, software | presenti |
 | Driver della scheda | originale sulla produzione; [EKframePnP](../driver/EKframePnP/) sulla riserva |
 | Scheda di acquisizione | protocollo ricostruito: [scheda-iaq.md](../documentazione/hardware/scheda-iaq.md) |
@@ -161,48 +159,25 @@ Capacità della macchina, note dal manuale e dall'osservazione:
 - **Trascinamento pellicola** per scansione automatica dell'intero negativo
 - Passo del motore di trascinamento: **0,01 mm** (10 micron)
 
-## I due dati che mancano
+## Cosa resta da misurare
 
-*Aggiornato il 3 settembre 2026 dopo la lettura del software originale. Il
-secondo punto e' in gran parte risolto; il dettaglio con le fonti sta in
-[scheda-acquisizione.md](../documentazione/hardware/scheda-acquisizione.md), l'ordine dei lavori in
-[piano-lavori.md](../documentazione/piano-lavori.md).*
+**`focus_step_mm`**, il passo minimo dell'attuatore di autofocus: in
+`config.py` e' a `None`. Decide se la super-risoluzione per micro-spostamenti
+del fuoco e' praticabile. Va verificato anche se il movimento e' solo
+assiale: in quel caso cambierebbe il fuoco, non la posizione nel piano. La
+scheda di acquisizione invece e' nota: vedi
+[scheda-iaq.md](../documentazione/hardware/scheda-iaq.md).
 
-1. **`focus_step_mm`** - passo minimo dell'attuatore di autofocus. Decide se la
-   super-risoluzione e' praticabile. In `config.py` e' a `None`.
-   Va verificato anche se il movimento sia puramente assiale: in quel caso
-   cambierebbe il fuoco, non la posizione nel piano, e non servirebbe allo scopo.
-   Il manuale di servizio non lo dichiara. Si ricava muovendo il fuoco a passi
-   noti con `Actor Test` (cap. 7.2) o leggendo `focus_adv` / `nvm_focus_mag_pos`
-   in `scn_dll.dll`.
-
-2. **Mappa dei registri della scheda** - **in gran parte trovata.**
-   La scheda e' una **PCI** Eastman Kodak "IAQ Adapter"
-   (`VEN_11B2&DEV_0008&SUBSYS_908010B5`), costruita attorno a un
-   **PLX PCI 9080**: quindi la meta' PCI - motore DMA, mailbox, doorbell - e'
-   un componente standard con data book pubblico, non logica proprietaria.
-   Risorse osservate: memoria `0xDE000000` (256 B) e I/O `0xA800` (256 B) per i
-   registri, memoria `0xDD800000` (2 MB) come finestra sul bus locale, IRQ 9,
-   DMA bus-master a due buffer.
-   Driver `EKframe.sys`, aperto come `\\.\EKFrameDev` via `DeviceIoControl`;
-   sopra c'e' l'SDK `scn_dll.dll` (`DMLScanner`), che espone gia' `scan_raw` per
-   canale con esposizione esplicita.
-   ~~Restano ignoti i codici IOCTL e il protocollo sui mailbox verso l'EPLD
-   Gretag.~~ **Ottobre 2026:** noti entrambi. Il canale comandi verso la
-   testa è un controller ARCNET sulla scheda, non i mailbox. Vedi
-   [scheda-iaq.md](../documentazione/hardware/scheda-iaq.md).
-
-### La terza cosa, che nessuno dei due punti diceva
+### La meccanica passa dalla COM5
 
 La meccanica **non passa dalla scheda PCI.** Trasporto, sensori, gate, fuoco e
 lettura DX/MOF viaggiano su un canale del tutto separato: **seriale COM5**, verso
 `GateControl.exe`. Due canali, due protocolli, due livelli di difficolta'.
 
-Conseguenza sul piano di lavoro: il pezzo difficile (l'immagine) e' anche l'unico
-che possiamo lasciare al software originale, mentre il resto lo comandiamo noi.
-Il `BridgeBackend` gia' presente in `hal.py` non e' un ripiego: alla luce di
-questi dati e' la scelta tecnicamente giusta. Vedi
-[scheda-acquisizione.md](../documentazione/hardware/scheda-acquisizione.md) §8.
+Conseguenza: non si comanda ne' la scheda ne' la COM5 direttamente. Si
+passa dall'SDK Kodak, che parla alla testa sulla scheda e al carrello
+attraverso il `GateControl`: `PonteSdkBackend` in `hal.py`, l'agente in
+`ponte/`. Vedi [decisione 0001](../documentazione/decisioni/0001-ponte-sdk-originale.md).
 
 ## Il conto sulla super-risoluzione
 
@@ -585,17 +560,6 @@ inserisce di noti) e una maschera IR di pochi punti percentuali.
 Se gli spostamenti sono tutti a zero, l'allineamento è rotto — non perfetto.
 
 ---
-
-## Ordine di lavoro consigliato
-
-1. Immagine bit a bit del disco del PC originale, **prima di ogni altra cosa**
-2. Esplorare il disco F: e gli altri volumi: la documentazione di terze parti
-   segnala che i manuali potevano stare lì
-3. Scansionare il manuale cartaceo, priorità alla scheda di acquisizione
-4. Identificare fisicamente la scheda: fotografie di chip e serigrafie
-5. Verificare il passo dell'attuatore di autofocus
-6. Primo traguardo software: **un passaggio, un canale, salvato grezzo**
-7. Solo dopo: pipeline colore, IR, interfaccia
 
 ## Contesto storico utile
 

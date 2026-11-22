@@ -71,9 +71,8 @@ Unloaded → Initialize → MediaInsert → Dx → FrameInPosition → Transport
                      ↘ Reset  ↘ Service  ↘ FatalError
 ```
 
-Corrisponde quasi uno a uno al ciclo descritto in
-[installazione.md](../filmscan/installazione.md). Due stati che noi
-non avevamo previsto e che vanno considerati: **`Dx`** (lettura del codice DX
+Corrisponde quasi uno a uno al ciclo del rullo di filmscan
+(`software/filmscan/service.py`). Due stati da tenere presenti: **`Dx`** (lettura del codice DX
 prima di scansionare) e **`Mof` / `CleanMOF`** (lettura del codice MOF, e
 pulizia dei relativi sensori con striscia apposita).
 

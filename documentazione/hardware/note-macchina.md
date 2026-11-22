@@ -1,12 +1,9 @@
-# Scheda dati macchina — da compilare
+# Scheda dati macchina
 
-Compilare man mano che i dati emergono dal manuale cartaceo o dall'ispezione.
-Ogni voce compilata sblocca una parte del software.
-
-Parte delle voci e' stata compilata il 3 settembre 2026 leggendo il software
-originale (`APP ORIGINALE\`) e il manuale di servizio. Le fonti di ogni dato sono
-in [scheda-acquisizione.md](scheda-acquisizione.md); l'ordine dei lavori in
-[piano-lavori.md](../piano-lavori.md).
+I dati della macchina in un posto solo, ricavati dal software originale, dal
+manuale di servizio e dalle prove sulla riserva. Le fonti di ogni dato sono
+in [scheda-acquisizione.md](scheda-acquisizione.md),
+[scheda-iaq.md](scheda-iaq.md) e [carrello-capri.md](carrello-capri.md).
 
 ## Scheda di acquisizione
 

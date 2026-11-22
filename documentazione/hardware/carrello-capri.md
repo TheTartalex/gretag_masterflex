@@ -314,8 +314,8 @@ Comandi:
 - *One Frame* sono **406 passi** a 1900 passi/s. Se è il fotogramma da 38 mm
   del 135, un passo del carrello vale circa 0,094 mm.
 - L'SDK Kodak invece dichiara passi da 0,01 mm per `frame_detect_fine_adjust`.
-- La scala vera si misura con il collaudo dello scanner, voce 3
-  (trascinamento comandato).
+- La scala vera si misura con il collaudo dello scanner con pellicola
+  (voce 4 → 2).
 
 **Impostazioni seriali** in Compad: `ComPort=4` (COM5), `BaudRate=12`,
 `FlowControl=2`. `BaudRate` e `FlowControl` sono indici della finestra di

@@ -65,9 +65,9 @@ Le due funzioni hanno un interruttore proprio, ed e' reversibile:
 | Stampa | `Products.ini` | i 24 prodotti hanno tutti `Target=Paper`: sono tutti lavori di stampa. `Defined=1` diventa `Defined=0` e spariscono dall'elenco ordinabile. |
 | Densitometro | `Daily_Factory.ini` | `ColorCalibrationEnabled=false` ferma la calibrazione colore giornaliera, cioe' la routine densitometrica. `CalDueCheckInterval` passa da 20 minuti a 24 ore e il programma smette di chiederla. |
 
-    python strumenti\originale.py --stato
-    python strumenti\originale.py --alleggerisci
-    python strumenti\originale.py --ripristina
+    python -m filmscan.originale --stato
+    python -m filmscan.originale --alleggerisci
+    python -m filmscan.originale --ripristina
 
 oppure `MASTERFLEX.bat`, voce 9, che fa le stesse cose con un menu.
 
